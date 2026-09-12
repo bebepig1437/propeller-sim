@@ -1,0 +1,58 @@
+{
+  "id": "candidateA",
+  "name": "Reconciled High-Burst Vector-Skewed Propulsor",
+  "mass": {
+    "frame_g": 39.5,
+    "hardware_g": 9.0,
+    "motor_unit_g": 42.0,
+    "motor_count": 3,
+    "prop_g": { "rigid10k": 1.80, "pa12cf15": 1.25, "petg": 1.38 }
+  },
+  "buoyancy": {
+    "displaced_cm3": 200.0,
+    "rho_kg_m3": 1000.0,
+    "cob_above_cog_mm": 12.5
+  },
+  "motor": {
+    "model": "Mabuchi RC-280RA",
+    "Ra_ohm": 4.50,
+    "Io_A": 0.18,
+    "kv_rpm_per_V": 907.4,
+    "no_load_rpm_at_10v8": 9800,
+    "stall_torque_Nm": 0.0260,
+    "kt_Nm_per_A": 0.01171,
+    "ke_Vs_per_rad": 0.00973
+  },
+  "tether": {
+    "length_ft": 15,
+    "awg": 24,
+    "R_roundtrip_ohm": 0.782,
+    "supply_V": 12.0
+  },
+  "propeller": {
+    "D_mm": 42.0,
+    "hub_od_mm": 8.0,
+    "hub_len_mm": 11.0,
+    "blades": 3,
+    "KQ": 0.024,
+    "blade_phase_offset_deg": 0,
+    "handedness": ["CW", "CCW", "CW"]
+  },
+  "stator": {
+    "vanes": 3,
+    "profile": "modified NACA 63-012",
+    "slot_chord_pct": 40,
+    "incidence_deg": -5.2,
+    "rake_deg": 35,
+    "forward_thrust_gain_N": 0.04,
+    "reverse_thrust_penalty_N": 0.09,
+    "roll_reduction_deg_per_m": { "none": 14.8, "solid": 1.4, "slotted": 1.8 }
+  },
+  "operating_points": [
+    { "label": "breakout", "throttle": 1.00, "rpm": 4140, "thrust_N": 4.73, "current_A": 1.41, "burst_s": 18 },
+    { "label": "heavy_lift", "throttle": 0.881, "rpm": 3800, "thrust_N": 3.99, "current_A": 1.25, "burst_s": 50 },
+    { "label": "cruise", "throttle": 0.670, "rpm": 3000, "thrust_N": 2.49, "current_A": 0.85, "burst_s": null },
+    { "label": "full_dive", "throttle": -0.840, "rpm": 3650, "thrust_N": -2.82, "current_A": 1.18, "burst_s": 65 },
+    { "label": "reverse_station", "throttle": -0.480, "rpm": 2100, "thrust_N": -0.93, "current_A": 0.51, "burst_s": null }
+  ]
+}
