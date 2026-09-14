@@ -1,0 +1,23 @@
+{
+  "name": "propeller-sim",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.174.0",
+    "tweakpane": "^4.0.5"
+  },
+  "devDependencies": {
+    "@tweakpane/core": "^2.0.5",
+    "@types/three": "^0.174.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0",
+    "vitest": "^5.0.1"
+  }
+}
