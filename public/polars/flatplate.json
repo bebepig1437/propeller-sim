@@ -1,0 +1,24 @@
+{
+  "name": "Flat Plate Low-Re",
+  "type": "flat_plate_approximation",
+  "camber_pct": 0.0,
+  "thickness_pct": 3.0,
+  "zero_lift_alpha_deg": 0.0,
+  "stall_alpha_pos_deg": 9.0,
+  "stall_alpha_neg_deg": -9.0,
+  "cl_max": 0.85,
+  "cl_min": -0.85,
+  "cd_min": 0.0120,
+  "reference_reynolds": 50000,
+  "data": [
+    { "alpha_deg": -180.0, "cl": 0.0, "cd": 0.06 },
+    { "alpha_deg": -90.0,  "cl": 0.0, "cd": 1.25 },
+    { "alpha_deg": -45.0,  "cl": -0.85, "cd": 0.90 },
+    { "alpha_deg": -9.0,   "cl": -0.85, "cd": 0.04 },
+    { "alpha_deg": 0.0,    "cl": 0.00,  "cd": 0.012 },
+    { "alpha_deg": 9.0,    "cl": 0.85,  "cd": 0.04 },
+    { "alpha_deg": 45.0,   "cl": 0.85,  "cd": 0.90 },
+    { "alpha_deg": 90.0,   "cl": 0.0,   "cd": 1.25 },
+    { "alpha_deg": 180.0,  "cl": 0.0,   "cd": 0.06 }
+  ]
+}
