@@ -1,4 +1,19 @@
-import { evaluateSectionPolar, SectionalHydrofoilProperties, defaultHydrofoilProps } from './polar';
+import { evaluateSectionPolarWithReAndRoughness, getHydrofoilProperties, SectionalHydrofoilProperties } from './polar';
+import { PropDesign, CANDIDATE_A_DESIGN, getDesignBladeChordAt, getDesignBladePitchAngleAt } from './designs/index';
+import type { PropellerMaterial } from './rigidbody';
+
+/**
+ * SIGN CONVENTIONS (documented per CONVENTIONS.md):
+ * - Advance speed Va: positive along +X (forward boat motion, oncoming water from fore to aft).
+ * - Forward thrust T: positive pushing vehicle forward (+X_b).
+ * - Rotational RPM: positive n.
+ * - Handedness:
+ *   - 'CW': Clockwise from behind looking forward. Tangential swirl v_iTheta opposes rotation.
+ *     Reaction torque on vehicle is negative (-X_b).
+ *   - 'CCW': Counter-Clockwise. Flips blade pitch and tangential velocity sign.
+ *     Reaction torque on vehicle is positive (+X_b).
+ * - Reverse flow: When Va + vi <= 0, branches to locked-rotor / windmill drag mode.
+ */
 
 export interface BEMTElemResult {
   radiusM: number;
@@ -9,6 +24,7 @@ export interface BEMTElemResult {
   alphaDeg: number;
   cl: number;
   cd: number;
+  reynolds: number;
   dT: number;
   dQ: number;
   axialInducedMs: number;
@@ -25,30 +41,33 @@ export interface BEMTResult {
   efficiency: number;
   rpm: number;
   advanceSpeedMs: number;
+  handedness: 'CW' | 'CCW';
   elements: BEMTElemResult[];
 }
 
 export interface PropellerBEMTParams {
+  design?: PropDesign;
   diameterMm?: number;      // default 42 mm
   hubDiameterMm?: number;   // default 8 mm
   blades?: number;          // default 3
-  pitchMm?: number;         // default 42 mm (~ P/D 1.0)
+  pitchMm?: number;         // default ~33.2 mm
   fluidDensity?: number;    // default 1000 kg/m3
+  kinematicViscosity?: number; // default 1e-6 m2/s
   numElements?: number;     // default 20
+  material?: PropellerMaterial; // default 'rigid10k'
+  handedness?: 'CW' | 'CCW';    // default 'CW'
   foilProps?: SectionalHydrofoilProperties;
 }
 
 /**
- * Evaluates standard chord distribution for 42mm Candidate A marine propeller.
+ * Standard chord distribution function (kept for backwards compatibility).
  */
 export function getBladeChordAt(rM: number, rHubM: number, rTipM: number): number {
   const span = rTipM - rHubM;
-  const xi = (rM - rHubM) / span; // [0, 1]
+  const xi = Math.max(0, Math.min(1.0, (rM - rHubM) / span));
 
-  // Marine Kaplan / Wageningen skewed blade form:
-  // Root chord ~ 4.2 mm, peak chord ~ 5.6 mm at 60% span, tip chord ~ 2.4 mm
   const chordBase = 0.0038;
-  const chordPeak = 0.0054;
+  const chordPeak = 0.0055;
   const chordTip = 0.0022;
 
   if (xi < 0.6) {
