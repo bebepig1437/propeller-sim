@@ -1,9 +1,14 @@
+import type { PropellerMaterial } from './rigidbody';
+
 /**
  * Sectional Hydrofoil Polar Representation & Viterna Post-Stall Extrapolation.
  *
  * Implements linear attached flow hydrofoil aerodynamics/hydrodynamics coupled
  * with Viterna-Corrigan post-stall extrapolation for deep stall and 360-degree
  * flow regimes (crucial for bollard pull J=0 and reverse thrust).
+ *
+ * Includes Reynolds number scaling and surface roughness adjustments for Candidate A
+ * materials: Rigid 10K (smooth SLA), PA12-CF15 (SLS nylon), and PETG (FDM layer-lines).
  */
 
 export interface PolarDataPoint {
@@ -13,24 +18,72 @@ export interface PolarDataPoint {
 }
 
 export interface SectionalHydrofoilProperties {
-  zeroLiftAlphaDeg: number; // typically ~ -2.0 deg for cambered marine foil
+  zeroLiftAlphaDeg: number; // typically ~ -2.0 deg to -4.0 deg for cambered marine foil
   liftCurveSlope: number;    // dCl/drad ~ 2*pi / (1 + 2/AR)
-  clMax: number;             // maximum attached Cl ~ 1.25
-  clMin: number;             // minimum attached Cl ~ -0.9
-  cd0: number;               // minimum parasite drag coefficient ~ 0.012
-  aspectRatio: number;       // blade effective aspect ratio ~ 3.5
-  oswaldEfficiency: number;  // ~ 0.85
+  clMax: number;             // maximum attached Cl ~ 1.2 - 1.45
+  clMin: number;             // minimum attached Cl ~ -0.85 - -0.9
+  cd0: number;               // minimum parasite drag coefficient ~ 0.0075 - 0.014
+  aspectRatio: number;       // blade effective aspect ratio ~ 3.2 - 3.5
+  oswaldEfficiency: number;  // ~ 0.82 - 0.85
+  referenceRe?: number;      // ~ 100,000
 }
 
-export const defaultHydrofoilProps: SectionalHydrofoilProperties = {
-  zeroLiftAlphaDeg: -2.0,
-  liftCurveSlope: 5.5,
-  clMax: 1.20,
-  clMin: -0.85,
-  cd0: 0.014,
-  aspectRatio: 3.2,
-  oswaldEfficiency: 0.82
+/**
+ * Surface roughness increments on minimum drag coefficient delta Cd0.
+ * Rigid 10K: optical SLA smooth finish
+ * PA12-CF15: SLS powder micro-roughness
+ * PETG: FDM layer lines and surface stepping
+ */
+export const MATERIAL_ROUGHNESS_CD_SHIFT: Record<PropellerMaterial, number> = {
+  rigid10k: 0.0000,
+  pa12cf15: 0.0035,
+  petg: 0.0075
 };
+
+export const NACA_4412_PROPS: SectionalHydrofoilProperties = {
+  zeroLiftAlphaDeg: -3.8,
+  liftCurveSlope: 5.85,
+  clMax: 1.42,
+  clMin: -0.85,
+  cd0: 0.0080,
+  aspectRatio: 3.5,
+  oswaldEfficiency: 0.85,
+  referenceRe: 100000
+};
+
+export const NACA_63012_PROPS: SectionalHydrofoilProperties = {
+  zeroLiftAlphaDeg: 0.0,
+  liftCurveSlope: 5.90,
+  clMax: 1.25,
+  clMin: -1.25,
+  cd0: 0.0055,
+  aspectRatio: 3.5,
+  oswaldEfficiency: 0.86,
+  referenceRe: 100000
+};
+
+export const FLAT_PLATE_PROPS: SectionalHydrofoilProperties = {
+  zeroLiftAlphaDeg: 0.0,
+  liftCurveSlope: 5.40,
+  clMax: 0.85,
+  clMin: -0.85,
+  cd0: 0.0120,
+  aspectRatio: 3.0,
+  oswaldEfficiency: 0.80,
+  referenceRe: 50000
+};
+
+export const defaultHydrofoilProps: SectionalHydrofoilProperties = NACA_4412_PROPS;
+
+/**
+ * Returns hydrofoil properties given a section identifier.
+ */
+export function getHydrofoilProperties(sectionName = 'naca4412'): SectionalHydrofoilProperties {
+  const s = sectionName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (s.includes('63012')) return NACA_63012_PROPS;
+  if (s.includes('flat')) return FLAT_PLATE_PROPS;
+  return NACA_4412_PROPS;
+}
 
 /**
  * Evaluates Lift Coefficient (Cl) and Drag Coefficient (Cd) at any angle of attack
@@ -41,11 +94,11 @@ export function evaluateSectionPolar(
   props: SectionalHydrofoilProperties = defaultHydrofoilProps
 ): { cl: number; cd: number } {
   // Normalize alpha to [-pi, pi]
-  let alpha = Math.atan2(Math.sin(alphaRad), Math.cos(alphaRad));
+  const alpha = Math.atan2(Math.sin(alphaRad), Math.cos(alphaRad));
 
   const alpha0Rad = (props.zeroLiftAlphaDeg * Math.PI) / 180.0;
-  const stallAlphaPosRad = (16.0 * Math.PI) / 180.0;
-  const stallAlphaNegRad = (-12.0 * Math.PI) / 180.0;
+  const stallAlphaPosRad = (15.0 * Math.PI) / 180.0;
+  const stallAlphaNegRad = (-13.0 * Math.PI) / 180.0;
   const deepStallPosRad = (28.0 * Math.PI) / 180.0;
   const deepStallNegRad = (-26.0 * Math.PI) / 180.0;
 
@@ -86,6 +139,32 @@ export function evaluateSectionPolar(
   }
 
   return { cl: clViterna, cd: Math.max(props.cd0, cdViterna) };
+}
+
+/**
+ * Evaluates sectional polar with Reynolds number scaling and material surface roughness.
+ */
+export function evaluateSectionPolarWithReAndRoughness(
+  alphaRad: number,
+  reynolds: number,
+  material: PropellerMaterial = 'rigid10k',
+  props: SectionalHydrofoilProperties = defaultHydrofoilProps
+): { cl: number; cd: number } {
+  // Base polar evaluation
+  const base = evaluateSectionPolar(alphaRad, props);
+
+  // 1. Reynolds number scaling on parasite drag:
+  // Cd0 scales as (Re_ref / Re)^0.2 in turbulent boundary layers
+  const refRe = props.referenceRe ?? 100000;
+  const safeRe = Math.max(1000, reynolds);
+  const reScaling = Math.pow(refRe / safeRe, 0.18);
+  const reShift = props.cd0 * (Math.min(2.5, Math.max(0.7, reScaling)) - 1.0);
+
+  // 2. Surface roughness delta
+  const roughnessShift = MATERIAL_ROUGHNESS_CD_SHIFT[material] ?? 0.0;
+
+  const totalCd = Math.max(0.005, base.cd + reShift + roughnessShift);
+  return { cl: base.cl, cd: totalCd };
 }
 
 /**
