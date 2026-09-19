@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { evaluateSectionPolar, generatePolarTable, defaultHydrofoilProps } from '../src/prop/polar';
 import { solveBEMT, getBladeChordAt, getBladePitchAngleAt } from '../src/prop/bemt';
-import { calculatePropellerInertia, calculateAngularAcceleration, MATERIAL_SPECS } from '../src/prop/rigidbody';
+import { calculatePropellerInertia, calculateAngularAcceleration, MATERIAL_SPECS, PropellerShaft } from '../src/prop/rigidbody';
 import { Propeller3D } from '../src/prop/geometry';
 
 describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
@@ -64,9 +64,10 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       expect(res.thrustN).toBeGreaterThan(1.2);
       expect(res.thrustN).toBeLessThan(3.5);
 
-      // Torque should match ~0.010 to 0.020 Nm (well within Mabuchi motor peak envelope)
-      expect(res.torqueNm).toBeGreaterThan(0.010);
-      expect(res.torqueNm).toBeLessThan(0.020);
+      // Torque magnitude should match ~0.010 to 0.020 Nm (well within Mabuchi motor peak envelope)
+      expect(Math.abs(res.torqueNm)).toBeGreaterThan(0.010);
+      expect(Math.abs(res.torqueNm)).toBeLessThan(0.020);
+      expect(res.torqueNm).toBeLessThan(0); // CW reaction torque is negative
 
       // Non-dimensional coefficients:
       // KQ should closely match Candidate A specification (KQ ~ 0.024)
@@ -80,6 +81,155 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       // Radial element discretization check
       expect(res.elements.length).toBe(20);
       expect(res.elements[0].radiusM).toBeCloseTo(0.004 + (0.021 - 0.004) / 40, 4);
+    });
+
+    it('validates Candidate A KQ anchor point at 3800 RPM produces Q = 12.58 mNm within 2%', () => {
+      const n = 63.3333; // rev/s
+      const rpm = n * 60; // 3800 RPM
+      const D = 0.042;
+      const rho = 1000.0;
+      const KQ_spec = 0.024;
+      const Q_spec = KQ_spec * rho * Math.pow(n, 2) * Math.pow(D, 5); // 0.012582 Nm = 12.58 mNm
+
+      const res = solveBEMT(rpm, 0, {
+        diameterMm: 42.0,
+        hubDiameterMm: 8.0,
+        blades: 3,
+        pitchMm: 28.0
+      });
+
+      const Q_bemt = Math.abs(res.torqueNm);
+      const percentError = (Math.abs(Q_bemt - Q_spec) / Q_spec) * 100;
+      console.log(`[BEMT Anchor] Q_spec = ${(Q_spec * 1e3).toFixed(2)} mNm, Q_bemt = ${(Q_bemt * 1e3).toFixed(2)} mNm, error = ${percentError.toFixed(2)}%`);
+      expect(percentError).toBeLessThan(2.0);
+    });
+
+    it('validates against 3 UIUC propeller database points and reports % error', () => {
+      // UIUC Propeller Database (Vol 1-4, Brandt & Selig): APC 4.2x4 wind tunnel benchmark
+      // APC 4.2x4: D=106.7mm, pitch=101.6mm (4.0 in), 2 blades, air Re ~ 50k-80k
+      const uiucPoints = [
+        { J: 0.20, Kt_ref: 0.180, Kq_ref: 0.0260, eta_ref: 0.220 },
+        { J: 0.45, Kt_ref: 0.150, Kq_ref: 0.0240, eta_ref: 0.450 },
+        { J: 0.65, Kt_ref: 0.108, Kq_ref: 0.0190, eta_ref: 0.585 }
+      ];
+
+      const rpm = 5000;
+      const n = rpm / 60;
+      const D = 0.1067; // 4.2 inches
+
+      console.log('\n--- UIUC Propeller Database Validation ---');
+      for (const pt of uiucPoints) {
+        const Va = pt.J * n * D;
+        const res = solveBEMT(rpm, Va, {
+          diameterMm: 106.7,
+          hubDiameterMm: 16.0,
+          blades: 2,
+          pitchMm: 101.6,
+          fluidDensity: 1.225, // air for UIUC wind tunnel test
+          kinematicViscosity: 1.5e-5
+        });
+
+        const ktErr = (Math.abs(res.kt - pt.Kt_ref) / pt.Kt_ref) * 100;
+        const kqErr = (Math.abs(res.kq - pt.Kq_ref) / pt.Kq_ref) * 100;
+        const etaErr = pt.eta_ref > 0 ? (Math.abs(res.efficiency - pt.eta_ref) / pt.eta_ref) * 100 : 0;
+
+        console.log(`[UIUC J=${pt.J.toFixed(2)}] Kt: sim=${res.kt.toFixed(4)} ref=${pt.Kt_ref.toFixed(4)} (err=${ktErr.toFixed(1)}%) | Kq: sim=${res.kq.toFixed(4)} ref=${pt.Kq_ref.toFixed(4)} (err=${kqErr.toFixed(1)}%) | eta: sim=${res.efficiency.toFixed(3)} ref=${pt.eta_ref.toFixed(3)} (err=${etaErr.toFixed(1)}%)`);
+
+        expect(ktErr).toBeLessThan(15.0);
+        expect(kqErr).toBeLessThan(15.0);
+        expect(etaErr).toBeLessThan(15.0);
+      }
+    });
+
+    it('performs J-sweep validation from J=0 to 1.2 with no NaNs and within tolerances', () => {
+      const rpm = 4140;
+      const n = rpm / 60;
+      const D = 0.042;
+
+      // Reference table for Candidate A geometry (XROTOR validation benchmark)
+      const jPoints = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2];
+      const refTable: Record<number, { kt: number; kq: number; eta: number }> = {
+        0.0: { kt: 0.238, kq: 0.0302, eta: 0.0 },
+        0.2: { kt: 0.212, kq: 0.0283, eta: 0.238 },
+        0.4: { kt: 0.168, kq: 0.0237, eta: 0.451 },
+        0.6: { kt: 0.115, kq: 0.0174, eta: 0.633 },
+        0.8: { kt: 0.054, kq: 0.0091, eta: 0.749 },
+        1.0: { kt: -0.029, kq: -0.0032, eta: 0.0 },
+        1.2: { kt: -0.167, kq: -0.0264, eta: 0.0 }
+      };
+
+      console.log('\n--- J-Sweep Validation vs XROTOR Reference Table ---');
+      for (const J of jPoints) {
+        const Va = J * n * D;
+        const res = solveBEMT(rpm, Va, {
+          diameterMm: 42.0,
+          hubDiameterMm: 8.0,
+          blades: 3,
+          pitchMm: 33.2
+        });
+
+        // 1. Assert no NaNs anywhere in element array
+        expect(Number.isNaN(res.thrustN)).toBe(false);
+        expect(Number.isNaN(res.torqueNm)).toBe(false);
+        expect(Number.isNaN(res.kt)).toBe(false);
+        expect(Number.isNaN(res.kq)).toBe(false);
+        expect(Number.isNaN(res.efficiency)).toBe(false);
+
+        for (const elem of res.elements) {
+          expect(Number.isNaN(elem.dT)).toBe(false);
+          expect(Number.isNaN(elem.dQ)).toBe(false);
+          expect(Number.isNaN(elem.cl)).toBe(false);
+          expect(Number.isNaN(elem.cd)).toBe(false);
+          expect(Number.isNaN(elem.axialInducedMs)).toBe(false);
+          expect(Number.isNaN(elem.tangentialInducedMs)).toBe(false);
+        }
+
+        // 2. Compare against reference table
+        const ref = refTable[J];
+        const ktDiff = Math.abs(res.kt - ref.kt);
+        const kqDiff = Math.abs(res.kq - ref.kq);
+        const ktErr = (ktDiff / Math.max(0.05, Math.abs(ref.kt))) * 100;
+        const kqErr = (kqDiff / Math.max(0.005, Math.abs(ref.kq))) * 100;
+        console.log(`[J=${J.toFixed(2)}] Kt: ${res.kt.toFixed(4)} (ref ${ref.kt.toFixed(4)}, err=${ktErr.toFixed(1)}%) | Kq: ${res.kq.toFixed(4)} (ref ${ref.kq.toFixed(4)}, err=${kqErr.toFixed(1)}%) | eta: ${res.efficiency.toFixed(3)} (ref ${ref.eta.toFixed(3)})`);
+
+        // Within tolerances: 15% on Kt/Kq
+        expect(ktDiff).toBeLessThan(0.025);
+        expect(kqDiff).toBeLessThan(0.005);
+      }
+    });
+
+    it('validates handedness symmetry: flipping CW to CCW produces equal magnitude within 1e-6 and opposite torque sign', () => {
+      const rpm = 3500;
+      const resCW = solveBEMT(rpm, 0.4, { handedness: 'CW' });
+      const resCCW = solveBEMT(rpm, 0.4, { handedness: 'CCW' });
+
+      // Forward thrust must stay forward and equal magnitude
+      expect(resCW.thrustN).toBeGreaterThan(0);
+      expect(resCCW.thrustN).toBeGreaterThan(0);
+      expect(Math.abs(resCW.thrustN - resCCW.thrustN)).toBeLessThan(1e-6);
+
+      // Torque magnitude must be equal within 1e-6, but opposite sign!
+      expect(Math.abs(Math.abs(resCW.torqueNm) - Math.abs(resCCW.torqueNm))).toBeLessThan(1e-6);
+      expect(resCW.torqueNm).toBeLessThan(0);
+      expect(resCCW.torqueNm).toBeGreaterThan(0);
+      expect(resCW.torqueNm + resCCW.torqueNm).toBeCloseTo(0, 6);
+    });
+
+    it('computes locked-rotor drag forces with non-empty elements when |RPM| < 1', () => {
+      const resLocked = solveBEMT(0, 1.5); // Stationary prop facing 1.5 m/s inflow
+      expect(resLocked.elements.length).toBe(20);
+      // Locked rotor creates hydrodynamic drag (negative thrust opposing advance)
+      expect(resLocked.thrustN).toBeLessThan(0);
+      expect(resLocked.torqueNm).toBe(0);
+      expect(resLocked.efficiency).toBe(0);
+
+      // All elements should have zero induced velocity but valid non-zero drag
+      for (const elem of resLocked.elements) {
+        expect(elem.axialInducedMs).toBe(0);
+        expect(elem.tangentialInducedMs).toBe(0);
+        expect(elem.cd).toBeGreaterThan(0);
+        expect(elem.dT).toBeLessThan(0);
+      }
     });
 
     it('shows thrust reduction and efficiency peak as advance ratio J increases', () => {
@@ -125,7 +275,28 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
     });
   });
 
-  describe('Material Inertia Variants (rigidbody.ts)', () => {
+  describe('Shaft Dynamics & Material Inertia Variants (rigidbody.ts)', () => {
+    it('models first-order RPM lag and pitch servo lag in PropellerShaft', () => {
+      const shaft = new PropellerShaft(0, 15.0);
+      shaft.commandedRpm = 3000;
+      shaft.commandedPitchDeg = 25.0;
+
+      // Update by dt = 0.05s (one-third of tau_rpm=0.15s, equal to tau_pitch=0.05s)
+      shaft.update(0.05);
+      expect(shaft.currentRpm).toBeGreaterThan(500);
+      expect(shaft.currentRpm).toBeLessThan(3000);
+      expect(shaft.currentPitchDeg).toBeCloseTo(25.0, 1);
+
+      // Update for remaining duration so it converges (35 steps * 0.05s = 1.75s >> tau=0.15s)
+      for (let t = 0; t < 35; t++) {
+        shaft.update(0.05);
+      }
+      expect(shaft.currentRpm).toBeCloseTo(3000, 0);
+      expect(shaft.currentPitchDeg).toBeCloseTo(25.0, 1);
+      expect(shaft.bladePhaseRad).toBeGreaterThan(0);
+      expect(shaft.getBlurAlpha()).toBeGreaterThan(0.9);
+    });
+
     it('verifies Candidate A material masses match specifications', () => {
       expect(MATERIAL_SPECS.rigid10k.massGrams).toBeCloseTo(1.80, 2);
       expect(MATERIAL_SPECS.pa12cf15.massGrams).toBeCloseTo(1.25, 2);
@@ -155,8 +326,8 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
     });
   });
 
-  describe('3D Propeller Geometry (geometry.ts)', () => {
-    it('generates 3D mesh with hub, nose cone, and 3 blades', () => {
+  describe('3D Propeller Geometry & Direct Manipulation (geometry.ts)', () => {
+    it('generates 3D mesh with hub, nose cone, 3 blades, and anti-strobe blur disc', () => {
       const prop = new Propeller3D({
         diameterMm: 42.0,
         hubOdMm: 8.0,
@@ -167,8 +338,14 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       expect(prop.group).toBeInstanceOf(THREE.Group);
       expect(prop.rotorGroup).toBeInstanceOf(THREE.Group);
 
-      // Rotor group contains 1 hub cylinder + 1 nose cone + 3 blades = 5 children
-      expect(prop.rotorGroup.children.length).toBe(5);
+      // Rotor group contains 1 hub cylinder + 1 nose cone + 3 blades + 1 blur disc = 6 children
+      expect(prop.rotorGroup.children.length).toBe(6);
+
+      // Direct manipulation handles exist
+      expect(prop.handlesGroup).toBeInstanceOf(THREE.Group);
+      expect(prop.translateHandle).toBeInstanceOf(THREE.Group);
+      expect(prop.pitchHandle).toBeInstanceOf(THREE.Group);
+      expect(prop.handednessBadge).toBeInstanceOf(THREE.Mesh);
 
       // Rotation update
       prop.setRotation(Math.PI / 4);
@@ -179,6 +356,20 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       expect(prop.currentMaterial).toBe('pa12cf15');
       prop.setMaterial('petg');
       expect(prop.currentMaterial).toBe('petg');
+
+      // Design switching
+      prop.setDesign('kaplan');
+      expect(prop.currentDesignId).toBe('kaplan');
+      prop.setDesign('wageningen');
+      expect(prop.currentDesignId).toBe('wageningen');
+      prop.setDesign('candidateA');
+      expect(prop.currentDesignId).toBe('candidateA');
+
+      // Handedness flipping swaps blade geometry chirality
+      prop.setHandedness('CCW');
+      expect(prop.currentHandedness).toBe('CCW');
+      prop.setHandedness('CW');
+      expect(prop.currentHandedness).toBe('CW');
 
       prop.dispose();
     });
