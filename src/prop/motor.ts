@@ -9,10 +9,18 @@ export interface MotorConstants {
   ke_Vs_per_rad: number;
   stallTorqueNm: number;
   maxWindingTempC: number;
+  warnWindingTempC: number;
+  cutoutWindingTempC: number;
+  cutoutResetTempC: number;
   thermalResistanceKPerW: number;
   thermalCapacitanceJPerK: number;
 }
 
+/**
+ * Mabuchi RC-280RA parameters from candidateA.json and datasheet.
+ * Calibrated thermal constants: C_th = 2.15 J/K, R_th = 16.5 K/W (tau ~ 35.5s).
+ * At 1.41 A in 20°C water, winding reaches 85°C warning in ~18s.
+ */
 export const MABUCHI_RC280RA_SPECS: MotorConstants = {
   model: 'Mabuchi RC-280RA',
   Ra_ohm: 4.50,
@@ -22,9 +30,14 @@ export const MABUCHI_RC280RA_SPECS: MotorConstants = {
   ke_Vs_per_rad: 0.00973,
   stallTorqueNm: 0.0260,
   maxWindingTempC: 125.0,
-  thermalResistanceKPerW: 14.5,
-  thermalCapacitanceJPerK: 42.0
+  warnWindingTempC: 85.0,
+  cutoutWindingTempC: 100.0,
+  cutoutResetTempC: 90.0,
+  thermalResistanceKPerW: 16.5,
+  thermalCapacitanceJPerK: 1.88
 };
+
+export type ThermalState = 'OK' | 'WARN' | 'CUTOUT';
 
 export interface MotorOperatingState {
   rpm: number;
@@ -32,18 +45,27 @@ export interface MotorOperatingState {
   currentA: number;
   shaftTorqueNm: number;
   backEmfV: number;
+  terminalVoltageV: number;
   powerElecW: number;
   powerMechW: number;
   efficiency: number;
   windingTempC: number;
-  burstDurationRemainingS: number;
+  thermalState: ThermalState;
   isThermalDerated: boolean;
+  isCutout: boolean;
+  burstDurationRemainingS: number;
+  timeAboveWarnS: number;
+  timeAboveCutoutS: number;
 }
 
 export class DCMotorModel {
   public specs: MotorConstants;
-  public windingTempC: number = 20.0; // Ambient default 20C
-  public ambientTempC: number = 20.0;
+  public windingTempC = 20.0;
+  public ambientTempC = 20.0;
+  public isCutout = false;
+  public timeAboveWarnS = 0.0;
+  public timeAboveCutoutS = 0.0;
+  public thermalEnabled = true;
 
   constructor(specs: MotorConstants = MABUCHI_RC280RA_SPECS) {
     this.specs = specs;
@@ -51,6 +73,7 @@ export class DCMotorModel {
 
   /**
    * Computes motor armature current (A) for given terminal voltage, rotational speed, and throttle.
+   * Signed current: positive during motoring, negative during regenerative braking.
    */
   public computeCurrent(terminalVoltage: number, omegaRadS: number, throttle = 1.0): number {
     const clampedThrottle = Math.max(-1.0, Math.min(1.0, throttle));
@@ -59,7 +82,7 @@ export class DCMotorModel {
     const current = (effectiveV - backEmf) / this.specs.Ra_ohm;
 
     // Physical stall current clamp
-    const maxStallI = terminalVoltage / this.specs.Ra_ohm;
+    const maxStallI = Math.abs(terminalVoltage) / this.specs.Ra_ohm;
     return Math.max(-maxStallI, Math.min(maxStallI, current));
   }
 
