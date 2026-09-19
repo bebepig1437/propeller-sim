@@ -51,6 +51,19 @@ export class FluidGrid {
     this.curl = new Float32Array(this.size);
   }
 
+  public reset(): void {
+    this.u.fill(0);
+    this.uPrev.fill(0);
+    this.v.fill(0);
+    this.vPrev.fill(0);
+    this.pressure.fill(0);
+    this.pressurePrev.fill(0);
+    this.div.fill(0);
+    this.dye.fill(0);
+    this.dyePrev.fill(0);
+    this.curl.fill(0);
+  }
+
   public idx(x: number, y: number): number {
     return y * this.width + x;
   }
