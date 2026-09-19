@@ -80,48 +80,198 @@ export function getBladeChordAt(rM: number, rHubM: number, rTipM: number): numbe
 }
 
 /**
- * Computes blade pitch angle theta(r) in radians from pitch P:
- * theta(r) = atan(P / (2 * pi * r))
+ * Computes blade pitch angle theta(r) in radians from pitch P (backwards compatible).
  */
 export function getBladePitchAngleAt(rM: number, pitchM: number): number {
-  return Math.atan(pitchM / (2.0 * Math.PI * rM));
+  return Math.atan(pitchM / (2.0 * Math.PI * Math.max(1e-4, rM)));
+}
+
+/**
+ * Documented reverse-flow transition band half-width in m/s (default 0.05 m/s).
+ * Physical basis: 0.05 m/s matches the sub-cell Eulerian grid fluctuation threshold
+ * (dx / dt * alpha_inflow = 0.0015 m / (1/60 s) * 0.5 ~= 0.045 m/s), ensuring discrete
+ * fluid grid velocity perturbations do not trigger discontinuous regime transitions at Va + vi = 0.
+ */
+export const REVERSE_FLOW_BLEND_BAND_M_PER_S = 0.05;
+export const REVERSE_FLOW_BLEND_BAND_MS = REVERSE_FLOW_BLEND_BAND_M_PER_S;
+
+export interface InflowAeroResult {
+  W: number;
+  phi: number;
+  alpha: number;
+  cl: number;
+  cd: number;
+  Cn: number;
+  Ct: number;
+  reynolds: number;
+}
+
+/**
+ * Smooth Hermite smoothstep blend between forward and reverse section aerodynamics.
+ * Guarantees C1 continuity across the Va + vi = 0 boundary.
+ */
+export function evaluateBlendedSectionAero(
+  vRaw: number,
+  vTangential: number,
+  theta: number,
+  chord: number,
+  nu: number,
+  material: PropellerMaterial,
+  foilProps: SectionalHydrofoilProperties,
+  blendBand: number = REVERSE_FLOW_BLEND_BAND_M_PER_S
+): InflowAeroResult {
+  const t = Math.max(0, Math.min(1, (vRaw + blendBand) / (2.0 * blendBand)));
+  const s = t * t * (3.0 - 2.0 * t); // Smoothstep Hermite weight in [0, 1]
+
+  // Forward branch
+  const vAxialFwd = Math.max(0.001, vRaw);
+  const wFwd = Math.sqrt(vAxialFwd * vAxialFwd + vTangential * vTangential);
+  const phiFwd = Math.atan2(vAxialFwd, vTangential);
+  const alphaFwd = theta - phiFwd;
+  const reFwd = Math.max(100, (wFwd * chord) / nu);
+  const polFwd = evaluateSectionPolarWithReAndRoughness(alphaFwd, reFwd, material, foilProps);
+  const sinPhiFwd = Math.sin(phiFwd);
+  const cosPhiFwd = Math.cos(phiFwd);
+  const cnFwd = polFwd.cl * cosPhiFwd - polFwd.cd * sinPhiFwd;
+  const ctFwd = polFwd.cl * sinPhiFwd + polFwd.cd * cosPhiFwd;
+
+  if (s >= 0.9999) {
+    return {
+      W: wFwd,
+      phi: phiFwd,
+      alpha: alphaFwd,
+      cl: polFwd.cl,
+      cd: polFwd.cd,
+      Cn: cnFwd,
+      Ct: ctFwd,
+      reynolds: reFwd
+    };
+  }
+
+  // Reverse branch
+  const vAxialRev = Math.min(-0.001, vRaw);
+  const wRev = Math.sqrt(vAxialRev * vAxialRev + vTangential * vTangential);
+  const phiRev = Math.atan2(vAxialRev, vTangential);
+  const alphaRev = theta - phiRev;
+  const reRev = Math.max(100, (wRev * chord) / nu);
+  const polRev = evaluateSectionPolarWithReAndRoughness(alphaRev, reRev, material, foilProps);
+  const sinPhiRev = Math.sin(phiRev);
+  const cosPhiRev = Math.cos(phiRev);
+  const cnRev = polRev.cl * cosPhiRev - polRev.cd * sinPhiRev;
+  const ctRev = polRev.cl * sinPhiRev + polRev.cd * cosPhiRev;
+
+  if (s <= 0.0001) {
+    return {
+      W: wRev,
+      phi: phiRev,
+      alpha: alphaRev,
+      cl: polRev.cl,
+      cd: polRev.cd,
+      Cn: cnRev,
+      Ct: ctRev,
+      reynolds: reRev
+    };
+  }
+
+  // Smooth Hermite blend across transition band
+  return {
+    W: (1.0 - s) * wRev + s * wFwd,
+    phi: (1.0 - s) * phiRev + s * phiFwd,
+    alpha: (1.0 - s) * alphaRev + s * alphaFwd,
+    cl: (1.0 - s) * polRev.cl + s * polFwd.cl,
+    cd: (1.0 - s) * polRev.cd + s * polFwd.cd,
+    Cn: (1.0 - s) * cnRev + s * cnFwd,
+    Ct: (1.0 - s) * ctRev + s * ctFwd,
+    reynolds: (1.0 - s) * reRev + s * reFwd
+  };
 }
 
 /**
  * Solves Blade Element Momentum Theory (BEMT) for a marine propeller.
- * Uses unified quadratic momentum inflow formulation that is continuous and unconditionally
- * stable from static bollard pull (Va = 0) up to high advance ratios.
+ *
+ * Implements:
+ * 1. Prandtl tip loss: fTip = (B/2) * (R - r) / (r * sin(phi)) with local radius r.
+ * 2. Prandtl hub loss: fHub = (B/2) * (r - Rhub) / (Rhub * sin(phi)) normalized by hub radius (Glauert 1935, Drela XROTOR).
+ * 3. Damped fixed-point induction iteration.
+ * 4. Post-convergence aerodynamic recomputation before force integration.
+ * 5. Continuous reverse-flow / windmill branch.
+ * 6. Zero-RPM locked-rotor hydrodynamic drag calculation returning non-empty elements.
+ * 7. Handedness (CW / CCW) with exact torque symmetry.
+ * 8. Reynolds number scaling and material surface roughness.
  */
 export function solveBEMT(
   rpm: number,
   advanceSpeedMs: number,
   params?: PropellerBEMTParams
 ): BEMTResult {
-  const D = (params?.diameterMm ?? 42.0) * 1e-3;
-  const Dhub = (params?.hubDiameterMm ?? 8.0) * 1e-3;
-  const B = params?.blades ?? 3;
-  const pitchM = (params?.pitchMm ?? 42.0) * 1e-3;
+  const design = params?.design ?? CANDIDATE_A_DESIGN;
+  const D = (params?.diameterMm ?? design.diameterMm) * 1e-3;
+  const Dhub = (params?.hubDiameterMm ?? design.hubDiameterMm) * 1e-3;
+  const B = params?.blades ?? design.blades;
+  const pitchOverrideMm = params?.pitchMm;
   const rho = params?.fluidDensity ?? 1000.0;
+  const nu = params?.kinematicViscosity ?? 1e-6;
   const N = params?.numElements ?? 20;
-  const foilProps = params?.foilProps ?? defaultHydrofoilProps;
+  const material = params?.material ?? 'rigid10k';
+  const handedness = params?.handedness ?? 'CW';
+  const foilProps = params?.foilProps ?? getHydrofoilProperties(design.sectionAirfoil);
 
   const R = D / 2.0;
   const Rhub = Dhub / 2.0;
   const dr = (R - Rhub) / N;
 
-  // Handle zero or minimal RPM
+  // Zero-RPM handling: A stationary propeller in flow produces locked-rotor drag.
+  // Must return non-empty elements with vi = viTheta = 0.
   if (Math.abs(rpm) < 1.0) {
+    let totalThrust = 0;
+    const elements: BEMTElemResult[] = [];
+
+    for (let i = 0; i < N; i++) {
+      const r = Rhub + (i + 0.5) * dr;
+      const rOverR = r / R;
+      const chord = getDesignBladeChordAt(r, design, params?.diameterMm);
+      const theta = getDesignBladePitchAngleAt(r, design, pitchOverrideMm, params?.diameterMm);
+
+      const W = Math.abs(advanceSpeedMs);
+      const phi = advanceSpeedMs >= 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
+      const alpha = theta - phi;
+      const re = Math.max(100, (W * chord) / nu);
+
+      const polar = evaluateSectionPolarWithReAndRoughness(alpha, re, material, foilProps);
+      // Axial force coefficient along thrust direction: -Cd * sign(Va)
+      const qDyn = 0.5 * rho * W * W;
+      const dT = -Math.sign(advanceSpeedMs || 1) * polar.cd * qDyn * chord * dr * B;
+      totalThrust += dT;
+
+      elements.push({
+        radiusM: r,
+        rOverR,
+        chordM: chord,
+        twistDeg: (theta * 180.0) / Math.PI,
+        inflowAngleDeg: (phi * 180.0) / Math.PI,
+        alphaDeg: (alpha * 180.0) / Math.PI,
+        cl: polar.cl,
+        cd: polar.cd,
+        reynolds: re,
+        dT,
+        dQ: 0,
+        axialInducedMs: 0,
+        tangentialInducedMs: 0
+      });
+    }
+
     return {
-      thrustN: 0,
+      thrustN: totalThrust,
       torqueNm: 0,
       powerMechW: 0,
       advanceRatioJ: 0,
       kt: 0,
       kq: 0,
       efficiency: 0,
-      rpm,
+      rpm: 0,
       advanceSpeedMs,
-      elements: []
+      handedness,
+      elements
     };
   }
 
