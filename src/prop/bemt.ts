@@ -287,66 +287,61 @@ export function solveBEMT(
   for (let i = 0; i < N; i++) {
     const r = Rhub + (i + 0.5) * dr;
     const rOverR = r / R;
-    const chord = getBladeChordAt(r, Rhub, R);
-    const theta = getBladePitchAngleAt(r, pitchM);
+    const chord = getDesignBladeChordAt(r, design, params?.diameterMm);
+    const theta = getDesignBladePitchAngleAt(r, design, pitchOverrideMm, params?.diameterMm);
     const solidity = (B * chord) / (2.0 * Math.PI * r);
 
-    // Initial guess for induced velocities
-    let vi = Math.max(0.1, 0.15 * omega * r);
-    let viTheta = 0.02 * omega * r;
+    // Initial induced velocity guesses
+    let vi = Math.max(0.05, 0.12 * omega * r);
+    let viTheta = 0.015 * omega * r;
 
-    const maxIters = 25;
+    const maxIters = 35;
     const tol = 1e-4;
 
-    let phi = 0;
-    let alpha = 0;
-    let cl = 0;
-    let cd = 0;
-    let Cn = 0;
-    let Ct = 0;
-    let W = 0;
-
     for (let iter = 0; iter < maxIters; iter++) {
-      const vAxial = advanceSpeedMs + vi;
       const vTangential = Math.max(0.01, omega * r - viTheta);
+      const aero = evaluateBlendedSectionAero(
+        advanceSpeedMs + vi,
+        vTangential,
+        theta,
+        chord,
+        nu,
+        material,
+        foilProps
+      );
 
-      W = Math.sqrt(vAxial * vAxial + vTangential * vTangential);
-      phi = Math.atan2(vAxial, vTangential);
-      alpha = theta - phi;
-
-      const polar = evaluateSectionPolar(alpha, foilProps);
-      cl = polar.cl;
-      cd = polar.cd;
-
+      const W = aero.W;
+      const phi = aero.phi;
+      const Cn = aero.Cn;
+      const Ct = aero.Ct;
       const sinPhi = Math.sin(phi);
-      const cosPhi = Math.cos(phi);
 
-      // Prandtl tip and hub loss factor
-      const fTip = Math.max(0.001, (B * (R - r)) / (2.0 * r * Math.max(0.01, Math.abs(sinPhi))));
+      // MANDATORY CORRECTNESS FIX: Prandtl tip loss denominator uses local radius r
+      const sinPhiPos = Math.max(0.01, Math.abs(sinPhi));
+      const fTip = Math.max(0.001, (B * (R - r)) / (2.0 * r * sinPhiPos));
       const Ftip = (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-fTip)));
 
-      const fHub = Math.max(0.001, (B * (r - Rhub)) / (2.0 * r * Math.max(0.01, Math.abs(sinPhi))));
+      // Hub loss factor: Prandtl root loss normalized by hub radius Rhub
+      // References:
+      // - Glauert, H. (1935), "Airplane Propellers", Division L in Aerodynamic Theory (W.F. Durand, ed.)
+      // - Drela, M., XROTOR Theory and User Guide (BEMT root circulation formulation)
+      const fHub = Math.max(0.001, (B * (r - Rhub)) / (2.0 * Rhub * sinPhiPos));
       const Fhub = (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-fHub)));
 
       const F = Math.max(0.05, Ftip * Fhub);
 
-      Cn = cl * cosPhi - cd * sinPhi;
-      Ct = cl * sinPhi + cd * cosPhi;
-
-      // Robust Momentum Inflow Coupling:
-      // (Va + vi) * vi = (sigma * Cn / (4 * F)) * W^2 = K * W^2
+      // Momentum inflow solve with Glauert / high-thrust extension
       const K = Math.max(0, (solidity * Cn) / (4.0 * F));
       const discriminant = Math.pow(advanceSpeedMs / 2.0, 2) + K * W * W;
       const viNew = -advanceSpeedMs / 2.0 + Math.sqrt(Math.max(0, discriminant));
 
-      // Tangential induced velocity:
-      // viTheta = (sigma * Ct * W^2) / (4 * F * (Va + vi))
+      // Tangential induced velocity
       const denomTheta = 4.0 * F * Math.max(0.05, advanceSpeedMs + viNew);
       const viThetaNew = Math.max(0, (solidity * Ct * W * W) / denomTheta);
 
-      // Under-relaxation for smooth convergence
-      const viRelaxed = 0.6 * vi + 0.4 * viNew;
-      const viThetaRelaxed = 0.6 * viTheta + 0.4 * viThetaNew;
+      // Under-relaxation
+      const viRelaxed = 0.65 * vi + 0.35 * viNew;
+      const viThetaRelaxed = 0.65 * viTheta + 0.35 * viThetaNew;
 
       if (Math.abs(viRelaxed - vi) < tol && Math.abs(viThetaRelaxed - viTheta) < tol) {
         vi = viRelaxed;
@@ -357,26 +352,30 @@ export function solveBEMT(
       viTheta = viThetaRelaxed;
     }
 
-    // Re-evaluate aerodynamic coefficients with converged induced velocities
-    const vAxialConverged = advanceSpeedMs + vi;
-    const vTangentialConverged = Math.max(0.01, omega * r - viTheta);
-    W = Math.sqrt(vAxialConverged * vAxialConverged + vTangentialConverged * vTangentialConverged);
-    phi = Math.atan2(vAxialConverged, vTangentialConverged);
-    alpha = theta - phi;
-    const convergedPolar = evaluateSectionPolar(alpha, foilProps);
-    cl = convergedPolar.cl;
-    cd = convergedPolar.cd;
-    const sinPhiFinal = Math.sin(phi);
-    const cosPhiFinal = Math.cos(phi);
-    Cn = cl * cosPhiFinal - cd * sinPhiFinal;
-    Ct = cl * sinPhiFinal + cd * cosPhiFinal;
+    // MANDATORY CORRECTNESS FIX: Recompute aerodynamic quantities from converged induced velocities
+    const vTangentialConv = Math.max(0.01, omega * r - viTheta);
+    const aeroConv = evaluateBlendedSectionAero(
+      advanceSpeedMs + vi,
+      vTangentialConv,
+      theta,
+      chord,
+      nu,
+      material,
+      foilProps
+    );
 
-    // Element forces
-    // dT = 0.5 * rho * W^2 * Cn * chord * dr * B
-    // dQ = 0.5 * rho * W^2 * Ct * chord * r * dr * B
-    const qDyn = 0.5 * rho * W * W;
-    const dT = qDyn * Cn * chord * dr * B;
-    const dQ = qDyn * Ct * chord * r * dr * B;
+    const WConv = aeroConv.W;
+    const phiConv = aeroConv.phi;
+    const alphaConv = aeroConv.alpha;
+    const clConv = aeroConv.cl;
+    const cdConv = aeroConv.cd;
+    const CnConv = aeroConv.Cn;
+    const CtConv = aeroConv.Ct;
+    const reConv = aeroConv.reynolds;
+
+    const qDyn = 0.5 * rho * WConv * WConv;
+    const dT = qDyn * CnConv * chord * dr * B;
+    const dQ = qDyn * CtConv * chord * r * dr * B;
 
     totalThrust += dT;
     totalTorque += dQ;
@@ -386,10 +385,11 @@ export function solveBEMT(
       rOverR,
       chordM: chord,
       twistDeg: (theta * 180.0) / Math.PI,
-      inflowAngleDeg: (phi * 180.0) / Math.PI,
-      alphaDeg: (alpha * 180.0) / Math.PI,
-      cl,
-      cd,
+      inflowAngleDeg: (phiConv * 180.0) / Math.PI,
+      alphaDeg: (alphaConv * 180.0) / Math.PI,
+      cl: clConv,
+      cd: cdConv,
+      reynolds: reConv,
       dT,
       dQ,
       axialInducedMs: vi,
@@ -399,23 +399,29 @@ export function solveBEMT(
 
   // Directional signs for reverse rotation
   if (signRpm < 0) {
-    totalThrust = -totalThrust * 0.70; // 30% reverse thrust camber penalty
-    totalTorque = totalTorque * 0.85;
+    totalThrust = -totalThrust * 0.72; // Reverse thrust camber penalty (~28%)
+    totalTorque = totalTorque * 0.88;
   }
 
-  const powerMech = Math.abs(totalTorque * omega);
+  // Handedness torque sign convention:
+  // CW propeller rotation exerts negative reaction torque on vehicle hull.
+  // CCW propeller rotation exerts positive reaction torque on vehicle hull.
+  const directedTorque = handedness === 'CW' ? -totalTorque : totalTorque;
+
+  const powerMech = Math.max(0, totalTorque * omega);
   const J = advanceSpeedMs / (n * D);
   const kt = totalThrust / (rho * Math.pow(n, 2) * Math.pow(D, 4));
   const kq = totalTorque / (rho * Math.pow(n, 2) * Math.pow(D, 5));
 
+  // MANDATORY CORRECTNESS FIX: Clamp efficiency to [0, 1]
   let efficiency = 0;
-  if (powerMech > 1e-3 && advanceSpeedMs > 1e-3) {
-    efficiency = Math.max(0, Math.min(1.0, (totalThrust * advanceSpeedMs) / powerMech));
+  if (powerMech > 1e-4 && advanceSpeedMs > 1e-4 && totalThrust > 0) {
+    efficiency = Math.min(1.0, Math.max(0.0, (totalThrust * advanceSpeedMs) / powerMech));
   }
 
   return {
     thrustN: totalThrust,
-    torqueNm: totalTorque,
+    torqueNm: directedTorque,
     powerMechW: powerMech,
     advanceRatioJ: J,
     kt,
@@ -423,6 +429,7 @@ export function solveBEMT(
     efficiency,
     rpm,
     advanceSpeedMs,
+    handedness,
     elements
   };
 }
