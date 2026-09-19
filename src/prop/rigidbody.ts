@@ -1,5 +1,5 @@
 /**
- * Propeller rotational inertia and angular dynamics.
+ * Propeller rotational inertia, shaft state, and angular dynamics.
  * Supports Candidate A materials: Rigid 10K, PA12-CF15, PETG.
  */
 
@@ -76,19 +76,15 @@ export function calculatePropellerInertia(
   const bladesMassKg = Math.max(0.0001, totalMassKg - hubMassKg);
 
   // Hub polar moment of inertia (thick cylinder)
-  // I_hub = 0.5 * m_hub * (R_hub^2 + R_bore^2)
   const iHub = 0.5 * hubMassKg * (Rhub * Rhub + Rbore * Rbore);
 
-  // Blades polar moment of inertia
-  // Each blade mass element dm(r) is integrated from Rhub to R:
-  // For standard tapered blade, radius of gyration k_blade ~ 0.62 * R
+  // Blades polar moment of inertia (radius of gyration ~ 0.62 * R)
   const kBlade = 0.62 * R;
   const iBlades = bladesMassKg * (kBlade * kBlade);
 
   const iDry = iHub + iBlades;
 
   // Hydrodynamic added mass moment of inertia for propeller rotating in water
-  // I_added ~ 0.25 * rho_water * R^5 (Lewis / SNAME marine hydrodynamic convention)
   const rhoWater = 1000.0;
   const iAddedMass = 0.22 * rhoWater * Math.pow(R, 5);
 
@@ -124,4 +120,54 @@ export function calculateAngularAcceleration(
   iTotalKgM2: number
 ): number {
   return (qMotorNm - qHydroNm) / Math.max(1e-9, iTotalKgM2);
+}
+
+/**
+ * Propeller Shaft State & Dynamic Response.
+ * Implements first-order lag on RPM (tau default 0.15s), servo lag on pitch angle
+ * (tau default 0.05s), and continuous blade phase integration.
+ */
+export class PropellerShaft {
+  public commandedRpm = 0;
+  public currentRpm = 0;
+  public commandedPitchDeg = 18.0;
+  public currentPitchDeg = 18.0;
+  public bladePhaseRad = 0;
+  public tauRpm = 0.15;   // seconds
+  public tauPitch = 0.05; // seconds
+
+  constructor(initialRpm = 0, initialPitchDeg = 18.0) {
+    this.commandedRpm = initialRpm;
+    this.currentRpm = initialRpm;
+    this.commandedPitchDeg = initialPitchDeg;
+    this.currentPitchDeg = initialPitchDeg;
+  }
+
+  /**
+   * Advances shaft state by dt seconds.
+   */
+  public update(dt: number): void {
+    if (dt <= 0) return;
+
+    // 1. First-order lag on RPM: d(RPM)/dt = (RPM_cmd - RPM) / tau_rpm
+    const alphaRpm = Math.min(1.0, dt / Math.max(1e-3, this.tauRpm));
+    this.currentRpm += (this.commandedRpm - this.currentRpm) * alphaRpm;
+
+    // 2. Servo lag on pitch: d(pitch)/dt = (pitch_cmd - pitch) / tau_pitch
+    const alphaPitch = Math.min(1.0, dt / Math.max(1e-3, this.tauPitch));
+    this.currentPitchDeg += (this.commandedPitchDeg - this.currentPitchDeg) * alphaPitch;
+
+    // 3. Integrate blade phase at real RPM
+    const omega = (this.currentRpm * 2.0 * Math.PI) / 60.0;
+    this.bladePhaseRad = (this.bladePhaseRad + omega * dt) % (2.0 * Math.PI);
+  }
+
+  /**
+   * Returns motion blur alpha in [0, 1] to prevent visual strobing above 500 RPM.
+   */
+  public getBlurAlpha(): number {
+    const absRpm = Math.abs(this.currentRpm);
+    if (absRpm < 500) return 0.0;
+    return Math.min(1.0, (absRpm - 500) / 1500.0);
+  }
 }
