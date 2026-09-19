@@ -4,7 +4,9 @@ import { calculateBuoyancy, computeMetacentricRightingMoment } from '../src/vehi
 import { computeHydrodynamicDamping, CANDIDATE_A_DRAG, CANDIDATE_A_ADDED_MASS } from '../src/vehicle/drag';
 import { VehicleBody } from '../src/vehicle/body';
 import { stepVehicleRigidBody, DEFAULT_TANK_BOUNDARIES } from '../src/vehicle/integrator';
-import { FlowOverlays } from '../src/render/overlays';
+// Legacy renderer relocated out of the runtime module (review Directive 2):
+// no contributor can accidentally import it from the live overlay module.
+import { FlowOverlays } from '../src/render/legacy/flowOverlays';
 import { PropellerArray } from '../src/prop/array';
 import { defaultConfig } from '../src/core/config';
 
