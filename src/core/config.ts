@@ -1,3 +1,15 @@
+/**
+ * SIMULATION CONFIGURATION & COORDINATE CONVENTIONS
+ *
+ * Coordinate system (right-handed):
+ *   +X: Downstream / Starboard in 2D fluid grid (+X downstream)
+ *   +Y: Up (anti-gravity, towards water surface)
+ *   +Z: Into screen / Aft (viewer facing)
+ *
+ * All internal calculations use strict SI units (m, s, kg, N, Nm, W, V, A, rad).
+ * Display units are converted exclusively in UI layer.
+ * See CONVENTIONS.md for official signs, frames, and marine SNAME dynamics.
+ */
 export type AdvectionScheme = 'semi-lagrangian' | 'maccormack';
 export type BoundaryConditionType = 'solid' | 'outflow' | 'free-slip';
 export type PropellerMaterialType = 'rigid10k' | 'pa12cf15' | 'petg';
