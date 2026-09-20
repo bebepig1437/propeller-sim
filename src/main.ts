@@ -1,4 +1,5 @@
 import './index.css';
+import * as THREE from 'three';
 import { defaultConfig } from './core/config';
 import { SimClock } from './core/clock';
 import { GpuFluidSolver } from './fluid/gpu/gpuFluidSolver';
@@ -12,6 +13,16 @@ import { SimPalette } from './ui/palette';
 import { StageOverlays } from './ui/stageOverlays';
 import { SimInspector } from './ui/inspector';
 import { SimHudStrip, type HudMetricsData } from './ui/hud';
+import { PropellerShaft, type PropellerMaterial } from './prop/rigidbody';
+import { solveBEMT } from './prop/bemt';
+import { getPropDesign } from './prop/designs/index';
+import { PowerBus } from './power/bus';
+import { calculateTetherResistanceFromMeters } from './power/tether';
+import { ActuatorDiscCoupler } from './prop/coupling';
+import { HullObstacle } from './fluid/hull';
+import { PropellerArray, type VehiclePropulsionSummary } from './prop/array';
+import { OverlaySystem, DEFAULT_OVERLAY_STATE, type OverlayState, type OverlayUpdateContext, type ThrustCurvePoint } from './render/overlays';
+import { ControlPanel } from './ui/panel';
 
 export class App {
   private clock!: SimClock;
@@ -19,6 +30,26 @@ export class App {
   private fluidSolver!: GpuFluidSolver;
   private fluidRenderer!: FluidRenderer2D;
   private gpuTimer!: GpuTimer;
+
+  // Phase 5b Propeller Array & Torque Ledger
+  public propArray = new PropellerArray();
+
+  // Phase 6 Overlay System & Tweakpane
+  public overlaySystem!: OverlaySystem;
+  public overlayState: OverlayState = { ...DEFAULT_OVERLAY_STATE };
+  public controlPanel?: ControlPanel;
+  private overlayCtx: OverlayUpdateContext = {
+    dt: 0,
+    physicsDt: 0,
+    elapsed: 0,
+    grid: null,
+    gridCenter: new THREE.Vector3(),
+    gridDxM: 0.0015,
+    vehicle: null,
+    summary: null as unknown as VehiclePropulsionSummary,
+    motorTempsC: [],
+    motorCurrentsA: []
+  };
 
   // IBM Quantum Composer UI Components
   public header!: SimHeader;
@@ -37,10 +68,43 @@ export class App {
   private activePresetKey = 'breakout';
   private activeThrottle = 1.0;
   private activeRpm = 4140;
-  private activeThrust_N = 4.73;
-  private activeCurrent_A = 1.41;
+  public activeCurrent_A = 1.41;
   private motorTemp_C = 20.0;
   private runDurationSec = 0.0;
+
+  // Phase 4 Propeller Dynamic & Hydrodynamic State
+  public shaft = new PropellerShaft(4140, 18.0);
+  public activeDesignId: 'candidateA' | 'kaplan' | 'wageningen' = 'candidateA';
+  public activeMaterial: PropellerMaterial = 'rigid10k';
+  public activeHandedness: 'CW' | 'CCW' = 'CW';
+
+  // Phase 4b Electrical Model
+  public bus = new PowerBus(3, 12.0, 0.782);
+
+  // Phase 5 Bidirectional Fluid-Propeller Coupling & Hull Obstacle
+  public coupler = new ActuatorDiscCoupler({
+    centerX: 28,
+    centerY: 64,
+    radiusCells: 14,
+    thicknessCells: 3,
+    gridDxM: 0.0015,
+    depthM: 0.042,
+    inflowRelaxation: 0.5
+  });
+  public hull = new HullObstacle({
+    x: 48,
+    y: 54,
+    width: 28,
+    height: 20,
+    cd: 1.05
+  });
+
+  // Total sim time advanced by physics substeps THIS frame (Directive 5): on a
+  // 240 Hz display one frame may contain 0 substeps (field unchanged, advection
+  // dt = 0) or several (advection must advance by their SUM, not the last one).
+  private physicsAdvancedDt = 0;
+  // Last sampled inflow advance speed (m/s); live forward speed for the ledger (Directive 1)
+  private lastAdvanceSpeedMs = 0;
 
   private metricsData: HudMetricsData = {
     thrust_N: 0,
