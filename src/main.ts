@@ -117,6 +117,7 @@ export class App {
     fps: 60.0,
     frameMs: 16.6,
     gpuMs: 0.0,
+    overlayMs: 0.0,
     presetName: 'Breakout'
   };
 
@@ -132,6 +133,24 @@ export class App {
 
     // 2. Initialize 3D AppRenderer with automatic WebGL2 fallback
     this.renderer = new AppRenderer(layout.viewportEl);
+
+    // 2b. Initialize Phase 6 OverlaySystem (3D overlay group + hover/diff DOM)
+    this.overlaySystem = new OverlaySystem({
+      hoverEl: layout.stagePopoversEl,
+      diffEl: layout.stagePopoversEl
+    });
+    this.overlaySystem.setCamera(this.renderer.camera, layout.viewportEl);
+    this.renderer.scene.add(this.overlaySystem.group);
+    layout.viewportEl.addEventListener('pointermove', (e: PointerEvent) => {
+      const rect = layout.viewportEl.getBoundingClientRect();
+      this.overlaySystem.setPointerNDC(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+    });
+    layout.viewportEl.addEventListener('pointerleave', () => {
+      this.overlaySystem.clearPointer();
+    });
 
     // 3. Initialize Phase 2 GPU Fluid Solver (TSL with CPU fallback) & 2D Debug Overlay
     this.fluidSolver = new GpuFluidSolver({
@@ -194,10 +213,61 @@ export class App {
       }
     });
 
+    // Wire Stage Direct Manipulation Callbacks
+    this.renderer.onPropellerSelected = () => {
+      this.inspector.setSelection({ type: 'thruster', index: 0 });
+    };
+    this.renderer.onPropellerPositionChanged = (zM) => {
+      console.log(`[Stage] Propeller translated along Z-axis: ${zM.toFixed(3)} m`);
+      const baseCenterX = 28;
+      const shiftCells = Math.round(zM / this.coupler.config.gridDxM);
+      this.coupler.config.centerX = Math.max(8, Math.min(this.fluidSolver.grid.width - 40, baseCenterX + shiftCells));
+    };
+    this.renderer.onPitchChanged = (pitchDeg) => {
+      this.shaft.commandedPitchDeg = pitchDeg;
+      this.inspector.thrusterPitch = pitchDeg;
+      const pitchSlider = document.querySelector('#slider-pitch') as HTMLInputElement;
+      if (pitchSlider) pitchSlider.value = pitchDeg.toFixed(1);
+      const valEl = document.querySelector('#val-thruster-pitch');
+      if (valEl) valEl.textContent = `${pitchDeg.toFixed(1)}°`;
+    };
+    this.renderer.onHandednessChanged = (h) => {
+      this.activeHandedness = h;
+      this.inspector.thrusterHandedness = h;
+      const selIdx = this.palette.selectedThruster;
+      if (this.propArray.thrusters[selIdx]) {
+        this.propArray.thrusters[selIdx].handedness = h;
+      }
+    };
+    this.renderer.onIncidenceChanged = (incDeg) => {
+      const selIdx = this.palette.selectedThruster;
+      if (this.propArray.thrusters[selIdx]) {
+        this.propArray.thrusters[selIdx].stator.config.incidenceDeg = incDeg;
+      }
+      this.inspector.statorIncidenceDeg = incDeg;
+      const incSlider = document.querySelector('#slider-th-stator-inc') as HTMLInputElement;
+      if (incSlider) incSlider.value = incDeg.toFixed(1);
+      const valEl = document.querySelector('#val-th-stator-inc');
+      if (valEl) valEl.textContent = `${incDeg.toFixed(1)}°`;
+    };
+    this.renderer.onRemoveThruster = () => {
+      const selIdx = this.palette.selectedThruster;
+      if (this.propArray.thrusters.length > 1) {
+        this.propArray.removeThruster(selIdx);
+        this.palette.setThrusterCount(this.propArray.thrusters.length);
+        this.inspector.propulsorCount = this.propArray.thrusters.length;
+        const newIdx = Math.max(0, this.propArray.thrusters.length - 1);
+        this.inspector.setSelection({ type: 'thruster', index: newIdx });
+      }
+    };
+
     // 8. Mount Left Palette (Physical Primitives)
     this.palette = new SimPalette(layout.paletteEl, {
       onLoadVehicle: (vehicleId) => {
         console.log(`[Palette] Loaded vehicle: ${vehicleId}`);
+        this.propArray.setupCandidateADefaults();
+        this.palette.setThrusterCount(3, 0);
+        this.inspector.propulsorCount = 3;
         this.renderer.resetOrbitView();
       },
       onResetPose: () => {
@@ -205,24 +275,72 @@ export class App {
       },
       onSelectThruster: (idx) => {
         this.inspector.setSelection({ type: 'thruster', index: idx });
+        const unit = this.propArray.thrusters[idx];
+        if (unit) {
+          this.inspector.thrusterHandedness = unit.handedness;
+          this.inspector.thrusterThrottle = unit.throttle;
+          this.inspector.statorAttached = unit.stator.config.vaneType !== 'none';
+          this.inspector.statorSlotted = unit.stator.config.vaneType === 'slotted';
+          this.inspector.statorIncidenceDeg = unit.stator.config.incidenceDeg;
+          this.renderer.prop3D?.setHandedness(unit.handedness);
+          this.renderer.prop3D?.setStatorAttached(unit.stator.config.vaneType !== 'none');
+          this.renderer.prop3D?.setStatorSlotted(unit.stator.config.vaneType === 'slotted');
+          this.renderer.prop3D?.setStatorIncidence(unit.stator.config.incidenceDeg);
+        }
+        this.renderer.prop3D?.setSelected(true);
       },
       onAddThruster: () => {
-        console.log('[Palette] Thruster added');
+        this.propArray.addThruster();
+        const newIdx = this.propArray.thrusters.length - 1;
+        this.palette.setThrusterCount(this.propArray.thrusters.length, newIdx);
+        this.inspector.propulsorCount = this.propArray.thrusters.length;
+        this.inspector.setSelection({ type: 'thruster', index: newIdx });
+        this.renderer.prop3D?.setSelected(true);
       },
       onRemoveThruster: (idx) => {
-        console.log(`[Palette] Thruster ${idx} removed`);
+        this.propArray.removeThruster(idx);
+        this.palette.setThrusterCount(this.propArray.thrusters.length);
+        this.inspector.propulsorCount = this.propArray.thrusters.length;
+        const newIdx = Math.max(0, this.propArray.thrusters.length - 1);
+        this.inspector.setSelection({ type: 'thruster', index: newIdx });
+      },
+      onHandednessPresetChange: (preset) => {
+        this.propArray.applyHandednessPreset(preset);
+        this.palette.handednessPreset = preset;
+        this.inspector.handednessPreset = preset;
+        this.palette.setThrusterCount(this.propArray.thrusters.length);
+        this.inspector.propulsorCount = this.propArray.thrusters.length;
       },
       onToggleStator: (attached) => {
-        this.metricsData.rollRatePrediction_deg_m = attached ? 1.8 : 14.8;
+        const selIdx = this.palette.selectedThruster;
+        if (this.propArray.thrusters[selIdx]) {
+          this.propArray.thrusters[selIdx].stator.config.vaneType = attached
+            ? (this.palette.slottedVane ? 'slotted' : 'solid')
+            : 'none';
+        }
+        this.renderer.prop3D?.setStatorAttached(attached);
+        this.inspector.statorAttached = attached;
       },
       onToggleSlottedVane: (slotted) => {
-        this.metricsData.rollRatePrediction_deg_m = slotted ? 1.8 : 1.4;
+        const selIdx = this.palette.selectedThruster;
+        if (this.propArray.thrusters[selIdx]) {
+          this.propArray.thrusters[selIdx].stator.config.vaneType = slotted ? 'slotted' : 'solid';
+        }
+        this.renderer.prop3D?.setStatorSlotted(slotted);
+        this.inspector.statorSlotted = slotted;
       },
       onSelectPropDesign: (design) => {
-        console.log(`[Palette] Propeller design selected: ${design}`);
+        const oldCurve = this.computeThrustCurve(this.activeDesignId);
+        this.activeDesignId = design;
+        const d = getPropDesign(design);
+        this.renderer.prop3D?.setDesign(d);
+        // Phase 6 variant diff overlay: old vs new open-water thrust curve, 5 s fade
+        const newCurve = this.computeThrustCurve(design);
+        this.overlaySystem.showVariantDiff(oldCurve, newCurve);
       },
       onSelectMaterial: (material) => {
-        console.log(`[Palette] Material selected: ${material}`);
+        this.activeMaterial = material;
+        this.renderer.prop3D?.setMaterial(material);
       },
       onSelectOperatingPoint: (key) => {
         this.applyPreset(key);
