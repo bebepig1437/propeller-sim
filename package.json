@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "NODE_OPTIONS=\"--expose-gc\" vitest run"
   },
   "dependencies": {
     "three": "^0.174.0",
