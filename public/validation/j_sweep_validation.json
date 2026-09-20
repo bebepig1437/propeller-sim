@@ -1,0 +1,30 @@
+{
+  "_comment": "Phase 9 (/validation) static asset for ITTC open-water validation plots. Never imported into src/.",
+  "_consumer": "/validation route (Phase 9)",
+  "title": "Candidate A Propeller BEMT J-Sweep Validation vs XROTOR",
+  "propeller": {
+    "design": "candidateA",
+    "diameterMm": 42.0,
+    "hubDiameterMm": 8.0,
+    "blades": 3,
+    "pitchMm": 33.2,
+    "fluidDensityKgM3": 1000.0,
+    "kinematicViscosityM2S": 1e-6,
+    "rpm": 4140
+  },
+  "sweep": [
+    { "J": 0.0, "advanceSpeedMs": 0.00, "kt": 0.2382, "kq": 0.0302, "efficiency": 0.000, "refKt": 0.2380, "refKq": 0.0302, "refEta": 0.000 },
+    { "J": 0.1, "advanceSpeedMs": 0.29, "kt": 0.2268, "kq": 0.0294, "efficiency": 0.123, "refKt": 0.2260, "refKq": 0.0295, "refEta": 0.122 },
+    { "J": 0.2, "advanceSpeedMs": 0.58, "kt": 0.2117, "kq": 0.0283, "efficiency": 0.238, "refKt": 0.2120, "refKq": 0.0283, "refEta": 0.238 },
+    { "J": 0.3, "advanceSpeedMs": 0.87, "kt": 0.1923, "kq": 0.0263, "efficiency": 0.349, "refKt": 0.1920, "refKq": 0.0264, "refEta": 0.348 },
+    { "J": 0.4, "advanceSpeedMs": 1.16, "kt": 0.1681, "kq": 0.0237, "efficiency": 0.451, "refKt": 0.1680, "refKq": 0.0237, "refEta": 0.451 },
+    { "J": 0.5, "advanceSpeedMs": 1.45, "kt": 0.1428, "kq": 0.0208, "efficiency": 0.547, "refKt": 0.1430, "refKq": 0.0209, "refEta": 0.546 },
+    { "J": 0.6, "advanceSpeedMs": 1.74, "kt": 0.1153, "kq": 0.0174, "efficiency": 0.633, "refKt": 0.1150, "refKq": 0.0174, "refEta": 0.633 },
+    { "J": 0.7, "advanceSpeedMs": 2.03, "kt": 0.0856, "kq": 0.0135, "efficiency": 0.705, "refKt": 0.0860, "refKq": 0.0136, "refEta": 0.704 },
+    { "J": 0.8, "advanceSpeedMs": 2.32, "kt": 0.0537, "kq": 0.0091, "efficiency": 0.749, "refKt": 0.0540, "refKq": 0.0091, "refEta": 0.749 },
+    { "J": 0.9, "advanceSpeedMs": 2.61, "kt": 0.0178, "kq": 0.0039, "efficiency": 0.654, "refKt": 0.0180, "refKq": 0.0040, "refEta": 0.650 },
+    { "J": 1.0, "advanceSpeedMs": 2.90, "kt": -0.0293, "kq": -0.0032, "efficiency": 0.000, "refKt": -0.0290, "refKq": -0.0032, "refEta": 0.000 },
+    { "J": 1.1, "advanceSpeedMs": 3.19, "kt": -0.0912, "kq": -0.0134, "efficiency": 0.000, "refKt": -0.0910, "refKq": -0.0135, "refEta": 0.000 },
+    { "J": 1.2, "advanceSpeedMs": 3.48, "kt": -0.1674, "kq": -0.0264, "efficiency": 0.000, "refKt": -0.1670, "refKq": -0.0264, "refEta": 0.000 }
+  ]
+}
