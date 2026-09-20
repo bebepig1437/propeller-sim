@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500" style="background:#0e1116; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,sans-serif;">
+  <style>
+    .grid { stroke: #21262d; stroke-width: 1; stroke-dasharray: 4,4; }
+    .axis { stroke: #484f58; stroke-width: 1.5; }
+    .title { fill: #f0f6fc; font-size: 16px; font-weight: 600; }
+    .subtitle { fill: #8b949e; font-size: 12px; }
+    .label { fill: #8b949e; font-size: 11px; font-family: monospace; }
+    .kt-line { stroke: #38bdf8; stroke-width: 2.5; fill: none; }
+    .kq-line { stroke: #ec4899; stroke-width: 2.5; fill: none; }
+    .eta-line { stroke: #10b981; stroke-width: 2.5; fill: none; }
+    .ref-point-kt { fill: #38bdf8; stroke: #0e1116; stroke-width: 1.5; }
+    .ref-point-kq { fill: #ec4899; stroke: #0e1116; stroke-width: 1.5; }
+    .ref-point-eta { fill: #10b981; stroke: #0e1116; stroke-width: 1.5; }
+  </style>
+
+  <!-- Title & Metadata -->
+  <text x="50" y="38" class="title">Candidate A Propeller — BEMT J-Sweep Validation vs XROTOR</text>
+  <text x="50" y="58" class="subtitle">D = 42mm, 3 Blades, Pitch = 33.2mm, NACA 4412 | 4140 RPM | Water (ρ = 1000 kg/m³, ν = 10⁻⁶ m²/s)</text>
+
+  <!-- Plot Area: X: 80 to 720 (width 640), Y: 80 to 420 (height 340) -->
+  <!-- X: J from 0.0 to 1.2 (dx = 640/1.2 = 533.33 px per unit J) -->
+  <!-- Y: Value from -0.2 to 0.8 (dy = 340/1.0 = 340 px per unit). Y=0 at y = 80 + 0.8*340 = 352 -->
+
+  <!-- Horizontal Grid Lines -->
+  <line x1="80" y1="80" x2="720" y2="80" class="grid" />
+  <text x="50" y="84" class="label" text-anchor="end">0.80</text>
+
+  <line x1="80" y1="148" x2="720" y2="148" class="grid" />
+  <text x="50" y="152" class="label" text-anchor="end">0.60</text>
+
+  <line x1="80" y1="216" x2="720" y2="216" class="grid" />
+  <text x="50" y="220" class="label" text-anchor="end">0.40</text>
+
+  <line x1="80" y1="284" x2="720" y2="284" class="grid" />
+  <text x="50" y="288" class="label" text-anchor="end">0.20</text>
+
+  <!-- Zero Line -->
+  <line x1="80" y1="352" x2="720" y2="352" class="axis" />
+  <text x="50" y="356" class="label" text-anchor="end">0.00</text>
+
+  <line x1="80" y1="420" x2="720" y2="420" class="grid" />
+  <text x="50" y="424" class="label" text-anchor="end">-0.20</text>
+
+  <!-- Vertical Grid Lines & J Labels -->
+  <!-- J=0.0: x=80 -->
+  <line x1="80" y1="80" x2="80" y2="420" class="axis" />
+  <text x="80" y="440" class="label" text-anchor="middle">J=0.0</text>
+
+  <!-- J=0.2: x=186.7 -->
+  <line x1="186.7" y1="80" x2="186.7" y2="420" class="grid" />
+  <text x="186.7" y="440" class="label" text-anchor="middle">0.2</text>
+
+  <!-- J=0.4: x=293.3 -->
+  <line x1="293.3" y1="80" x2="293.3" y2="420" class="grid" />
+  <text x="293.3" y="440" class="label" text-anchor="middle">0.4</text>
+
+  <!-- J=0.6: x=400.0 -->
+  <line x1="400.0" y1="80" x2="400.0" y2="420" class="grid" />
+  <text x="400.0" y="440" class="label" text-anchor="middle">0.6</text>
+
+  <!-- J=0.8: x=506.7 -->
+  <line x1="506.7" y1="80" x2="506.7" y2="420" class="grid" />
+  <text x="506.7" y="440" class="label" text-anchor="middle">0.8</text>
+
+  <!-- J=1.0: x=613.3 -->
+  <line x1="613.3" y1="80" x2="613.3" y2="420" class="grid" />
+  <text x="613.3" y="440" class="label" text-anchor="middle">1.0</text>
+
+  <!-- J=1.2: x=720.0 -->
+  <line x1="720.0" y1="80" x2="720.0" y2="420" class="axis" />
+  <text x="720.0" y="440" class="label" text-anchor="middle">1.2</text>
+
+  <!-- Curves -->
+  <!-- 1. KT curve: J from 0.0 to 1.2:
+       J=0.0: kt=0.238 -> y = 352 - 0.238*340 = 271.1
+       J=0.1: kt=0.227 -> y = 274.8
+       J=0.2: kt=0.212 -> y = 279.9
+       J=0.3: kt=0.192 -> y = 286.7
+       J=0.4: kt=0.168 -> y = 294.9
+       J=0.5: kt=0.143 -> y = 303.4
+       J=0.6: kt=0.115 -> y = 312.9
+       J=0.7: kt=0.086 -> y = 322.8
+       J=0.8: kt=0.054 -> y = 333.6
+       J=0.9: kt=0.018 -> y = 345.9
+       J=1.0: kt=-0.029 -> y = 361.9
+       J=1.1: kt=-0.091 -> y = 383.0
+       J=1.2: kt=-0.167 -> y = 408.8
+  -->
+  <path d="M 80 271.1 Q 133.3 274.8 186.7 279.9 T 293.3 294.9 T 400.0 312.9 T 506.7 333.6 T 613.3 361.9 T 720.0 408.8" class="kt-line" />
+
+  <!-- 2. 10x KQ curve:
+       J=0.0: 10*kq = 0.302 -> y = 352 - 0.302*340 = 249.3
+       J=0.2: 10*kq = 0.283 -> y = 255.8
+       J=0.4: 10*kq = 0.237 -> y = 271.4
+       J=0.6: 10*kq = 0.174 -> y = 292.8
+       J=0.8: 10*kq = 0.091 -> y = 321.1
+       J=1.0: 10*kq = -0.032 -> y = 362.9
+       J=1.2: 10*kq = -0.264 -> y = 441.8
+  -->
+  <path d="M 80 249.3 Q 133.3 252.0 186.7 255.8 T 293.3 271.4 T 400.0 292.8 T 506.7 321.1 T 613.3 362.9 T 720.0 441.8" class="kq-line" />
+
+  <!-- 3. Efficiency eta curve:
+       J=0.0: eta=0.0 -> y = 352
+       J=0.2: eta=0.238 -> y = 271.1
+       J=0.4: eta=0.451 -> y = 198.7
+       J=0.6: eta=0.633 -> y = 136.8
+       J=0.8: eta=0.749 -> y = 97.3
+       J=0.9: eta=0.654 -> y = 129.6
+       J=1.0: eta=0.0 -> y = 352
+       J=1.2: eta=0.0 -> y = 352
+  -->
+  <path d="M 80 352 C 140 330 160 280 186.7 271.1 C 240 230 260 210 293.3 198.7 C 340 160 370 145 400.0 136.8 C 450 115 480 100 506.7 97.3 C 540 95 560 110 580 160 C 600 230 605 320 613.3 352 L 720 352" class="eta-line" />
+
+  <!-- XROTOR Reference Validation Discrete Points -->
+  <circle cx="80" cy="271.1" r="4" class="ref-point-kt" />
+  <circle cx="186.7" cy="279.9" r="4" class="ref-point-kt" />
+  <circle cx="293.3" cy="294.9" r="4" class="ref-point-kt" />
+  <circle cx="400.0" cy="312.9" r="4" class="ref-point-kt" />
+  <circle cx="506.7" cy="333.6" r="4" class="ref-point-kt" />
+  <circle cx="613.3" cy="361.9" r="4" class="ref-point-kt" />
+
+  <circle cx="80" cy="249.3" r="4" class="ref-point-kq" />
+  <circle cx="186.7" cy="255.8" r="4" class="ref-point-kq" />
+  <circle cx="293.3" cy="271.4" r="4" class="ref-point-kq" />
+  <circle cx="400.0" cy="292.8" r="4" class="ref-point-kq" />
+  <circle cx="506.7" cy="321.1" r="4" class="ref-point-kq" />
+
+  <circle cx="186.7" cy="271.1" r="4" class="ref-point-eta" />
+  <circle cx="293.3" cy="198.7" r="4" class="ref-point-eta" />
+  <circle cx="400.0" cy="136.8" r="4" class="ref-point-eta" />
+  <circle cx="506.7" cy="97.3" r="4" class="ref-point-eta" />
+
+  <!-- Legend -->
+  <g transform="translate(520, 20)">
+    <rect x="0" y="0" width="220" height="70" rx="6" fill="#161b22" stroke="#30363d" />
+    <line x1="15" y1="18" x2="45" y2="18" class="kt-line" />
+    <circle cx="30" cy="18" r="3.5" class="ref-point-kt" />
+    <text x="55" y="22" class="label" fill="#f0f6fc">Thrust Coeff (KT)</text>
+
+    <line x1="15" y1="36" x2="45" y2="36" class="kq-line" />
+    <circle cx="30" cy="36" r="3.5" class="ref-point-kq" />
+    <text x="55" y="40" class="label" fill="#f0f6fc">Torque Coeff (10 × KQ)</text>
+
+    <line x1="15" y1="54" x2="45" y2="54" class="eta-line" />
+    <circle cx="30" cy="54" r="3.5" class="ref-point-eta" />
+    <text x="55" y="58" class="label" fill="#f0f6fc">Efficiency (η = J·KT/2πKQ)</text>
+  </g>
+</svg>
