@@ -2,23 +2,23 @@
  * Stage Overlays Component:
  * 1. Corner Cutaway Toggle button
  * 2. Vertical Overlay Icon Strip on stage's right edge (with hover tooltips & color discipline)
+ *
+ * The toggle state lives in the shared OverlayState (src/render/overlays.ts)
+ * so the 3D OverlaySystem, this strip, and Tweakpane all stay in sync.
  */
 
-export interface OverlayState {
-  velocityVectors: boolean;
-  streamlines: boolean;
-  pressureHeatmap: boolean;
-  vorticity: boolean;
-  particles: boolean;
-  thrustArrows: boolean;
-  torqueArrows: boolean;
-  thermal: boolean;
-  currentFlow: boolean;
-}
+import type { OverlayState } from '../render/overlays';
+
+export type { OverlayState } from '../render/overlays';
 
 export interface StageOverlayCallbacks {
   onToggleCutaway: (active: boolean) => void;
   onToggleOverlay: (overlayKey: keyof OverlayState, active: boolean) => void;
+}
+
+export interface StageOverlaysOptions {
+  /** Shared state object (created by caller, seeded with DEFAULT_OVERLAY_STATE). */
+  sharedState?: OverlayState;
 }
 
 interface OverlayDef {
@@ -47,38 +47,44 @@ export class StageOverlays {
   private callbacks: StageOverlayCallbacks;
 
   private cutawayActive = false;
-  public state: OverlayState = {
-    velocityVectors: true,
-    thrustArrows: true,
-    torqueArrows: false,
-    thermal: false,
-    currentFlow: false,
-    vorticity: false,
-    streamlines: false,
-    pressureHeatmap: false,
-    particles: false
-  };
+  public state: OverlayState;
 
   constructor(
     cornerContainer: HTMLElement,
     stripContainer: HTMLElement,
     cutawayContainer: HTMLElement,
-    callbacks: StageOverlayCallbacks
+    callbacks: StageOverlayCallbacks,
+    options?: StageOverlaysOptions
   ) {
     this.cornerContainer = cornerContainer;
     this.stripContainer = stripContainer;
     this.cutawayContainer = cutawayContainer;
     this.callbacks = callbacks;
+    this.state = options?.sharedState ?? {
+      velocityVectors: true,
+      thrustArrows: true,
+      torqueArrows: false,
+      thermal: false,
+      currentFlow: false,
+      vorticity: false,
+      streamlines: false,
+      pressureHeatmap: false,
+      particles: false
+    };
     this.render();
   }
 
   public render(): void {
-    // 1. Stage Corner Cutaway Button
+    // 1. Stage Corner Cutaway Button & Coupling Badge
     this.cornerContainer.innerHTML = `
       <button id="btn-toggle-cutaway" class="btn-stage-tool ${this.cutawayActive ? 'active' : ''}" title="Toggle 2D Side Cutaway Cross-Section">
         <span>◫</span>
         <span>Cutaway View</span>
       </button>
+      <div id="thrust-coupling-badge" class="stage-coupling-badge hidden">
+        <span>⇄ COUPLING</span>
+        <span id="thrust-coupling-text">--</span>
+      </div>
     `;
 
     const cutawayBtn = this.cornerContainer.querySelector('#btn-toggle-cutaway');
@@ -112,6 +118,30 @@ export class StageOverlays {
         this.callbacks.onToggleOverlay(key, this.state[key]);
       });
     });
+  }
+
+  /**
+   * Updates the stage corner BEMT-vs-grid thrust agreement badge.
+   * Only visible when the thrust or velocity overlay is turned on and thrust is active.
+   */
+  public updateCouplingBadge(agreementPct: number, bemtN: number, gridN: number): void {
+    const badgeEl = this.cornerContainer.querySelector('#thrust-coupling-badge');
+    const textEl = this.cornerContainer.querySelector('#thrust-coupling-text');
+    if (!badgeEl || !textEl) return;
+
+    const overlayOn = this.state.thrustArrows || this.state.velocityVectors;
+    if (!overlayOn || Math.abs(bemtN) < 0.05) {
+      badgeEl.classList.add('hidden');
+      return;
+    }
+
+    badgeEl.classList.remove('hidden');
+    if (agreementPct >= 85) {
+      badgeEl.classList.add('converged');
+    } else {
+      badgeEl.classList.remove('converged');
+    }
+    textEl.textContent = `${agreementPct.toFixed(1)}% (BEMT: ${bemtN.toFixed(2)}N | Grid: ${gridN.toFixed(2)}N)`;
   }
 
   private updateCutawayVisibility(): void {
