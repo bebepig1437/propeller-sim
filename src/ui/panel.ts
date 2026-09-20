@@ -1,5 +1,7 @@
 import { Pane } from 'tweakpane';
 import type { SimConfig } from '../core/config';
+import type { OverlayState, OverlayTunables } from '../render/overlays';
+import { MAX_STREAMLINES, MAX_PARTICLES_TUNABLE } from '../render/overlays';
 
 export interface TelemetryMetrics {
   fps: number;
@@ -38,13 +40,16 @@ export interface PanelCallbacks {
   onSetSideCutawayView?: () => void;
   onResetOrbitView?: () => void;
   onSunChange?: (elevation: number, azimuth: number) => void;
+  onOverlayToggle?: (key: keyof OverlayState, active: boolean) => void;
 }
 
 export class ControlPanel {
   public pane: Pane;
   private metrics: TelemetryMetrics;
+  private overlayBindings: Map<keyof OverlayState, any> = new Map();
+  private syncingOverlays = false;
 
-  constructor(config: SimConfig, metrics: TelemetryMetrics, callbacks?: PanelCallbacks) {
+  constructor(config: SimConfig, metrics: TelemetryMetrics, callbacks?: PanelCallbacks, overlayState?: OverlayState, overlayTunables?: OverlayTunables) {
     this.metrics = metrics;
 
     this.pane = new Pane({
@@ -166,10 +171,70 @@ export class ControlPanel {
     orbitBtn.on('click', () => {
       callbacks?.onResetOrbitView?.();
     });
+
+    // Overlays (Phase 6): shared-state toggles + tuning knobs
+    if (overlayState && overlayTunables) {
+      const overlayFolder = this.pane.addFolder({ title: 'Overlays (Phase 6)', expanded: false });
+
+      const overlayKeys: (keyof OverlayState)[] = [
+        'velocityVectors',
+        'streamlines',
+        'pressureHeatmap',
+        'vorticity',
+        'particles',
+        'thrustArrows',
+        'torqueArrows',
+        'thermal',
+        'currentFlow'
+      ];
+      for (const key of overlayKeys) {
+        const binding = overlayFolder.addBinding(overlayState, key, { label: ControlPanel.OVERLAY_LABELS[key] });
+        binding.on('change', (ev) => {
+          if (this.syncingOverlays) return; // external sync, no echo
+          callbacks?.onOverlayToggle?.(key, ev.value as boolean);
+        });
+        this.overlayBindings.set(key, binding);
+      }
+
+      // Directive 7: tunables are hard-capped at the panel to match the
+      // runtime caps (MAX_STREAMLINES / MAX_PARTICLES_TUNABLE) — no path can
+      // dial CPU integration past the frame budget.
+      overlayFolder.addBinding(overlayTunables, 'vectorStride', { min: 8, max: 96, step: 4, label: 'Vector Stride' });
+      overlayFolder.addBinding(overlayTunables, 'vectorScale', { min: 0.01, max: 0.12, step: 0.005, label: 'Vector Scale' });
+      overlayFolder.addBinding(overlayTunables, 'streamlineCount', { min: 10, max: MAX_STREAMLINES, step: 5, label: 'Streamlines' });
+      overlayFolder.addBinding(overlayTunables, 'particleCount', { min: 200, max: MAX_PARTICLES_TUNABLE, step: 200, label: 'Particles' });
+      overlayFolder.addBinding(overlayTunables, 'rollIndicatorGain', { min: 0.2, max: 4.0, step: 0.1, label: 'Roll Gain' });
+    }
   }
+
+  private static OVERLAY_LABELS: Record<keyof OverlayState, string> = {
+    velocityVectors: 'Velocity Vectors',
+    streamlines: 'Streamlines',
+    pressureHeatmap: 'Pressure Heatmap',
+    vorticity: 'Vorticity',
+    particles: 'Particles',
+    thrustArrows: 'Thrust Arrows',
+    torqueArrows: 'Torque Arrows',
+    thermal: 'Thermal',
+    currentFlow: 'Current Flow'
+  };
 
   public update(): void {
     this.pane.refresh();
+  }
+
+  /**
+   * Syncs the Tweakpane overlay bindings from an external state change
+   * (e.g. icon-strip click) without re-firing change callbacks.
+   */
+  public syncOverlayState(state: OverlayState): void {
+    this.syncingOverlays = true;
+    for (const [key, binding] of this.overlayBindings) {
+      if (binding && key in state) {
+        (binding as any).value = state[key];
+      }
+    }
+    this.syncingOverlays = false;
   }
 
   public dispose(): void {
