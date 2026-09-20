@@ -57,6 +57,15 @@ The local vehicle body frame is centered at the **Center of Gravity (CoG)** foll
 - **Forward Thrust Gain**: $+0.04\,\text{N}$ at breakout.
 - **Reverse Penalty**: $-0.09\,\text{N}$ when operating in reverse flow.
 
+### 2.4 BEMT Sign Conventions & Hydrodynamic Bounds
+- **Forward Thrust**: Positive along $+X_b$ (longitudinal forward surge) when advance velocity $V_a \ge 0$ and pitch $> 0$.
+- **Reverse Thrust**: Produced by negative blade pitch angle or reverse rotational RPM ($n < 0$).
+- **Tangential Inflow Velocity**:
+  $$V_\theta = \omega r \mp v_{i\theta}$$
+  CW handedness flips the tangential swirl term to oppose rotation, generating negative reaction torque; CCW produces positive reaction torque. Flipping CW to CCW produces $|T|$ and $|Q|$ equal within $10^{-6}$ and opposite torque signs.
+- **Efficiency Clamping**: Hydrodynamic open-water efficiency is clamped strictly to $\eta \in [0, 1]$.
+- **Zero-RPM Locked-Rotor Drag**: When $|RPM| < 1$, the propeller operates in locked-rotor drag mode, returning non-empty radial elements and producing quadratic drag $F_{\text{drag}} = -0.5 \rho V_a^2 C_d A$.
+
 ---
 
 ## 3. Physical Units (Strict SI)
@@ -116,3 +125,35 @@ All internal computation engines must compute strictly in standard SI units. Con
 4. **Conservative Surface Heightfield**: Surface elevation integrates $\frac{d\eta}{dt} = v_{\text{surf}} \cdot 0.15 - g_{\text{restoring}} \cdot \eta$. The restoring term $-g_{\text{restoring}} \cdot \eta$ ensures total heightfield energy is flat (within 1%) in still water and does not inject phantom energy.
 5. **Gerstner Spectral Cutoff & Advection**: Gerstner octaves operate below the grid Nyquist cutoff ($\sim 2 \cdot dx$). Gerstner amplitude scales with local fluid velocity, and propagation direction is advected by the local flow.
 6. **Seafoam Decay**: Foam is driven by vorticity and velocity readback, with a finite lifetime ($5\,\text{s}$ default) preventing unnatural accumulation in recirculation zones. Foam is advected solely by the fluid field, not Gerstner waves.
+7. **Reverse-Flow Transition Blend Band**: To eliminate force discontinuity and non-physical pressure feedback spikes when local axial inflow $v_{\text{net}} = V_a + v_i$ crosses zero, BEMT employs a Hermite polynomial smoothstep blend across transition band $w = 0.05\,\text{m/s}$ (`REVERSE_FLOW_BLEND_BAND_MS`):
+   $$t = \text{clamp}\left(\frac{v_{\text{net}} + w}{2w},\, 0,\, 1\right),\quad s(t) = 3t^2 - 2t^3$$
+   Forward ($C_n, C_t, W$) and reverse polars are evaluated and blended smoothly with $s(t)$, guaranteeing $C^1$ continuity ($< 1\%$ change per $0.001\,\text{m/s}$ step across the boundary).
+8. **Prandtl Tip and Hub Loss Formulations**:
+   - Tip loss: $f_{\text{tip}} = \frac{B}{2} \frac{R - r}{r \sin \phi}$, $F_{\text{tip}} = \frac{2}{\pi} \arccos(\exp(-f_{\text{tip}}))$.
+   - Hub loss: $f_{\text{hub}} = \frac{B}{2} \frac{r - R_{\text{hub}}}{r \sin \phi}$, $F_{\text{hub}} = \frac{2}{\pi} \arccos(\exp(-f_{\text{hub}}))$ (Drela XROTOR / OpenProp).
+   - Combined factor $F = \max(0.05, F_{\text{tip}} \cdot F_{\text{hub}})$ guarantees circulation smoothly vanishes at both the blade tip and hub root.
+9. **Fluid Coupling Swirl Sign Propagation**:
+   - Propeller handedness derives `swirlSign: +1 | -1` (`CW = -1`, `CCW = +1`), matching hull reaction torque conventions.
+   - Actuator disk body force injection imparts signed tangential swirl velocity $v_\theta(r)$ across the disk and tip vortex shear, ensuring counter-rotating units coaxially produce opposite-sign tangential momentum at the disk centroid within $10^{-6}$.
+10. **Torque Ledger Lifecycle and Steady-State Terminal Roll Rate**:
+   - Entries are indexed by `${sourceId}_${sourceType}` in a fixed-capacity Map. Thruster removal mid-run calls `removeSource(id)` which purges the slot, ensuring no ghost torques leak into $Q_{\text{prop\_total}}$.
+   - Steady-state roll rate accounts for hydrodynamic rotational damping: $\omega_{\text{terminal}} = Q_{\text{net}} / B_{\text{roll}}$, with calibrated linear roll damping $B_{\text{roll}} = 0.0014276\,\text{N}\cdot\text{m}/(\text{rad/s})$ at $U = 1.0\,\text{m/s}$, reproducing Candidate A spec anchor points ($14.8^\circ/\text{m}$ uncompensated baseline, $1.8^\circ/\text{m}$ slotted stator).
+   - **`getNetSummary(forwardSpeedMs)` takes a REQUIRED forward speed** (Phase 6 principal review, Directive 1). Callers pass `1.0` for the spec IMU anchor, the live sampled inflow $U$ when running, and `0` when genuinely at rest. `terminalRollRateDegPerM_at_1ms` is defined **only at $U = 1.0\,\text{m/s}$** and must NOT be interpreted as a speed-invariant material property: with crossflow damping scaling as $B_{\text{roll}}(U) = B_{\text{roll}} \cdot (U / U_{\text{ref}})$, the deg/m rate scales as $1/U^2$. Calling with `0` yields `valid: false` and `NaN` in every `*DegPerM` field — this is an explicit "at rest, undefined" signal, never silently substituted with $1\,\text{m/s}$.
+
+## 8. Overlay Frame Mappings & Timestep Provenance (Phase 6)
+
+1. **Centralized frame transforms**: every overlay maps grid↔world and body↔world through `src/render/frameMap.ts` (`gridToWorld`, `worldToGrid`, `bodyPointToWorld`, `bodyDirToWorld`). No overlay may inline its own axis remap — a future rotated/tilted fluid plane changes exactly one module.
+2. **Grid plane extent is derived, never stored**: extent = `gridDims × gridDxM` computed at the use site. There is no separate extent field that can drift from the grid resolution.
+3. **Overlay advection uses the FIXED physics dt** (`ctx.physicsDt`, the SUM of substeps executed this frame, 0 when paused), NOT the render dt. Streamline/particle integration therefore stays time-consistent with the velocity field at any display refresh rate (a 240 Hz frame with zero substeps advances no advection; a dropped frame with 3 substeps advances 3 steps' worth). Render dt (`ctx.dt`) drives pure animation only: variant-diff fade, current pulse, roll-needle smoothing. This is the documented split from the Phase 6 principal review, Directive 5.
+4. **Roll-needle clipping is visible** (Directive 6): `|rate| ≥ ROLL_NEEDLE_CLAMP_DEG (45°)` shifts the needle to the heat accent and `OverlaySystem.rollRateRaw` always exposes the raw value. Overlays never silently flatline.
+5. **Instanced draw counts track ACTIVE counts, not capacity** (Directive 3): `count`/`setDrawRange` are set to the live instance count every frame; buffer uploads are range-limited (`addUpdateRange`) to the dirty slice (Directive 8). Particle buffers are a documented exception: they are regenerated wholly each frame by design.
+
+## 9. Documentation Layout (Directive 6)
+
+1. `docs/` is the canonical repository home for comprehensive architectural, design, and phase specification documents (e.g. `docs/PHASE_DOCUMENT_FINAL.md`).
+2. The repository root contains only high-level developer guidance (`README.md`), project conventions (`CONVENTIONS.md`), and the agent context rules symlink (`AGENTS.md -> .agy/rules.md`). Phase-by-phase design deep dives must not accumulate at root.
+
+## 10. Validation Asset Provenance & Isolation (Directive 5)
+
+1. Static datasets in `public/validation/` (`j_sweep_validation.json`, `j_sweep_validation.svg`) are reserved solely as static assets for the Phase 9 offline `/validation` report page.
+2. Per master architecture rules, runtime modules under `src/` must NEVER import from `public/validation/`. Dynamic runtime comparisons against oracles occur exclusively offline or within Vitest test fixtures under `tests/`.
