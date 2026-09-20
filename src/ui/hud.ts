@@ -21,10 +21,23 @@ export interface HudMetricsData {
   current_A: number;
   temp_C: number;
   rollRatePrediction_deg_m?: number;
+  netThrustVector_N?: [number, number, number];
+  netTorqueVector_Nm?: [number, number, number];
+  perUnitTelemetry?: {
+    id: string;
+    thrust_N: number;
+    torque_Nm: number;
+    rpm: number;
+    current_A: number;
+    temp_C: number;
+  }[];
+  dT_dr?: { rOverR: number; dT: number }[];
 
   fps: number;
   frameMs: number;
   gpuMs: number;
+  /** OverlaySystem.update() cost, EMA-smoothed (Directive 7 frame-budget gate). */
+  overlayMs?: number;
   presetName: string;
 }
 
@@ -48,6 +61,7 @@ export class SimHudStrip {
   private historyBuffers: Map<MetricChannel, number[]> = new Map();
   private maxHistorySamples = 300;
   private lastSampleTime = 0;
+  private lastMetrics?: HudMetricsData;
 
   // Cached DOM elements
   private thrustEl!: HTMLElement;
@@ -106,7 +120,7 @@ export class SimHudStrip {
           <span class="hud-metric-val" id="hud-temp-val">20.0 °C</span>
         </div>
 
-        <div class="hud-metric" data-channel="roll" id="hud-roll-metric" style="display:none;" title="Phase 5b: Predicted net roll rate from torque ledger">
+        <div class="hud-metric" data-channel="roll" id="hud-roll-metric" title="Predicted net roll rate at 1 m/s (Torque Ledger prediction, not a measurement)">
           <span class="hud-metric-label">Pred Roll</span>
           <span class="hud-metric-val" id="hud-roll-val">1.8 °/m</span>
         </div>
@@ -144,23 +158,57 @@ export class SimHudStrip {
   }
 
   public update(metrics: HudMetricsData, nowMs: number = performance.now()): void {
-    if (this.thrustEl) this.thrustEl.textContent = `${metrics.thrust_N.toFixed(2)} N`;
-    if (this.torqueEl) this.torqueEl.textContent = `${metrics.torque_Nm.toFixed(3)} Nm`;
+    if (this.thrustEl) {
+      if (metrics.netThrustVector_N) {
+        const [fx, fy, fz] = metrics.netThrustVector_N;
+        this.thrustEl.textContent = `${metrics.thrust_N.toFixed(2)} N`;
+        this.thrustEl.parentElement?.setAttribute(
+          'title',
+          `Net Thrust Vector: [Surge: ${fx.toFixed(2)} N, Sway: ${fy.toFixed(2)} N, Heave: ${fz.toFixed(2)} N]`
+        );
+      } else {
+        this.thrustEl.textContent = `${metrics.thrust_N.toFixed(2)} N`;
+      }
+    }
+
+    if (this.torqueEl) {
+      if (metrics.netTorqueVector_Nm) {
+        const [mx, my, mz] = metrics.netTorqueVector_Nm;
+        this.torqueEl.textContent = `${metrics.torque_Nm.toFixed(3)} Nm`;
+        this.torqueEl.parentElement?.setAttribute(
+          'title',
+          `Net Torque Vector: [Roll: ${mx.toFixed(4)} Nm, Pitch: ${my.toFixed(4)} Nm, Yaw: ${mz.toFixed(4)} Nm]`
+        );
+      } else {
+        this.torqueEl.textContent = `${metrics.torque_Nm.toFixed(3)} Nm`;
+      }
+    }
+
     if (this.rpmEl) this.rpmEl.textContent = `${Math.round(metrics.rpm)} rpm`;
     if (this.busVEl) this.busVEl.textContent = `${metrics.bus_V.toFixed(2)} V`;
     if (this.currentEl) this.currentEl.textContent = `${metrics.current_A.toFixed(2)} A`;
     if (this.tempEl) this.tempEl.textContent = `${metrics.temp_C.toFixed(1)} °C`;
 
+    // Directive 1: NaN roll rate means "at rest / no speed-anchored prediction"
+    // — display an explicit em dash, never a silently 1 m/s-anchored number.
     if (metrics.rollRatePrediction_deg_m !== undefined) {
-      const rollBox = this.container.querySelector('#hud-roll-metric') as HTMLElement;
-      if (rollBox) rollBox.style.display = 'inline-flex';
-      if (this.rollEl) this.rollEl.textContent = `${metrics.rollRatePrediction_deg_m.toFixed(1)} °/m`;
+      if (this.rollEl) {
+        const rr = metrics.rollRatePrediction_deg_m;
+        this.rollEl.textContent = Number.isFinite(rr) ? `${rr.toFixed(1)} °/m` : '— °/m';
+      }
     }
 
     if (this.fpsEl) this.fpsEl.textContent = metrics.fps.toFixed(1);
     if (this.frameMsEl) this.frameMsEl.textContent = `${metrics.frameMs.toFixed(1)} ms`;
     if (this.gpuMsEl) this.gpuMsEl.textContent = `${metrics.gpuMs.toFixed(1)} ms`;
+    // Directive 7: overlay cost is rendered into the GPU cell as a suffix when
+    // non-trivial, so the 60 fps acceptance can be watched live without new chrome.
+    if (this.gpuMsEl && metrics.overlayMs !== undefined && metrics.overlayMs > 0.5) {
+      this.gpuMsEl.textContent += ` (+${metrics.overlayMs.toFixed(1)} ov)`;
+    }
     if (this.presetEl) this.presetEl.textContent = metrics.presetName;
+
+    this.lastMetrics = metrics;
 
     // History sample every 100ms (10 Hz)
     if (nowMs - this.lastSampleTime >= 100) {
@@ -171,7 +219,7 @@ export class SimHudStrip {
       this.recordSample('bus_v', metrics.bus_V);
       this.recordSample('current', metrics.current_A);
       this.recordSample('temp', metrics.temp_C);
-      if (metrics.rollRatePrediction_deg_m !== undefined) {
+      if (metrics.rollRatePrediction_deg_m !== undefined && Number.isFinite(metrics.rollRatePrediction_deg_m)) {
         this.recordSample('roll', metrics.rollRatePrediction_deg_m);
       }
 
@@ -292,5 +340,36 @@ export class SimHudStrip {
     ctx.font = '10px monospace';
     ctx.textAlign = 'right';
     ctx.fillText(`${curVal.toFixed(2)} ${p.unit}`, width - 4, 12);
+
+    // Live radial dT/dr profile inset for thrust channel
+    if (p.channel === 'thrust' && this.lastMetrics?.dT_dr && this.lastMetrics.dT_dr.length > 0) {
+      const radial = this.lastMetrics.dT_dr;
+      const rMax = Math.max(1e-4, ...radial.map(x => x.dT));
+      const insetW = 55;
+      const insetH = 26;
+      const insetX = 6;
+      const insetY = 4;
+
+      ctx.fillStyle = 'rgba(10, 25, 40, 0.75)';
+      ctx.fillRect(insetX, insetY, insetW, insetH);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+      ctx.strokeRect(insetX, insetY, insetW, insetH);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.font = '7px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('dT/dr', insetX + 2, insetY + 8);
+
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < radial.length; i++) {
+        const px = insetX + 2 + (i / (radial.length - 1)) * (insetW - 4);
+        const py = insetY + insetH - 2 - (radial[i].dT / rMax) * (insetH - 12);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
   }
 }
