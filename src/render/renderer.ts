@@ -4,6 +4,7 @@ import { WebGPURenderer } from 'three/webgpu';
 import { WaterSurface } from './surface';
 import { CausticTextureGenerator, applyUnderwaterOpticalProperties } from './water';
 import { Propeller3D } from '../prop/geometry';
+import { CANDIDATE_A_DESIGN } from '../prop/designs/index';
 import type { FluidGrid } from '../fluid/grid';
 
 export interface RendererInitResult {
@@ -77,6 +78,23 @@ export class AppRenderer {
   private groundPlane: THREE.Mesh;
   private tankStructure: THREE.Group;
   private isDisposed = false;
+
+  // Propeller Direct Manipulation Callbacks
+  public onPropellerSelected?: () => void;
+  public onPropellerPositionChanged?: (zM: number) => void;
+  public onPitchChanged?: (pitchDeg: number) => void;
+  public onHandednessChanged?: (handedness: 'CW' | 'CCW') => void;
+  public onIncidenceChanged?: (incidenceDeg: number) => void;
+  public onRemoveThruster?: () => void;
+
+  private isDraggingTranslate = false;
+  private isDraggingPitch = false;
+  private isDraggingIncidence = false;
+  private raycaster = new THREE.Raycaster();
+  private mouse = new THREE.Vector2();
+  private dragStartY = 0;
+  private startPitch = 18.0;
+  private startIncidence = -5.2;
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
@@ -158,6 +176,16 @@ export class AppRenderer {
       speed: 1.1
     });
     this.scene.add(this.waterSurface.mesh);
+
+    // Phase 4 3D Procedural Propeller with Direct Manipulation
+    this.prop3D = new Propeller3D({
+      design: CANDIDATE_A_DESIGN,
+      materialType: 'rigid10k',
+      handedness: 'CW'
+    });
+    this.prop3D.group.position.set(0, 0, 0);
+    this.scene.add(this.prop3D.group);
+    this.setupPropellerInteraction();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', this.onResize);
@@ -359,12 +387,119 @@ export class AppRenderer {
     return tank;
   }
 
+  private setupPropellerInteraction(): void {
+    if (typeof window === 'undefined' || !this.renderer.domElement) return;
+    const dom = this.renderer.domElement as HTMLElement;
+    if (typeof dom.addEventListener !== 'function') return;
+
+    dom.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (!this.prop3D) return;
+
+      const rect = dom.getBoundingClientRect();
+      this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+      const intersects = this.raycaster.intersectObjects([this.prop3D.group], true);
+
+      if (intersects.length > 0) {
+        let hit = intersects[0].object;
+
+        // Check if clicking handedness toggle badge
+        if (hit === this.prop3D.handednessBadge) {
+          const newH = this.prop3D.toggleHandedness();
+          this.onHandednessChanged?.(newH);
+          e.stopPropagation();
+          return;
+        }
+
+        // Check if clicking translate handle
+        if (hit.parent === this.prop3D.axisTranslateHandle || hit === this.prop3D.axisTranslateHandle) {
+          this.isDraggingTranslate = true;
+          this.controls.enabled = false;
+          e.stopPropagation();
+          return;
+        }
+
+        // Check if clicking pitch handle
+        if (hit.parent === this.prop3D.pitchArcHandle || hit === this.prop3D.pitchArcHandle) {
+          this.isDraggingPitch = true;
+          this.dragStartY = e.clientY;
+          this.startPitch = this.prop3D.currentPitchDeg;
+          this.controls.enabled = false;
+          e.stopPropagation();
+          return;
+        }
+
+        // Check if clicking stator incidence handle
+        if (hit.parent === this.prop3D.statorIncidenceHandle || hit === this.prop3D.statorIncidenceHandle) {
+          this.isDraggingIncidence = true;
+          this.dragStartY = e.clientY;
+          this.startIncidence = this.prop3D.statorIncidenceDeg;
+          this.controls.enabled = false;
+          e.stopPropagation();
+          return;
+        }
+
+        // Clicking propeller body/hub selects it
+        this.prop3D.setSelected(true);
+        this.onPropellerSelected?.();
+      } else {
+        // Clicking empty space deselects handles if not dragging
+        if (!this.isDraggingTranslate && !this.isDraggingPitch && !this.isDraggingIncidence) {
+          this.prop3D.setSelected(false);
+        }
+      }
+    });
+
+    dom.addEventListener('pointermove', (e: PointerEvent) => {
+      if (!this.prop3D) return;
+
+      if (this.isDraggingTranslate) {
+        const delta = -e.movementY * 0.0015;
+        this.prop3D.group.position.z = Math.max(-0.25, Math.min(0.25, this.prop3D.group.position.z + delta));
+        this.onPropellerPositionChanged?.(this.prop3D.group.position.z);
+      } else if (this.isDraggingPitch) {
+        const dy = (this.dragStartY - e.clientY) * 0.2;
+        const newPitch = Math.max(5.0, Math.min(35.0, this.startPitch + dy));
+        this.prop3D.currentPitchDeg = newPitch;
+        this.onPitchChanged?.(newPitch);
+      } else if (this.isDraggingIncidence) {
+        const dy = (this.dragStartY - e.clientY) * 0.15;
+        const newInc = Math.max(-15.0, Math.min(15.0, this.startIncidence + dy));
+        this.prop3D.setStatorIncidence(newInc);
+        this.onIncidenceChanged?.(newInc);
+      }
+    });
+
+    const onPointerUp = () => {
+      if (this.isDraggingTranslate || this.isDraggingPitch || this.isDraggingIncidence) {
+        this.isDraggingTranslate = false;
+        this.isDraggingPitch = false;
+        this.isDraggingIncidence = false;
+        this.controls.enabled = true;
+      }
+    };
+
+    window.addEventListener('pointerup', onPointerUp);
+
+    // Keyboard shortcut: Delete or Backspace removes selected thruster
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (this.prop3D?.isSelected) {
+          this.onRemoveThruster?.();
+        }
+      }
+    });
+  }
+
   public render(
     time = performance.now() * 0.001,
     causticIntensity = 1.0,
     fluidGrid?: FluidGrid,
     dt = 1.0 / 60.0,
-    propAngle?: number
+    propAngle?: number,
+    propRpm?: number
   ): void {
     if (this.isDisposed) return;
 
@@ -374,9 +509,9 @@ export class AppRenderer {
     // Update animated floor caustics
     this.caustics.update(time, causticIntensity);
 
-    // Update 3D propeller rotation if attached
+    // Update 3D propeller rotation if attached with high-RPM blur
     if (this.prop3D && propAngle !== undefined) {
-      this.prop3D.setRotation(propAngle);
+      this.prop3D.setRotation(propAngle, propRpm ?? 0);
     }
 
     this.controls.update();
