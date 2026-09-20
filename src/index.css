@@ -376,6 +376,30 @@ html, body {
   background: rgba(0, 242, 255, 0.1);
 }
 
+.stage-coupling-badge {
+  background: rgba(14, 17, 22, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.stage-coupling-badge.converged {
+  border-color: var(--accent-thrust);
+  color: var(--accent-thrust);
+}
+
+.stage-coupling-badge.hidden {
+  display: none !important;
+}
+
 /* Stage Right-Edge Vertical Overlay Strip */
 .stage-overlay-strip {
   position: absolute;
@@ -514,6 +538,51 @@ html, body {
   font-family: var(--font-mono);
   font-size: 9px;
   color: var(--text-muted);
+}
+
+/* ── Phase 6 Overlay hover numeric label (hover-only, no persistent chrome) ── */
+.overlay-hover-label {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  background: rgba(10, 13, 18, 0.92);
+  border: 1px solid var(--accent-thrust);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--accent-thrust);
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transform: translateZ(0);
+}
+
+.overlay-hover-label.hidden {
+  display: none;
+}
+
+.overlay-hover-label .q-prop {
+  color: var(--accent-torque);
+}
+
+.overlay-hover-label .q-stator {
+  color: color-mix(in srgb, var(--accent-torque) 45%, var(--bg-primary, #0a0d12));
+}
+
+/* ── Phase 6 Variant diff mini-plot (auto-fires on design swap, fades after 5s) ── */
+.overlay-variant-diff {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 25;
+  pointer-events: none;
+  background: rgba(10, 13, 18, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.15s linear;
 }
 
 /* Popover Stripcharts in Stage Corner */
