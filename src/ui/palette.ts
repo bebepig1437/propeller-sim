@@ -3,12 +3,20 @@
  * Physical primitives: Vehicle, Thrusters, Stators, Propeller Designs, Materials.
  */
 
+export type HandednessPresetType =
+  | 'alternating'
+  | 'all_cw'
+  | 'all_ccw'
+  | 'contra_rotating_coaxial'
+  | 'tandem';
+
 export interface PaletteCallbacks {
   onLoadVehicle: (vehicleId: 'candidateA' | 'custom') => void;
   onResetPose: () => void;
   onSelectThruster: (thrusterIndex: number) => void;
   onAddThruster: () => void;
   onRemoveThruster: (thrusterIndex: number) => void;
+  onHandednessPresetChange?: (preset: HandednessPresetType) => void;
   onToggleStator: (attached: boolean) => void;
   onToggleSlottedVane: (slotted: boolean) => void;
   onSelectPropDesign: (design: 'candidateA' | 'kaplan' | 'wageningen') => void;
@@ -20,12 +28,13 @@ export class SimPalette {
   private container: HTMLElement;
   private callbacks: PaletteCallbacks;
 
-  private selectedThruster = 0;
-  private thrusterCount = 3;
-  private statorAttached = true;
-  private slottedVane = true;
-  private activeDesign: 'candidateA' | 'kaplan' | 'wageningen' = 'candidateA';
-  private activeMaterial: 'rigid10k' | 'pa12cf15' | 'petg' = 'rigid10k';
+  public selectedThruster = 0;
+  public thrusterCount = 3;
+  public handednessPreset: HandednessPresetType = 'alternating';
+  public statorAttached = true;
+  public slottedVane = true;
+  public activeDesign: 'candidateA' | 'kaplan' | 'wageningen' = 'candidateA';
+  public activeMaterial: 'rigid10k' | 'pa12cf15' | 'petg' = 'rigid10k';
 
   constructor(container: HTMLElement, callbacks: PaletteCallbacks) {
     this.container = container;
@@ -50,7 +59,7 @@ export class SimPalette {
         </div>
       </div>
 
-      <!-- 2. Thrusters -->
+      <!-- 2. Thrusters Array & Presets -->
       <div class="palette-section">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <span class="palette-section-title">Thrusters</span>
@@ -64,6 +73,18 @@ export class SimPalette {
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;">
           <button class="palette-btn" id="btn-add-thruster" style="justify-content:center;">+ Add</button>
           <button class="palette-btn" id="btn-remove-thruster" style="justify-content:center;" ${this.thrusterCount <= 1 ? 'disabled' : ''}>− Del</button>
+        </div>
+
+        <!-- Handedness Layout Preset Dropdown -->
+        <div style="margin-top: 6px;">
+          <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 2px;">Handedness Preset</span>
+          <select class="palette-select" id="select-handedness-preset" style="width: 100%;">
+            <option value="alternating" ${this.handednessPreset === 'alternating' ? 'selected' : ''}>Alternating (CW, CCW, CW)</option>
+            <option value="all_cw" ${this.handednessPreset === 'all_cw' ? 'selected' : ''}>All CW (Single-Shaft)</option>
+            <option value="all_ccw" ${this.handednessPreset === 'all_ccw' ? 'selected' : ''}>All CCW</option>
+            <option value="contra_rotating_coaxial" ${this.handednessPreset === 'contra_rotating_coaxial' ? 'selected' : ''}>Contra-Rotating Coaxial (CRP)</option>
+            <option value="tandem" ${this.handednessPreset === 'tandem' ? 'selected' : ''}>Tandem Series (Additive)</option>
+          </select>
         </div>
       </div>
 
@@ -147,6 +168,19 @@ export class SimPalette {
       }
     });
 
+    // Handedness Preset
+    const presetSelect = this.container.querySelector('#select-handedness-preset') as HTMLSelectElement;
+    presetSelect?.addEventListener('change', () => {
+      const p = presetSelect.value as HandednessPresetType;
+      this.handednessPreset = p;
+      if (p === 'contra_rotating_coaxial' || p === 'tandem') {
+        this.thrusterCount = 2;
+        this.selectedThruster = 0;
+        this.render();
+      }
+      this.callbacks.onHandednessPresetChange?.(p);
+    });
+
     // Stator
     this.container.querySelector('#btn-toggle-stator')?.addEventListener('click', () => {
       this.statorAttached = !this.statorAttached;
@@ -187,6 +221,16 @@ export class SimPalette {
 
   public setSelectedThruster(idx: number): void {
     this.selectedThruster = idx;
+    this.render();
+  }
+
+  public setThrusterCount(count: number, activeIdx?: number): void {
+    this.thrusterCount = count;
+    if (activeIdx !== undefined) {
+      this.selectedThruster = activeIdx;
+    } else if (this.selectedThruster >= count) {
+      this.selectedThruster = count - 1;
+    }
     this.render();
   }
 }
