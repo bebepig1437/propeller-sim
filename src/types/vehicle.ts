@@ -20,6 +20,37 @@ export interface VehicleBuoyancy {
   cob_above_cog_mm: number;
 }
 
+/** Frame truss lumped-mass distribution used for the inertia tensor. */
+export interface FrameTrussConfig {
+  /** Number of corner truss nodes (SeaPerch box frame: 8). */
+  node_count: number;
+  /** Fraction of frame mass in the corner nodes; remainder in the rails. */
+  node_mass_fraction: number;
+  /** Fraction of frame mass in the rails (node_fraction + rail_fraction = 1). */
+  rail_mass_fraction: number;
+  /** Half-diagonal distance (m) from CoG to each corner node. */
+  corner_half_gap_m: number;
+}
+
+export type RotorSpinAxis = 'surge' | 'sway' | 'heave';
+
+export interface RotorMountConfig {
+  id: string;
+  surge_m: number;
+  sway_m: number;
+  heave_m: number;
+  spin_axis: RotorSpinAxis;
+}
+
+export interface VehicleGeometry {
+  frame_length_m: number;
+  frame_width_m: number;
+  frame_height_m: number;
+  frame_truss: FrameTrussConfig;
+  prop_inertia_zz_kgm2: PropellerMass;
+  rotor_mounts: RotorMountConfig[];
+}
+
 export interface MotorConfig {
   model: string;
   Ra_ohm: number;
@@ -81,6 +112,7 @@ export interface VehicleConfig {
   name: string;
   mass: VehicleMass;
   buoyancy: VehicleBuoyancy;
+  geometry?: VehicleGeometry;
   motor: MotorConfig;
   tether: TetherConfig;
   propeller: PropellerConfig;

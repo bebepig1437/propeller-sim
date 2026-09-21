@@ -199,6 +199,7 @@ export class OverlaySystem {
   private particleAge!: Float32Array;
   private particleLife!: Float32Array;
   private particleCountActive = 0;
+  private particleAllocatedCapacity = 0;
 
   // ── Vehicle-anchored overlays ──
   private thrustArrows: THREE.Group[] = [];
@@ -777,17 +778,22 @@ export class OverlaySystem {
 
   private ensureParticles(count: number): void {
     count = Math.max(1, Math.min(MAX_PARTICLES, Math.round(count)));
-    if (this.particleCountActive === count) return;
+    if (this.particlePoints && count <= this.particleAllocatedCapacity) {
+      this.particleCountActive = count;
+      return;
+    }
     this.disposeParticles();
 
-    this.particlePos = new Float32Array(count * 3);
-    this.particleVel = new Float32Array(count * 2);
-    this.particleAge = new Float32Array(count);
-    this.particleLife = new Float32Array(count);
+    const allocCount = Math.max(count, MAX_PARTICLES);
+    this.particleAllocatedCapacity = allocCount;
+    this.particlePos = new Float32Array(allocCount * 3);
+    this.particleVel = new Float32Array(allocCount * 2);
+    this.particleAge = new Float32Array(allocCount);
+    this.particleLife = new Float32Array(allocCount);
 
     const ptGeo = new THREE.BufferGeometry();
-    ptGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-    ptGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    ptGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allocCount * 3), 3));
+    ptGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(allocCount * 3), 3));
     const ptMat = new THREE.PointsMaterial({
       size: 0.006,
       vertexColors: true,
@@ -801,8 +807,8 @@ export class OverlaySystem {
 
     // Motion blur: per-particle velocity-stretched segment (no post-processing)
     const streakGeo = new THREE.BufferGeometry();
-    streakGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 2 * 3), 3));
-    streakGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 2 * 3), 3));
+    streakGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(allocCount * 2 * 3), 3));
+    streakGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(allocCount * 2 * 3), 3));
     const streakMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
@@ -814,7 +820,7 @@ export class OverlaySystem {
     this.particleGroup.add(this.particleStreaks);
 
     this.particleCountActive = count;
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < allocCount; i++) {
       this.seedParticle(i);
     }
   }
@@ -914,13 +920,14 @@ export class OverlaySystem {
 
   private disposeParticles(): void {
     if (!this.particlePoints) return;
+    this.particleAllocatedCapacity = 0;
+    this.particleCountActive = 0;
     this.particlePoints.geometry.dispose();
     (this.particlePoints.material as THREE.Material).dispose();
     this.particlePoints.removeFromParent();
     this.particleStreaks.geometry.dispose();
     (this.particleStreaks.material as THREE.Material).dispose();
     this.particleStreaks.removeFromParent();
-    this.particleCountActive = 0;
   }
 
   // ─────────────────────── vehicle-anchored overlays ──────────────────────

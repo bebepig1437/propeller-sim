@@ -13,6 +13,27 @@
     "rho_kg_m3": 1000.0,
     "cob_above_cog_mm": 12.5
   },
+  "geometry": {
+    "frame_length_m": 0.20,
+    "frame_width_m": 0.16,
+    "frame_height_m": 0.14,
+    "frame_truss": {
+      "node_count": 8,
+      "node_mass_fraction": 0.6,
+      "rail_mass_fraction": 0.4,
+      "corner_half_gap_m": 0.088
+    },
+    "prop_inertia_zz_kgm2": {
+      "rigid10k": 3.92e-7,
+      "pa12cf15": 2.72e-7,
+      "petg": 3.01e-7
+    },
+    "rotor_mounts": [
+      { "id": "port", "surge_m": 0.0, "sway_m": -0.075, "heave_m": 0.0, "spin_axis": "surge" },
+      { "id": "starboard", "surge_m": 0.0, "sway_m": 0.075, "heave_m": 0.0, "spin_axis": "surge" },
+      { "id": "vertical", "surge_m": 0.0, "sway_m": 0.0, "heave_m": 0.0, "spin_axis": "heave" }
+    ]
+  },
   "motor": {
     "model": "Mabuchi RC-280RA",
     "Ra_ohm": 4.50,
