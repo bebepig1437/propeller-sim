@@ -195,3 +195,156 @@ export function compileSpatialMassBody(
   };
 }
 
+export function coriolisBodyForce(spatial: SpatialMassBody, nu: Marine6, out: Marine6): Marine6 {
+  const [u, v, w, p, q, r] = nu;
+  const [m1, m2, m3] = spatial.translationalKg;
+  const [i1, i2, i3] = spatial.rigidRotationalKgM2;
+  const [a1, a2, a3] = spatial.addedTranslationalKg;
+  const [ap, aq, ar] = spatial.addedRotationalKgM2;
+
+  out[0] = q * (m3 * w) - r * (m2 * v);
+  out[1] = r * (m1 * u) - p * (m3 * w);
+  out[2] = p * (m2 * v) - q * (m1 * u);
+
+  out[3] = q * (i3 * r) - r * (i2 * q) + (v * (a3 * w) - w * (a2 * v)) + (q * (ar * r) - r * (aq * q));
+  out[4] = r * (i1 * p) - p * (i3 * r) + (w * (a1 * u) - u * (a3 * w)) + (r * (ap * p) - p * (ar * r));
+  out[5] = p * (i2 * q) - q * (i1 * p) + (u * (a2 * v) - v * (a1 * u)) + (p * (aq * q) - q * (ap * p));
+
+  return out;
+}
+
+export function coriolisPower(spatial: SpatialMassBody, nu: Marine6): number {
+  const force: Marine6 = [0, 0, 0, 0, 0, 0];
+  coriolisBodyForce(spatial, nu, force);
+  let power = 0;
+  for (let i = 0; i < 6; i++) {
+    power += force[i] * nu[i];
+  }
+  return power;
+}
+
+export class VehicleBody {
+  public position: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
+  public quaternion: THREE.Quaternion = new THREE.Quaternion(0, 0, 0, 1);
+  public velocityBodyMs: Marine3 = [0, 0, 0];
+  public angularVelocityBodyRadS: Marine3 = [0, 0, 0];
+
+  public readonly dryMassKg: number;
+  public readonly displacedMassKg: number;
+  public buoyancyForces: BuoyancyForces;
+  public readonly geometry: RigidBodyGeometry;
+  public rigidBodyInertiaKgM2: Marine3;
+  public spatialMass: SpatialMassBody;
+  public dragCoefficients: DragCoefficients6DOF;
+  public angularRateClampRadS: number;
+
+  private readonly scratchWorldVelocity = new THREE.Vector3();
+  private readonly scratchInverseQuaternion = new THREE.Quaternion();
+
+  constructor(config: SimConfig['vehicle'], propMassG = 1.8) {
+    this.buoyancyForces = calculateBuoyancy(config, propMassG);
+    this.dryMassKg = this.buoyancyForces.dryMassKg;
+    this.displacedMassKg = this.buoyancyForces.displacedMassKg;
+    this.geometry = buildRigidBodyGeometry(config, propMassG);
+    this.rigidBodyInertiaKgM2 = compileRigidBodyInertia(this.geometry);
+    this.spatialMass = compileSpatialMassBody(this.dryMassKg, this.rigidBodyInertiaKgM2, compileAddedMass(config));
+    this.dragCoefficients = compileDragCoefficients(config);
+    this.angularRateClampRadS = config.angularRateClampRadS;
+  }
+
+  public applyTunables(config: SimConfig['vehicle']): void {
+    this.spatialMass = compileSpatialMassBody(this.dryMassKg, this.rigidBodyInertiaKgM2, compileAddedMass(config));
+    this.dragCoefficients = compileDragCoefficients(config);
+    this.angularRateClampRadS = config.angularRateClampRadS;
+  }
+
+  public reset(position: Marine3 = [0, 0, 0], yawRad = 0): void {
+    this.position.set(position[0], position[1], position[2]);
+    this.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad);
+    this.velocityBodyMs = [0, 0, 0];
+    this.angularVelocityBodyRadS = [0, 0, 0];
+  }
+
+  public worldVelocity(out: THREE.Vector3): THREE.Vector3 {
+    marineToThreeVector(this.velocityBodyMs, out);
+    return out.applyQuaternion(this.quaternion);
+  }
+
+  public setBodyVelocityFromWorld(worldVelocity: THREE.Vector3): void {
+    this.scratchInverseQuaternion.copy(this.quaternion).invert();
+    this.scratchWorldVelocity.copy(worldVelocity).applyQuaternion(this.scratchInverseQuaternion);
+    threeToMarine(this.scratchWorldVelocity, this.velocityBodyMs);
+  }
+
+  public localToWorldVector(v: THREE.Vector3): THREE.Vector3 {
+    return v.clone().applyQuaternion(this.quaternion);
+  }
+
+  public worldToLocalVector(v: THREE.Vector3): THREE.Vector3 {
+    this.scratchInverseQuaternion.copy(this.quaternion).invert();
+    return v.clone().applyQuaternion(this.scratchInverseQuaternion);
+  }
+
+  public localToWorldPoint(p: THREE.Vector3): THREE.Vector3 {
+    return p.clone().applyQuaternion(this.quaternion).add(this.position);
+  }
+
+  public getEulerDegrees(): { rollDeg: number; pitchDeg: number; yawDeg: number } {
+    const euler = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
+    const toDeg = 180 / Math.PI;
+    return { rollDeg: euler.z * toDeg, pitchDeg: euler.x * toDeg, yawDeg: euler.y * toDeg };
+  }
+
+  public get angularSpeedRadS(): number {
+    const [p, q, r] = this.angularVelocityBodyRadS;
+    return Math.sqrt(p * p + q * q + r * r);
+  }
+
+  public clampAngularRate(): boolean {
+    const speed = this.angularSpeedRadS;
+    const max = this.angularRateClampRadS;
+    if (speed > max && speed > 1e-12) {
+      const scale = max / speed;
+      this.angularVelocityBodyRadS[0] *= scale;
+      this.angularVelocityBodyRadS[1] *= scale;
+      this.angularVelocityBodyRadS[2] *= scale;
+      return true;
+    }
+    return false;
+  }
+
+  public kineticEnergyJ(): number {
+    const [u, v, w, p, q, r] = [
+      this.velocityBodyMs[0],
+      this.velocityBodyMs[1],
+      this.velocityBodyMs[2],
+      this.angularVelocityBodyRadS[0],
+      this.angularVelocityBodyRadS[1],
+      this.angularVelocityBodyRadS[2]
+    ];
+    const [m1, m2, m3] = this.spatialMass.translationalKg;
+    const [i1, i2, i3] = this.spatialMass.rotationalKgM2;
+    return 0.5 * (m1 * u * u + m2 * v * v + m3 * w * w + i1 * p * p + i2 * q * q + i3 * r * r);
+  }
+
+  public spatialVelocityVector(): Marine6 {
+    return [
+      this.velocityBodyMs[0],
+      this.velocityBodyMs[1],
+      this.velocityBodyMs[2],
+      this.angularVelocityBodyRadS[0],
+      this.angularVelocityBodyRadS[1],
+      this.angularVelocityBodyRadS[2]
+    ];
+  }
+
+  public snapshot(): VehiclePoseSnapshot {
+    return {
+      position: [this.position.x, this.position.y, this.position.z],
+      quaternion: [this.quaternion.x, this.quaternion.y, this.quaternion.z, this.quaternion.w],
+      spatialVelocityBody: this.spatialVelocityVector()
+    };
+  }
+}
+
+export { CANDIDATE_A_DRAG, CANDIDATE_A_ADDED_MASS };

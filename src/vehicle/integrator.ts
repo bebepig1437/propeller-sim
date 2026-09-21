@@ -1,7 +1,14 @@
 import * as THREE from 'three';
-import { VehicleBody } from './body';
+import {
+  VehicleBody,
+  coriolisBodyForce,
+  marineAngularToThree,
+  threeToMarine,
+  type Marine3,
+  type Marine6
+} from './body';
 import { computeHydrodynamicDamping } from './drag';
-import { computeMetacentricRightingMoment } from './buoyancy';
+import { metacentricRestoringTorqueBodyMarine } from './buoyancy';
 
 export interface ThrusterInput6DOF {
   surgeN?: number;
@@ -10,14 +17,14 @@ export interface ThrusterInput6DOF {
   rollNm?: number;
   pitchNm?: number;
   yawNm?: number;
-  forceBody?: [number, number, number];  // Direct [X (Sway), Y (Heave), Z (Surge)]
-  momentBody?: [number, number, number]; // Direct [X (Pitch), Y (Yaw), Z (Roll)]
+  forceBodyMarine?: Marine3;
+  momentBodyMarine?: Marine3;
 }
 
 export interface TankBoundaries {
-  floorElevationM: number;   // default -0.25m
-  surfaceElevationM: number; // default +0.22m
-  radiusM: number;           // default 1.1m
+  floorElevationM: number;
+  surfaceElevationM: number;
+  radiusM: number;
 }
 
 export const DEFAULT_TANK_BOUNDARIES: TankBoundaries = {
@@ -26,199 +33,277 @@ export const DEFAULT_TANK_BOUNDARIES: TankBoundaries = {
   radiusM: 1.1
 };
 
-export interface IntegratorTelemetry {
-  bodyVelocity: [number, number, number];
-  bodyAcceleration: [number, number, number];
-  dragForceN: [number, number, number];
-  restoringTorqueNm: [number, number, number];
-  isGrounded: boolean;
-  isBroaching: boolean;
+export interface TetherParams {
+  attached: boolean;
+  anchorWorld: Marine3;
+  stiffnessNm: number;
+  dampingNPerMs: number;
 }
 
-// Static reusable scratch objects for zero-allocation 60Hz physics stepping
-const _scratchVecA = new THREE.Vector3();
-const _scratchVecB = new THREE.Vector3();
-const _scratchQuatInv = new THREE.Quaternion();
-const _scratchRotDelta = new THREE.Quaternion();
+export interface IntegratorTelemetry {
+  bodyVelocityMs: Marine3;
+  bodyAccelerationMs2: Marine3;
+  dragForceBodyN: Marine3;
+  coriolisForceBodyN: Marine6;
+  restoringTorqueBodyNm: Marine3;
+  tetherForceBodyN: Marine3;
+  appliedForceBodyN: Marine3;
+  appliedTorqueBodyNm: Marine3;
+  contactNormalWorld: Marine3;
+  isGrounded: boolean;
+  isBroaching: boolean;
+  isWallContact: boolean;
+  angularRateClamped: boolean;
+}
 
-/**
- * 6-DOF Symplectic rigid body dynamics integrator (Phase 6b).
- * Computes hydrodynamic damping, metacentric restoring moment, net positive buoyancy,
- * thrust forces/torques, and applies tank wall and floor boundary constraints.
- */
+const ZERO_MARINE3: Marine3 = [0, 0, 0];
+
+const DETACHED_TETHER: TetherParams = {
+  attached: false,
+  anchorWorld: [0, 0, 0],
+  stiffnessNm: 0,
+  dampingNPerMs: 0
+};
+
+const scratchWorldVelocity = new THREE.Vector3();
+const scratchBodyVector = new THREE.Vector3();
+const scratchInverseQuaternion = new THREE.Quaternion();
+const scratchRotationDelta = new THREE.Quaternion();
+const scratchAxis = new THREE.Vector3();
+
+const nu: Marine6 = [0, 0, 0, 0, 0, 0];
+const nuDot: Marine6 = [0, 0, 0, 0, 0, 0];
+const coriolisForce: Marine6 = [0, 0, 0, 0, 0, 0];
+const angularVelocityBody: Marine3 = [0, 0, 0];
+const ambientFlowBody: Marine3 = [0, 0, 0];
+const relativeFlowBody: Marine3 = [0, 0, 0];
+const forceBody: Marine3 = [0, 0, 0];
+const torqueBody: Marine3 = [0, 0, 0];
+const buoyancyForceBody: Marine3 = [0, 0, 0];
+const tetherForceBody: Marine3 = [0, 0, 0];
+const contactNormalWorld: Marine3 = [0, 0, 0];
+const restoringTorqueBody: Marine3 = [0, 0, 0];
+
+const thrusterInputMarine: { forceMarine: Marine3; momentMarine: Marine3 } = {
+  forceMarine: [0, 0, 0],
+  momentMarine: [0, 0, 0]
+};
+
+const telemetry: IntegratorTelemetry = {
+  bodyVelocityMs: [0, 0, 0],
+  bodyAccelerationMs2: [0, 0, 0],
+  dragForceBodyN: [0, 0, 0],
+  coriolisForceBodyN: [0, 0, 0, 0, 0, 0],
+  restoringTorqueBodyNm: [0, 0, 0],
+  tetherForceBodyN: [0, 0, 0],
+  appliedForceBodyN: [0, 0, 0],
+  appliedTorqueBodyNm: [0, 0, 0],
+  contactNormalWorld: [0, 0, 0],
+  isGrounded: false,
+  isBroaching: false,
+  isWallContact: false,
+  angularRateClamped: false
+};
+
+function worldToBodyMarine(world: THREE.Vector3, quaternion: THREE.Quaternion, out: Marine3): Marine3 {
+  scratchInverseQuaternion.copy(quaternion).invert();
+  scratchBodyVector.copy(world).applyQuaternion(scratchInverseQuaternion);
+  return threeToMarine(scratchBodyVector, out);
+}
+
+export function thrusterInputToMarine(
+  thrusterInput: ThrusterInput6DOF | Marine3 = ZERO_MARINE3,
+  thrusterMoments?: Marine3
+): { forceMarine: Marine3; momentMarine: Marine3 } {
+  const result = thrusterInputMarine;
+
+  if (Array.isArray(thrusterInput)) {
+    result.forceMarine[0] = thrusterInput[2];
+    result.forceMarine[1] = thrusterInput[0];
+    result.forceMarine[2] = thrusterInput[1];
+    result.momentMarine[0] = thrusterMoments ? thrusterMoments[2] : 0;
+    result.momentMarine[1] = thrusterMoments ? thrusterMoments[0] : 0;
+    result.momentMarine[2] = thrusterMoments ? thrusterMoments[1] : 0;
+    return result;
+  }
+
+  const input = thrusterInput as ThrusterInput6DOF;
+  if (input.forceBodyMarine) {
+    result.forceMarine[0] = input.forceBodyMarine[0];
+    result.forceMarine[1] = input.forceBodyMarine[1];
+    result.forceMarine[2] = input.forceBodyMarine[2];
+  } else {
+    result.forceMarine[0] = input.surgeN ?? 0;
+    result.forceMarine[1] = input.swayN ?? 0;
+    result.forceMarine[2] = input.heaveN ?? 0;
+  }
+
+  if (input.momentBodyMarine) {
+    result.momentMarine[0] = input.momentBodyMarine[0];
+    result.momentMarine[1] = input.momentBodyMarine[1];
+    result.momentMarine[2] = input.momentBodyMarine[2];
+  } else {
+    result.momentMarine[0] = input.rollNm ?? 0;
+    result.momentMarine[1] = input.pitchNm ?? 0;
+    result.momentMarine[2] = input.yawNm ?? 0;
+  }
+
+  return result;
+}
+
 export function stepVehicleRigidBody(
   vehicle: VehicleBody,
   dt: number,
-  thrusterInput: ThrusterInput6DOF | [number, number, number] = [0, 0, 0],
-  thrusterMoments?: [number, number, number],
-  tankBounds: TankBoundaries = DEFAULT_TANK_BOUNDARIES
+  thrusterInput: ThrusterInput6DOF | Marine3 = ZERO_MARINE3,
+  thrusterMoments?: Marine3,
+  bounds: TankBoundaries = DEFAULT_TANK_BOUNDARIES,
+  tether: TetherParams = DETACHED_TETHER,
+  ambientFlowWorld?: Marine3
 ): IntegratorTelemetry {
-  // 1. Resolve thruster forces and moments in body frame [X (Sway), Y (Heave), Z (Surge)]
-  let fThrustBodyX = 0;
-  let fThrustBodyY = 0;
-  let fThrustBodyZ = 0;
-  let mThrustBodyX = 0;
-  let mThrustBodyY = 0;
-  let mThrustBodyZ = 0;
+  const thrust = thrusterInputToMarine(thrusterInput, thrusterMoments);
+  const spatial = vehicle.spatialMass;
 
-  if (Array.isArray(thrusterInput)) {
-    // Array format [Surge, Sway, Heave] mapped to body axes [Sway (X), Heave (Y), Surge (Z)]
-    fThrustBodyX = thrusterInput[1];
-    fThrustBodyY = thrusterInput[2];
-    fThrustBodyZ = thrusterInput[0];
-
-    if (thrusterMoments) {
-      mThrustBodyX = thrusterMoments[1];
-      mThrustBodyY = thrusterMoments[2];
-      mThrustBodyZ = thrusterMoments[0];
-    }
-  } else {
-    if (thrusterInput.forceBody) {
-      fThrustBodyX = thrusterInput.forceBody[0];
-      fThrustBodyY = thrusterInput.forceBody[1];
-      fThrustBodyZ = thrusterInput.forceBody[2];
-    } else {
-      fThrustBodyX = thrusterInput.swayN ?? 0;
-      fThrustBodyY = thrusterInput.heaveN ?? 0;
-      fThrustBodyZ = thrusterInput.surgeN ?? 0;
-    }
-
-    if (thrusterInput.momentBody) {
-      mThrustBodyX = thrusterInput.momentBody[0];
-      mThrustBodyY = thrusterInput.momentBody[1];
-      mThrustBodyZ = thrusterInput.momentBody[2];
-    } else {
-      mThrustBodyX = thrusterInput.pitchNm ?? 0;
-      mThrustBodyY = thrusterInput.yawNm ?? 0;
-      mThrustBodyZ = thrusterInput.rollNm ?? 0;
-    }
+  for (let axis = 0; axis < 3; axis++) {
+    nu[axis] = vehicle.velocityBodyMs[axis];
+    nu[axis + 3] = vehicle.angularVelocityBodyRadS[axis];
+    angularVelocityBody[axis] = nu[axis + 3];
+    relativeFlowBody[axis] = nu[axis];
   }
 
-  // 2. Body frame linear velocity: vBody = q^-1 * vWorld (using scratch objects)
-  _scratchQuatInv.copy(vehicle.quaternion).invert();
-  _scratchVecA.copy(vehicle.velocity).applyQuaternion(_scratchQuatInv);
-  const vx = _scratchVecA.x;
-  const vy = _scratchVecA.y;
-  const vz = _scratchVecA.z;
-  const wBody = vehicle.angularVelocity;
-
-  // 3. Hydrodynamic damping forces and moments in body frame
-  const damping = computeHydrodynamicDamping(
-    [vx, vy, vz],
-    [wBody.x, wBody.y, wBody.z],
-    vehicle.dragCoefficients,
-    vehicle.buoyancyForces.displacedMassKg / (vehicle.buoyancyForces.displacedMassKg / 1000.0)
-  );
-
-  // 4. Net buoyancy force in world frame (+Y is Up): transformed to body frame
-  _scratchVecB.set(0, vehicle.buoyancyForces.netBuoyancyForceN, 0).applyQuaternion(_scratchQuatInv);
-  const fNetBuoyBodyX = _scratchVecB.x;
-  const fNetBuoyBodyY = _scratchVecB.y;
-  const fNetBuoyBodyZ = _scratchVecB.z;
-
-  // 5. Metacentric righting moment restoring upright orientation (tau = r_cob x F_buoy)
-  const tauRightingWorldArr = computeMetacentricRightingMoment(
-    vehicle.quaternion,
-    vehicle.buoyancyForces
-  );
-  _scratchVecB.set(tauRightingWorldArr[0], tauRightingWorldArr[1], tauRightingWorldArr[2]).applyQuaternion(_scratchQuatInv);
-  const tauRightingBodyX = _scratchVecB.x;
-  const tauRightingBodyY = _scratchVecB.y;
-  const tauRightingBodyZ = _scratchVecB.z;
-
-  // 6. Net linear forces in body frame
-  const fTotalBodyX = fThrustBodyX + damping.forceBodyN[0] + fNetBuoyBodyX;
-  const fTotalBodyY = fThrustBodyY + damping.forceBodyN[1] + fNetBuoyBodyY;
-  const fTotalBodyZ = fThrustBodyZ + damping.forceBodyN[2] + fNetBuoyBodyZ;
-
-  // 7. Linear acceleration in body frame (using anisotropic effective mass = dry + added mass)
-  const aBodyX = fTotalBodyX / vehicle.effectiveMassBody[0];
-  const aBodyY = fTotalBodyY / vehicle.effectiveMassBody[1];
-  const aBodyZ = fTotalBodyZ / vehicle.effectiveMassBody[2];
-
-  // 8. Net angular torques in body frame
-  const tauTotalBodyX = mThrustBodyX + damping.torqueBodyNm[0] + tauRightingBodyX;
-  const tauTotalBodyY = mThrustBodyY + damping.torqueBodyNm[1] + tauRightingBodyY;
-  const tauTotalBodyZ = mThrustBodyZ + damping.torqueBodyNm[2] + tauRightingBodyZ;
-
-  // 9. Angular acceleration in body frame (using effective inertia = rigid + added inertia)
-  const alphaBodyX = tauTotalBodyX / vehicle.effectiveInertiaBody[0];
-  const alphaBodyY = tauTotalBodyY / vehicle.effectiveInertiaBody[1];
-  const alphaBodyZ = tauTotalBodyZ / vehicle.effectiveInertiaBody[2];
-
-  // 10. Symplectic Euler Integration: Update Angular Velocity & Orientation
-  vehicle.angularVelocity.x += alphaBodyX * dt;
-  vehicle.angularVelocity.y += alphaBodyY * dt;
-  vehicle.angularVelocity.z += alphaBodyZ * dt;
-
-  const wMag = vehicle.angularVelocity.length();
-  if (wMag > 1e-6) {
-    _scratchVecB.copy(vehicle.angularVelocity).divideScalar(wMag);
-    _scratchRotDelta.setFromAxisAngle(_scratchVecB, wMag * dt);
-    vehicle.quaternion.multiply(_scratchRotDelta);
-    vehicle.quaternion.normalize();
+  if (ambientFlowWorld) {
+    scratchWorldVelocity.set(ambientFlowWorld[0], ambientFlowWorld[1], ambientFlowWorld[2]);
+    worldToBodyMarine(scratchWorldVelocity, vehicle.quaternion, ambientFlowBody);
+    for (let axis = 0; axis < 3; axis++) relativeFlowBody[axis] -= ambientFlowBody[axis];
   }
 
-  // 11. Symplectic Euler Integration: Update Linear Velocity & Position in World Frame
-  _scratchVecB.set(aBodyX, aBodyY, aBodyZ).applyQuaternion(vehicle.quaternion);
-  vehicle.velocity.x += _scratchVecB.x * dt;
-  vehicle.velocity.y += _scratchVecB.y * dt;
-  vehicle.velocity.z += _scratchVecB.z * dt;
+  const damping = computeHydrodynamicDamping(relativeFlowBody, angularVelocityBody, vehicle.dragCoefficients);
+  metacentricRestoringTorqueBodyMarine(vehicle.quaternion, vehicle.buoyancyForces, restoringTorqueBody);
 
-  vehicle.position.x += vehicle.velocity.x * dt;
-  vehicle.position.y += vehicle.velocity.y * dt;
-  vehicle.position.z += vehicle.velocity.z * dt;
+  scratchWorldVelocity.set(0, vehicle.buoyancyForces.netBuoyancyForceN, 0);
+  worldToBodyMarine(scratchWorldVelocity, vehicle.quaternion, buoyancyForceBody);
 
-  // 12. Tank Environmental Boundaries (Clamping & Contact Damping)
+  tetherForceBody[0] = 0;
+  tetherForceBody[1] = 0;
+  tetherForceBody[2] = 0;
+  if (tether.attached) {
+    vehicle.worldVelocity(scratchWorldVelocity);
+    scratchBodyVector.set(
+      -tether.stiffnessNm * (vehicle.position.x - tether.anchorWorld[0]) - tether.dampingNPerMs * scratchWorldVelocity.x,
+      -tether.stiffnessNm * (vehicle.position.y - tether.anchorWorld[1]) - tether.dampingNPerMs * scratchWorldVelocity.y,
+      -tether.stiffnessNm * (vehicle.position.z - tether.anchorWorld[2]) - tether.dampingNPerMs * scratchWorldVelocity.z
+    );
+    worldToBodyMarine(scratchBodyVector, vehicle.quaternion, tetherForceBody);
+  }
+
+  coriolisBodyForce(spatial, nu, coriolisForce);
+
+  for (let axis = 0; axis < 3; axis++) {
+    forceBody[axis] = thrust.forceMarine[axis] + damping.forceBodyN[axis] + buoyancyForceBody[axis] + tetherForceBody[axis];
+    torqueBody[axis] = thrust.momentMarine[axis] + damping.torqueBodyNm[axis] + restoringTorqueBody[axis];
+  }
+
+  for (let axis = 0; axis < 3; axis++) {
+    nuDot[axis] = (forceBody[axis] - coriolisForce[axis]) / spatial.translationalKg[axis];
+    nuDot[axis + 3] = (torqueBody[axis] - coriolisForce[axis + 3]) / spatial.rotationalKgM2[axis];
+  }
+
+  for (let index = 0; index < 6; index++) nu[index] += nuDot[index] * dt;
+
+  for (let axis = 0; axis < 3; axis++) {
+    vehicle.velocityBodyMs[axis] = nu[axis];
+    vehicle.angularVelocityBodyRadS[axis] = nu[axis + 3];
+  }
+
+  const angularRateClamped = vehicle.clampAngularRate();
+
+  marineAngularToThree(
+    vehicle.angularVelocityBodyRadS[0],
+    vehicle.angularVelocityBodyRadS[1],
+    vehicle.angularVelocityBodyRadS[2],
+    scratchBodyVector
+  );
+  const angularSpeed = scratchBodyVector.length();
+  if (angularSpeed > 1e-12) {
+    scratchAxis.copy(scratchBodyVector).divideScalar(angularSpeed);
+    scratchRotationDelta.setFromAxisAngle(scratchAxis, angularSpeed * dt);
+    vehicle.quaternion.multiply(scratchRotationDelta).normalize();
+  }
+
+  vehicle.worldVelocity(scratchWorldVelocity);
+  vehicle.position.addScaledVector(scratchWorldVelocity, dt);
+
+  contactNormalWorld[0] = 0;
+  contactNormalWorld[1] = 0;
+  contactNormalWorld[2] = 0;
   let isGrounded = false;
   let isBroaching = false;
+  let isWallContact = false;
 
-  // Floor collision (depth y = -0.25m)
-  if (vehicle.position.y <= tankBounds.floorElevationM) {
-    vehicle.position.y = tankBounds.floorElevationM;
-    isGrounded = true;
-    if (vehicle.velocity.y < 0) {
-      vehicle.velocity.y = 0;
+  const hasContact =
+    vehicle.position.y <= bounds.floorElevationM ||
+    vehicle.position.y >= bounds.surfaceElevationM ||
+    Math.hypot(vehicle.position.x, vehicle.position.z) > bounds.radiusM;
+
+  if (hasContact) {
+    vehicle.worldVelocity(scratchWorldVelocity);
+
+    if (vehicle.position.y <= bounds.floorElevationM) {
+      vehicle.position.y = bounds.floorElevationM;
+      isGrounded = true;
+      if (scratchWorldVelocity.y < 0) scratchWorldVelocity.y = 0;
+      scratchWorldVelocity.x *= Math.max(0, 1 - 8 * dt);
+      scratchWorldVelocity.z *= Math.max(0, 1 - 8 * dt);
+      contactNormalWorld[1] = 1;
+      const spinRetention = Math.max(0, 1 - 10 * dt);
+      for (let axis = 0; axis < 3; axis++) vehicle.angularVelocityBodyRadS[axis] *= spinRetention;
     }
-    // Ground friction contact damping
-    vehicle.velocity.x *= Math.max(0, 1 - 8.0 * dt);
-    vehicle.velocity.z *= Math.max(0, 1 - 8.0 * dt);
-    vehicle.angularVelocity.multiplyScalar(Math.max(0, 1 - 10.0 * dt));
+
+    if (vehicle.position.y >= bounds.surfaceElevationM) {
+      vehicle.position.y = bounds.surfaceElevationM;
+      isBroaching = true;
+      if (scratchWorldVelocity.y > 0) scratchWorldVelocity.y = 0;
+      scratchWorldVelocity.x *= Math.max(0, 1 - 2 * dt);
+      scratchWorldVelocity.z *= Math.max(0, 1 - 2 * dt);
+      contactNormalWorld[1] = -1;
+    }
+
+    const radius = Math.hypot(vehicle.position.x, vehicle.position.z);
+    if (radius > bounds.radiusM) {
+      const scale = bounds.radiusM / radius;
+      vehicle.position.x *= scale;
+      vehicle.position.z *= scale;
+      const normalX = vehicle.position.x / bounds.radiusM;
+      const normalZ = vehicle.position.z / bounds.radiusM;
+      const outward = scratchWorldVelocity.x * normalX + scratchWorldVelocity.z * normalZ;
+      if (outward > 0) {
+        scratchWorldVelocity.x -= outward * normalX;
+        scratchWorldVelocity.z -= outward * normalZ;
+      }
+      contactNormalWorld[0] = -normalX;
+      contactNormalWorld[2] = -normalZ;
+      isWallContact = true;
+    }
+
+    vehicle.setBodyVelocityFromWorld(scratchWorldVelocity);
   }
 
-  // Water free surface (elevation y = +0.22m)
-  if (vehicle.position.y >= tankBounds.surfaceElevationM) {
-    vehicle.position.y = tankBounds.surfaceElevationM;
-    isBroaching = true;
-    if (vehicle.velocity.y > 0) {
-      vehicle.velocity.y = 0;
-    }
-    vehicle.velocity.x *= Math.max(0, 1 - 2.0 * dt);
-    vehicle.velocity.z *= Math.max(0, 1 - 2.0 * dt);
+  for (let axis = 0; axis < 3; axis++) {
+    telemetry.bodyVelocityMs[axis] = vehicle.velocityBodyMs[axis];
+    telemetry.bodyAccelerationMs2[axis] = nuDot[axis];
+    telemetry.dragForceBodyN[axis] = damping.forceBodyN[axis];
+    telemetry.restoringTorqueBodyNm[axis] = restoringTorqueBody[axis];
+    telemetry.tetherForceBodyN[axis] = tetherForceBody[axis];
+    telemetry.appliedForceBodyN[axis] = forceBody[axis];
+    telemetry.appliedTorqueBodyNm[axis] = torqueBody[axis];
+    telemetry.contactNormalWorld[axis] = contactNormalWorld[axis];
   }
+  for (let index = 0; index < 6; index++) telemetry.coriolisForceBodyN[index] = coriolisForce[index];
 
-  // Horizontal radial tank walls
-  const rHoriz = Math.hypot(vehicle.position.x, vehicle.position.z);
-  if (rHoriz > tankBounds.radiusM) {
-    const scale = tankBounds.radiusM / rHoriz;
-    vehicle.position.x *= scale;
-    vehicle.position.z *= scale;
-    // Damp radial component of velocity
-    const normalX = vehicle.position.x / tankBounds.radiusM;
-    const normalZ = vehicle.position.z / tankBounds.radiusM;
-    const vDotN = vehicle.velocity.x * normalX + vehicle.velocity.z * normalZ;
-    if (vDotN > 0) {
-      vehicle.velocity.x -= vDotN * normalX;
-      vehicle.velocity.z -= vDotN * normalZ;
-    }
-  }
+  telemetry.isGrounded = isGrounded;
+  telemetry.isBroaching = isBroaching;
+  telemetry.isWallContact = isWallContact;
+  telemetry.angularRateClamped = angularRateClamped;
 
-  return {
-    bodyVelocity: [vx, vy, vz],
-    bodyAcceleration: [aBodyX, aBodyY, aBodyZ],
-    dragForceN: damping.forceBodyN,
-    restoringTorqueNm: [tauRightingBodyX, tauRightingBodyY, tauRightingBodyZ],
-    isGrounded,
-    isBroaching
-  };
+  return telemetry;
 }
+
