@@ -210,3 +210,91 @@ describe('Vehicle 6-DOF Rigid Body State (body.ts)', () => {
   });
 });
 
+describe('6-DOF Semi-Implicit Integrator (integrator.ts)', () => {
+  it('causes an unpowered positively-buoyant vehicle to rise', () => {
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, -0.15, 0]);
+
+    for (let step = 0; step < 30; step++) {
+      stepVehicleRigidBody(vehicle, 1 / 60, [0, 0, 0]);
+    }
+
+    expect(vehicle.velocityBodyMs[2]).toBeGreaterThan(0.05);
+    expect(vehicle.position.y).toBeGreaterThan(-0.15);
+  });
+
+  it('accelerates along world +Z under forward surge thrust and is bounded by drag', () => {
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, 0, -0.4]);
+
+    for (let step = 0; step < 50; step++) {
+      stepVehicleRigidBody(vehicle, 1 / 60, { surgeN: 3.0 });
+    }
+
+    expect(vehicle.velocityBodyMs[0]).toBeGreaterThan(0.4);
+    expect(vehicle.velocityBodyMs[0]).toBeLessThan(1.6);
+    const world = vehicle.worldVelocity(new THREE.Vector3());
+    expect(Math.abs(world.x)).toBeLessThan(1e-12);
+    expect(world.y).toBeGreaterThanOrEqual(-1e-12);
+  });
+
+  it('self-rights a vehicle perturbed by 30 degrees of roll', () => {
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, 0, 0]);
+    vehicle.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 6);
+
+    for (let step = 0; step < 240; step++) {
+      stepVehicleRigidBody(vehicle, 1 / 60, [0, 0, 0]);
+    }
+
+    expect(Math.abs(vehicle.getEulerDegrees().rollDeg)).toBeLessThan(5);
+    expect(Math.abs(vehicle.getEulerDegrees().pitchDeg)).toBeLessThan(1e-6);
+  });
+
+  it('enforces tank boundaries (floor clamping and surface limit)', () => {
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, 0.2, 0]);
+
+    for (let step = 0; step < 120; step++) {
+      stepVehicleRigidBody(vehicle, 1 / 60, [0, 0, 0]);
+    }
+    expect(vehicle.position.y).toBeLessThanOrEqual(DEFAULT_TANK_BOUNDARIES.surfaceElevationM + 1e-6);
+
+    for (let step = 0; step < 300; step++) {
+      stepVehicleRigidBody(vehicle, 1 / 60, { heaveN: -5 });
+    }
+    expect(vehicle.position.y).toBeGreaterThanOrEqual(DEFAULT_TANK_BOUNDARIES.floorElevationM - 1e-6);
+  });
+
+  it('applies a tether spring-damper back toward the anchor when attached', () => {
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0.4, -0.1, 0]);
+    const tether = {
+      attached: true,
+      anchorWorld: [0, -0.1, 0] as Marine3,
+      stiffnessNm: 2,
+      dampingNPerMs: 0.4
+    };
+
+    for (let step = 0; step < 600; step++) {
+      stepVehicleRigidBody(vehicle, 1 / 60, [0, 0, 0], undefined, DEFAULT_TANK_BOUNDARIES, tether);
+    }
+
+    expect(Math.abs(vehicle.position.x)).toBeLessThan(0.1);
+  });
+});
+
+describe('3D Flow & Telemetry Overlays (legacy flowOverlays.ts)', () => {
+  it('creates overlay groups and updates without errors', () => {
+    const overlays = new FlowOverlays();
+    expect(overlays.group.children.length).toBe(4);
+
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    const propArray = new PropellerArray();
+    const summary = propArray.evaluate([1, 1, 0]);
+
+    expect(() => overlays.update(vehicle, summary, 0)).not.toThrow();
+    expect(() => overlays.dispose()).not.toThrow();
+  });
+});
+
