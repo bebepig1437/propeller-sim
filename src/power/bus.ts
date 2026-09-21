@@ -1,4 +1,4 @@
-import { DCMotorModel, MotorOperatingState, MABUCHI_RC280RA_SPECS } from '../prop/motor';
+import { DCMotorModel, MotorOperatingState, MABUCHI_RC280RA_SPECS } from '../motor/motor';
 import { calculateTetherState, TetherVoltageDrop } from './tether';
 
 export interface MotorChannelConfig {
@@ -73,8 +73,8 @@ export class PowerBus {
     const numMotors = this.motors.length;
     let vTerminal = this.supplyV; // Initial terminal voltage estimate
 
-    const maxIters = 25;
-    const tol = 1e-4;
+    const maxIters = 60;
+    const tol = 1e-7;
 
     let motorStates: MotorOperatingState[] = [];
     let totalMotorCurrent = 0;
