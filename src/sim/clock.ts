@@ -1,13 +1,14 @@
 export class SimClock {
-  private fixedDeltaTime: number; // e.g. 1/60 (~0.016667 s)
-  private maxSubsteps: number;    // e.g. 5
+  private fixedDeltaTime: number;
+  private maxSubsteps: number;
   private accumulator = 0;
   private lastTime = 0;
   private alpha = 0;
   private isRunning = false;
   private substepCount = 0;
+  private droppedTimeS = 0;
 
-  constructor(fixedDeltaTime = 1.0 / 60.0, maxSubsteps = 5) {
+  constructor(fixedDeltaTime = 1.0 / 60.0, maxSubsteps = 4) {
     this.fixedDeltaTime = fixedDeltaTime;
     this.maxSubsteps = maxSubsteps;
   }
@@ -17,6 +18,7 @@ export class SimClock {
     this.accumulator = 0;
     this.isRunning = true;
     this.substepCount = 0;
+    this.droppedTimeS = 0;
   }
 
   public stop(): void {
@@ -27,13 +29,9 @@ export class SimClock {
     this.accumulator = 0;
     this.substepCount = 0;
     this.alpha = 0;
+    this.droppedTimeS = 0;
   }
 
-  /**
-   * Advances the clock and invokes `onSubstep(dt)` for each fixed simulation slice.
-   * Clamps substeps to `maxSubsteps` to prevent spiral of death under heavy lag.
-   * Returns interpolation factor `alpha` in [0, 1) for render smoothing.
-   */
   public tick(currentTimeMs: number, onSubstep: (dt: number) => void): number {
     if (!this.isRunning) {
       this.start(currentTimeMs);
@@ -51,8 +49,8 @@ export class SimClock {
       steps++;
     }
 
-    // If still over accumulator budget after max substeps, discard excess to avoid spiral of death
     if (this.accumulator >= this.fixedDeltaTime) {
+      this.droppedTimeS += this.accumulator;
       this.accumulator = 0;
     }
 
@@ -67,6 +65,10 @@ export class SimClock {
 
   public getSubstepsExecuted(): number {
     return this.substepCount;
+  }
+
+  public getDroppedTimeS(): number {
+    return this.droppedTimeS;
   }
 
   public getFixedDeltaTime(): number {

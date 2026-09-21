@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SimClock } from '../src/core/clock';
+import { SimClock } from '../src/sim/clock';
 import { defaultConfig } from '../src/core/config';
 import { calculateTetherVoltageDrop } from '../src/power/tether';
 import { GpuTimer } from '../src/telemetry/gpuTimer';
@@ -56,7 +56,7 @@ describe('Central Config Invariants', () => {
     expect(defaultConfig.electrical.tetherResistance).toBe(0.782);
     expect(defaultConfig.propulsion.diameterMm).toBe(42.0);
     expect(defaultConfig.propulsion.statorIncidenceDeg).toBe(-5.2);
-    expect(defaultConfig.clock.maxSubsteps).toBe(5);
+    expect(defaultConfig.clock.maxSubsteps).toBe(4);
   });
 });
 
