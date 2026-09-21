@@ -298,3 +298,311 @@ describe('3D Flow & Telemetry Overlays (legacy flowOverlays.ts)', () => {
   });
 });
 
+describe('Vehicle-Fluid Coupling (coupling.ts)', () => {
+  function makeCoupler(): VehicleFluidCoupler {
+    return new VehicleFluidCoupler({
+      gridCenter: new THREE.Vector3(0, 0, 0),
+      gridDxM: 0.0015,
+      depthM: 0.042,
+      fluidDensity: 1000,
+      inflowRelaxation: 1,
+      injectionRadiusCells: 10
+    });
+  }
+
+  it('samples the advance speed of the in-plane heave rotor from the fluid, not from the CoG motion', () => {
+    const coupler = makeCoupler();
+    const grid = new FluidGrid({ width: 64, height: 32, dx: 0.0015 });
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, 0, 0]);
+    const vertical = [new PropellerArray().thrusters[2]];
+
+    expect(coupler.sampleInflows(grid, vehicle, vertical, [], [])[0]).toBe(0);
+
+    grid.v.fill(1);
+    expect(coupler.sampleInflows(grid, vehicle, vertical, [], [])[0]).toBeCloseTo(-1, 4);
+
+    grid.v.fill(0);
+    vehicle.setBodyVelocityFromWorld(new THREE.Vector3(0, 0.25, 0));
+    expect(coupler.sampleInflows(grid, vehicle, vertical, [], [])[0]).toBeCloseTo(0.25, 4);
+  });
+
+  it('injects exactly the in-plane thrust impulse back into the grid (momentum conservation)', () => {
+    const coupler = makeCoupler();
+    const grid = new FluidGrid({ width: 64, height: 32, dx: 0.0015 });
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, 0, 0]);
+    const array = new PropellerArray();
+    array.thrusters[2].throttle = 1;
+    const summary = array.evaluate(undefined, [0, 0, 0], [0, 0, 0], 0);
+
+    const dt = 1 / 60;
+    const thrustN = Math.abs(summary.thrusters[2].netThrustN);
+    expect(coupler.injectSlipstream(grid, vehicle, summary, dt)).toBeCloseTo(thrustN * dt, 12);
+
+    const cellMassKg = 1000 * 0.0015 * 0.0015 * 0.042;
+    let momentum = 0;
+    for (let cell = 0; cell < grid.size; cell++) {
+      momentum += Math.hypot(grid.u[cell], grid.v[cell]) * cellMassKg;
+    }
+    expect(momentum).toBeCloseTo(thrustN * dt, 9);
+    expect(grid.dye.some((concentration) => concentration > 0)).toBe(true);
+  });
+
+  it('drag acts on flow-relative velocity, so a co-flowing slipstream unloads the frame', () => {
+    const still = new VehicleBody(defaultConfig.vehicle);
+    still.reset([0, 0, 0]);
+    still.setBodyVelocityFromWorld(new THREE.Vector3(0, 0.2, 0));
+    const stillTelemetry = stepVehicleRigidBody(still, 1 / 60, [0, 0, 0], undefined, FREE_SPACE);
+    expect(stillTelemetry.dragForceBodyN[2]).toBeLessThan(-0.5);
+
+    const carried = new VehicleBody(defaultConfig.vehicle);
+    carried.reset([0, 0, 0]);
+    carried.setBodyVelocityFromWorld(new THREE.Vector3(0, 0.2, 0));
+    const carriedTelemetry = stepVehicleRigidBody(
+      carried,
+      1 / 60,
+      [0, 0, 0],
+      undefined,
+      FREE_SPACE,
+      undefined,
+      [0, 0.2, 0]
+    );
+    expect(Math.abs(carriedTelemetry.dragForceBodyN[2])).toBeLessThan(1e-12);
+  });
+
+  function runClosedLoop(verticalThrottle: number, steps = 120) {
+    const solver = new FluidSolver({
+      gridOptions: { width: 160, height: 96, dx: 0.0015 },
+      pressureIterations: 12,
+      advectionScheme: 'MACCORMACK',
+      jetConfig: { enabled: false }
+    });
+    const coupler = makeCoupler();
+    const array = new PropellerArray();
+    for (const unit of array.thrusters) unit.throttle = 0;
+    array.thrusters[2].throttle = verticalThrottle;
+
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, -0.05, 0]);
+    const startY = vehicle.position.y;
+    const dt = 1 / 60;
+    const ambient = new THREE.Vector3();
+    let peakThrust = 0;
+    let injectedTotal = 0;
+
+    for (let step = 0; step < steps; step++) {
+      const advances = coupler.update(solver.grid, vehicle, array.thrusters, ambient);
+      const summary = array.evaluate(undefined, advances, vehicle.angularVelocityBodyRadS, 0);
+      const forceMarine: Marine3 = [...summary.totalForceN] as Marine3;
+      const momentMarine: Marine3 = [...summary.totalMomentNm] as Marine3;
+      peakThrust = Math.max(peakThrust, Math.abs(forceMarine[2]));
+      injectedTotal += coupler.injectSlipstream(solver.grid, vehicle, summary, dt);
+      solver.step(dt);
+      stepVehicleSubstepped(
+        vehicle,
+        dt,
+        defaultConfig.vehicle.vehicleSubstepDivider,
+        { forceBodyMarine: forceMarine, momentBodyMarine: momentMarine },
+        undefined,
+        { floorElevationM: -0.25, surfaceElevationM: 5, radiusM: 5 },
+        undefined,
+        [ambient.x, ambient.y, ambient.z]
+      );
+    }
+
+    let gridMomentum = 0;
+    for (let cell = 0; cell < solver.grid.size; cell++) {
+      gridMomentum += Math.hypot(solver.grid.u[cell], solver.grid.v[cell]);
+    }
+    return {
+      vehicle,
+      rise: vehicle.position.y - startY,
+      peakThrust,
+      injectedTotal,
+      gridMomentum,
+      ambientMax: Math.hypot(ambient.x, ambient.y, ambient.z)
+    };
+  }
+
+  it('runs the full loop against the CPU reference solver: finite, thrust-driven, and it leaves a wake', () => {
+    const up = runClosedLoop(0.25);
+
+    expect(Number.isFinite(up.vehicle.position.length())).toBe(true);
+    expect(Number.isFinite(up.vehicle.velocityBodyMs[2])).toBe(true);
+    expect(up.peakThrust).toBeGreaterThan(0.01);
+    expect(up.injectedTotal).toBeGreaterThan(0);
+    expect(up.gridMomentum).toBeGreaterThan(0);
+
+    const down = runClosedLoop(-0.25);
+    expect(Number.isFinite(down.vehicle.position.length())).toBe(true);
+    expect(down.rise).toBeGreaterThan(0);
+    expect(up.rise).toBeGreaterThan(down.rise + 0.05);
+
+    expect(up.ambientMax).toBeLessThan(0.2);
+  }, 30000);
+
+  it('substepping the vehicle keeps the coupling stable over a long unforced run', () => {
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, -0.1, 0]);
+
+    for (let step = 0; step < 3600; step++) {
+      stepVehicleSubstepped(
+        vehicle,
+        1 / 60,
+        defaultConfig.vehicle.vehicleSubstepDivider,
+        { heaveN: 0.1, yawNm: 1e-4 },
+        undefined,
+        FREE_SPACE
+      );
+    }
+
+    expect(Number.isFinite(vehicle.position.length())).toBe(true);
+    expect(Number.isFinite(vehicle.velocityBodyMs[0])).toBe(true);
+    expect(vehicle.angularSpeedRadS).toBeLessThanOrEqual(defaultConfig.vehicle.angularRateClampRadS + 1e-9);
+    expect(Math.hypot(vehicle.position.x, vehicle.position.z)).toBeLessThan(0.5);
+  });
+});
+
+describe('Torque Ledger Consistency & Contra-Rotation (prop/array.ts)', () => {
+  it('integrator applied roll torque equals the ledger Q_net within 1e-6', () => {
+    const array = new PropellerArray();
+    const summary = array.evaluate([1, 1, 0], [0, 0, 0], [0, 0, 0], 1);
+
+    const vehicle = makeBuoyancyFreeVehicle();
+    vehicle.reset([0, 0, 0]);
+    const telemetry = stepVehicleRigidBody(
+      vehicle,
+      1 / 60,
+      {
+        forceBodyMarine: [...summary.totalForceN] as Marine3,
+        momentBodyMarine: [...summary.totalMomentNm] as Marine3
+      },
+      undefined,
+      FREE_SPACE
+    );
+
+    expect(Math.abs(telemetry.appliedTorqueBodyNm[0] - summary.ledgerSummary.Q_net)).toBeLessThan(1e-6);
+    expect(telemetry.appliedTorqueBodyNm[0]).toBeCloseTo(summary.totalMomentNm[0], 12);
+  });
+
+  it('a coaxial contra-rotating pair nets ~zero roll on the vehicle body', () => {
+    const array = new PropellerArray();
+    array.applyHandednessPreset('contra_rotating_coaxial');
+    for (const unit of array.thrusters) unit.throttle = 1;
+    const summary = array.evaluate(undefined, [0.3, 0.3], [0, 0, 0], 0.3);
+
+    expect(Math.abs(summary.totalMomentNm[0])).toBeLessThan(1e-6);
+    expect(summary.totalForceN[0]).toBeGreaterThan(0);
+
+    const vehicle = makeBuoyancyFreeVehicle();
+    vehicle.reset([0, 0, 0]);
+    stepVehicleRigidBody(
+      vehicle,
+      1 / 60,
+      {
+        forceBodyMarine: [...summary.totalForceN] as Marine3,
+        momentBodyMarine: [...summary.totalMomentNm] as Marine3
+      },
+      undefined,
+      FREE_SPACE
+    );
+    expect(Math.abs(vehicle.angularVelocityBodyRadS[0])).toBeLessThan(1e-6);
+  });
+});
+
+describe('Validation Against Independent References', () => {
+  function rk4SurgeReference(
+    thrustN: number,
+    effectiveMassKg: number,
+    quadraticDrag: number,
+    linearDrag: number,
+    sampleDt: number,
+    endTimeS: number
+  ): { t: number; v: number }[] {
+    const acceleration = (velocity: number) =>
+      (thrustN - (quadraticDrag * Math.abs(velocity) + linearDrag) * velocity) / effectiveMassKg;
+    const h = 1e-4;
+    const stride = Math.round(sampleDt / h);
+    const samples: { t: number; v: number }[] = [{ t: 0, v: 0 }];
+    let velocity = 0;
+    const totalSteps = Math.round(endTimeS / h);
+    for (let step = 1; step <= totalSteps; step++) {
+      const k1 = acceleration(velocity);
+      const k2 = acceleration(velocity + (h / 2) * k1);
+      const k3 = acceleration(velocity + (h / 2) * k2);
+      const k4 = acceleration(velocity + h * k3);
+      velocity += (h / 6) * (k1 + 2 * k2 + 2 * k3 + k4);
+      if (step % stride === 0) samples.push({ t: step * h, v: velocity });
+    }
+    return samples;
+  }
+
+  function crossingTime(trajectory: { t: number; v: number }[], target: number): number {
+    for (let index = 1; index < trajectory.length; index++) {
+      if (trajectory[index].v >= target) {
+        const previous = trajectory[index - 1];
+        const span = trajectory[index].v - previous.v;
+        const fraction = span > 0 ? (target - previous.v) / span : 0;
+        return previous.t + fraction * (trajectory[index].t - previous.t);
+      }
+    }
+    return NaN;
+  }
+
+  it('step surge matches the RK4 reference of the 1-DOF Fossen surge model (5% final, 10% rise time)', () => {
+    const config = defaultConfig.vehicle;
+    const thrustN = 1.5;
+    const vehicle = new VehicleBody(defaultConfig.vehicle);
+    vehicle.reset([0, -0.4, 0]);
+    const effectiveMassKg = vehicle.spatialMass.translationalKg[0];
+    const quadraticDrag = 0.5 * config.fluidDensityKgM3 * config.dragCdASurge;
+    const linearDrag = config.dragLinSurge;
+
+    const dt = 1 / 60;
+    const endTimeS = 10;
+    const totalSteps = Math.round(endTimeS / dt);
+    const simulated: { t: number; v: number }[] = [{ t: 0, v: 0 }];
+    for (let step = 0; step < totalSteps; step++) {
+      stepVehicleRigidBody(vehicle, dt, { surgeN: thrustN }, undefined, FREE_SPACE);
+      simulated.push({ t: (step + 1) * dt, v: vehicle.velocityBodyMs[0] });
+    }
+
+    const reference = rk4SurgeReference(thrustN, effectiveMassKg, quadraticDrag, linearDrag, dt, endTimeS);
+    const finalSimulated = simulated[simulated.length - 1].v;
+    const finalReference = reference[reference.length - 1].v;
+
+    expect(Math.abs(finalSimulated - finalReference) / finalReference).toBeLessThan(0.05);
+
+    const riseSimulated = crossingTime(simulated, 0.9 * finalReference) - crossingTime(simulated, 0.1 * finalReference);
+    const riseReference = crossingTime(reference, 0.9 * finalReference) - crossingTime(reference, 0.1 * finalReference);
+    expect(riseSimulated).toBeGreaterThan(0);
+    expect(Math.abs(riseSimulated - riseReference) / riseReference).toBeLessThan(0.1);
+
+    for (let index = 0; index < reference.length; index++) {
+      const sample = simulated[Math.min(simulated.length - 1, Math.round(reference[index].t / dt))];
+      if (Math.abs(sample.t - reference[index].t) < 1e-9) {
+        expect(Math.abs(sample.v - reference[index].v) / finalReference).toBeLessThan(0.02);
+      }
+    }
+  }, 30000);
+
+  it('array thrust follows the published quadratic rpm scaling and lands in the small-thruster K_T band', () => {
+    const array = new PropellerArray();
+    const propellerDiameterM = 0.042;
+    const ratedRevolutionsPerSecond = array.thrusters[2].ratedRpm / 60;
+
+    const sampleThrust = (throttle: number): number =>
+      Math.abs(array.evaluate([0, 0, throttle], [0, 0, 0], [0, 0, 0], 0).totalForceN[2]);
+
+    const fullThrottleThrustN = sampleThrust(1);
+    const halfThrottleThrustN = sampleThrust(0.5);
+
+    expect(halfThrottleThrustN / fullThrottleThrustN).toBeGreaterThan(0.22);
+    expect(halfThrottleThrustN / fullThrottleThrustN).toBeLessThan(0.28);
+
+    const thrustCoefficient = fullThrottleThrustN / (1000 * ratedRevolutionsPerSecond ** 2 * propellerDiameterM ** 4);
+    expect(thrustCoefficient).toBeGreaterThan(0.05);
+    expect(thrustCoefficient).toBeLessThan(0.5);
+  });
+});
