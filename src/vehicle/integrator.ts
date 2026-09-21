@@ -307,3 +307,21 @@ export function stepVehicleRigidBody(
   return telemetry;
 }
 
+export function stepVehicleSubstepped(
+  vehicle: VehicleBody,
+  dt: number,
+  divider: number,
+  thrusterInput: ThrusterInput6DOF | Marine3 = ZERO_MARINE3,
+  thrusterMoments?: Marine3,
+  bounds: TankBoundaries = DEFAULT_TANK_BOUNDARIES,
+  tether: TetherParams = DETACHED_TETHER,
+  ambientFlowWorld?: Marine3
+): IntegratorTelemetry {
+  const substeps = Math.max(1, Math.floor(divider));
+  const subDt = dt / substeps;
+  let result = stepVehicleRigidBody(vehicle, subDt, thrusterInput, thrusterMoments, bounds, tether, ambientFlowWorld);
+  for (let index = 1; index < substeps; index++) {
+    result = stepVehicleRigidBody(vehicle, subDt, thrusterInput, thrusterMoments, bounds, tether, ambientFlowWorld);
+  }
+  return result;
+}
