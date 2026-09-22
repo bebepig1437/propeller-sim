@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "NODE_OPTIONS=\"--expose-gc\" vitest run --project=unit && npm run bench",
+    "test:long": "NODE_OPTIONS=\"--expose-gc\" PHASE8_LONG=1 vitest run --project=unit tests/phase8.test.ts",
     "bench": "NODE_OPTIONS=\"--expose-gc\" vitest run --project=benchmark",
     "profile": "NODE_OPTIONS=\"--expose-gc\" vitest run scripts/profile-physics-tick.ts"
   },

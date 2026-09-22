@@ -462,7 +462,6 @@ prop-sim/
    │  ├─ advect.ts
    │  ├─ pressure.ts
    │  ├─ vorticity.ts
-   │  ├─ sources.ts
    │  ├─ boundary.ts
    │  └─ gpu/
    ├─ prop/
@@ -470,11 +469,12 @@ prop-sim/
    │  ├─ geometry.ts
    │  ├─ polar.ts
    │  ├─ rigidbody.ts
-   │  ├─ motor.ts
    │  ├─ array.ts
    │  ├─ stator.ts
    │  ├─ torqueLedger.ts
    │  └─ designs/index.ts
+   ├─ motor/
+   │  └─ motor.ts
    ├─ power/
    │  ├─ tether.ts
    │  └─ bus.ts
@@ -496,6 +496,15 @@ prop-sim/
    └─ telemetry/
       ├─ gpuTimer.ts
       └─ logger.ts
+
+> **Layout deviations (the shipped tree is authoritative).** Phase 0 sketched
+> `src/prop/motor.ts` and `src/fluid/sources.ts`; neither path exists in the repo.
+> The electromechanical DC motor model ships at `src/motor/motor.ts` (it is an
+> electrical machine, not a propeller solver), and inflow/plume sources ship as
+> `FluidSolver.jet` plus `src/fluid/FluidRenderer2D.ts` rather than as a separate
+> module. Later phases also added `src/sim/`, `src/workers/`, `src/scene/`,
+> `src/config/`, `src/types/`, and `src/validation.ts`. See CONVENTIONS.md §5 for the
+> authoritative module map, including the two distinct coupling modules.
 
 Requirements:
 - Vite + TS strict + three.js + Tweakpane + Vitest installed.
@@ -835,7 +844,7 @@ ACCEPTANCE:
 **Goal:** Reproduce exact vehicle operating points, electrical bus sag, and thermal dynamics.
 
 ```text
-In src/prop/motor.ts, src/power/tether.ts, and src/power/bus.ts.
+In src/motor/motor.ts, src/power/tether.ts, and src/power/bus.ts.
 
 motor.ts:
 - DC motor model using vehicle JSON parameters:
