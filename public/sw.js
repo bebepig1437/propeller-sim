@@ -3,15 +3,18 @@ const ASSETS_TO_CACHE = [
   "./",
   "./index.html",
   "./validation.html",
+  "./manifest.json",
+  "./manifest.webmanifest",
   "./icon.svg",
   "./icon-192.png",
   "./icon-512.png",
-  "./manifest.webmanifest",
   "./polars/naca4412.json",
   "./polars/eppler387.json",
   "./polars/clarky.json",
   "./polars/flat_plate.json",
-  "./vehicles/candidateA.json"
+  "./vehicles/candidateA.json",
+  "./validation/j_sweep_validation.json",
+  "./validation/j_sweep_validation.svg"
 ];
 
 self.addEventListener("install", (event) => {

@@ -21,6 +21,8 @@ export class CanvasRecorder {
       if (typeof MediaRecorder.isTypeSupported === "function") {
         if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9")) {
           mimeType = "video/webm;codecs=vp9";
+        } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8")) {
+          mimeType = "video/webm;codecs=vp8";
         } else if (MediaRecorder.isTypeSupported("video/webm")) {
           mimeType = "video/webm";
         }
@@ -64,7 +66,7 @@ export class CanvasRecorder {
 
   public download(blob: Blob, filename?: string): void {
     if (typeof document === "undefined") return;
-    const name = filename || `seaperch-sim-${Date.now()}.webm`;
+    const name = filename || `rov-simulation-${Date.now()}.webm`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
