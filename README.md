@@ -83,12 +83,15 @@ Candidate A is not merely a propeller animation—it is an underwater vehicle si
 - Counter-rotating Port (CW) and Starboard (CCW) propellers combined with stator counter-torque cancel **$>90\%$ of roll reaction moment**, cutting residual roll from $14.8^\circ/\text{m}$ down to $1.8^\circ/\text{m}$.
 - Gyroscopic precession cross-product torque ledger: $\vec{\tau}_{\text{gyro}} = \vec{\omega}_{\text{pitch}} \times \mathbf{I}_{\text{prop}} \vec{\omega}_{\text{spin}}$.
 
-### 5. 6-DOF Vehicle Rigid Body Dynamics & Hydrostatics (`src/vehicle/`)
+### 5. 6-DOF Vehicle Rigid Body Dynamics, Buoyancy & Fluid Coupling (`src/vehicle/`, `src/render/vehicle3d.ts`)
 - **Dry mass**: $179.9\,\text{g}$ ($0.1799\,\text{kg}$); **Displaced mass**: $0.2000\,\text{kg}$ ($200\,\text{cm}^3$ at $1000\,\text{kg/m}^3$).
-- **Net Positive Buoyancy**: $+0.1971\,\text{N}$ upward force.
-- **Metacentric Restoring Moment**: Center of Buoyancy $12.5\,\text{mm}$ directly above Center of Gravity along body vertical axis ($+Y_b$), self-righting roll and pitch perturbations via closed-form zero-allocation quaternion formulation.
-- **Added Mass Matrix**: Hydrodynamic virtual mass and inertia entrained in surge, sway, and heave.
-- **Test Tank Boundaries**: Floor contact clamping ($y \ge -0.25\,\text{m}$), free surface limit ($y \le +0.22\,\text{m}$), and cylindrical wall clamping ($r \le 1.1\,\text{m}$).
+- **Net Positive Buoyancy**: $+0.1971\,\text{N}$ upward force; the body rises at a drag-limited terminal velocity of $0.1134\,\text{m/s}$ and hovers when commanded heave thrust balances it.
+- **Inertia tensor**: lumped point masses — 8 frame-truss corner nodes + 12 rail midpoints, the 3 motor mounts, and each rotor's spin-axis $I_{zz}$ from the material table ($3.92\times10^{-7}\,\text{kg\,m}^2$ for the $1.80\,\text{g}$ Rigid 10K rotor, scaled with rotor mass).
+- **Metacentric Restoring Moment**: Center of Buoyancy $12.5\,\text{mm}$ above the CoG on the marine heave axis; the true cross product $\vec{\tau} = \vec{r}_{CoB} \times \vec{F}_{buoy}$ self-rights roll and pitch ($\tau = 2I_{eff}/c_{lin} \approx 0.71\,\text{s}$ envelope from a $30^\circ$ perturbation).
+- **Added Mass**: diagonal translational (surge $0.085$, sway $0.100$, heave $0.120\,\text{kg}$) plus a rotational diagonal, with an angular-rate clamp guarding the explicit rotation update.
+- **Two-way fluid coupling**: each rotor samples its own advance speed from the grid ($V_a = (\vec{v}_{disk} - \vec{v}_{fluid}) \cdot \hat{a}$), BEMT thrust is re-injected as conservative grid momentum + dye, and the rigid body is substepped at $2\times$ the fluid rate for loop stability.
+- **Test Tank Boundaries**: Floor contact clamping ($y \ge -0.25\,\text{m}$), free surface limit ($y \le +0.22\,\text{m}$), and cylindrical wall clamping ($r \le 1.1\,\text{m}$) — collision impulses are applied to stored state, so a body driven into a wall loses its normal velocity and cannot tunnel out.
+- **Direct manipulation in the stage**: drag to translate in the horizontal plane, shift-drag (or the vertical arrow) for heave, a yaw ring for heading; pitch and roll stay owned by the buoyancy model. Reset Pose is a palette action.
 
 ### 6. Scientific 3D Overlays & Telemetry Instrumentation (`src/render/overlays.ts`, `src/ui/`)
 - **3D Vectors**: Cyan thruster thrust arrows, emerald green net thrust vector, reaction torque circular arcs.
@@ -150,9 +153,9 @@ npm run build
 ## 📐 Conventions & Coordinate Systems
 
 Detailed coordinate frames, sign conventions, and SI units are documented in [CONVENTIONS.md](CONVENTIONS.md):
-- **World Frame**: $+X$ Starboard, $+Y$ Up (anti-gravity), $+Z$ Aft, $-Z$ Fore.
-- **Vehicle Body Frame**: $+X_b$ Sway (Starboard), $+Y_b$ Heave (Up / Dorsal), $+Z_b$ Surge (Bow / Forward).
-- **Hydrostatic Stability**: $\vec{r}_{\text{CoB}} = (0, +0.0125\,\text{m}, 0)$ relative to CoG.
+- **World Frame**: $+X$ Starboard (fluid streamwise), $+Y$ Up (anti-gravity), $+Z$ Aft — an upright body's bow points along $+Z$.
+- **Vehicle Body Frame (marine, authoritative)**: $+X_b$ Surge (bow), $+Y_b$ Sway (starboard), $+Z_b$ Heave **up**; roll about $X_b$, pitch about $Y_b$, yaw about $Z_b$. Every vector under `src/vehicle/` is marine-ordered, and a pure surge impulse moves the body along world $Z$ only.
+- **Hydrostatic Stability**: $\vec{r}_{\text{CoB}} = (0, 0, +0.0125\,\text{m})$ in marine order (heave up) relative to CoG.
 
 ---
 

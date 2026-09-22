@@ -21,12 +21,12 @@ describe('Repo Hygiene & Agent Rules Invariants (Directive 1)', () => {
     expect(agentsContent).toBe(rulesContent);
   });
 
-  it('no .freebuff tooling leakage directory exists in the workspace', () => {
-    const freebuffPath = path.join(rootDir, '.freebuff');
-    expect(fs.existsSync(freebuffPath)).toBe(false);
+  it('no temporary tooling leakage directory exists in the workspace', () => {
+    const toolLeakage = path.join(rootDir, '.freebuff');
+    expect(fs.existsSync(toolLeakage)).toBe(false);
   });
 
-  it('.gitignore includes .freebuff/', () => {
+  it('.gitignore includes temporary tooling directories', () => {
     const gitignorePath = path.join(rootDir, '.gitignore');
     const gitignore = fs.readFileSync(gitignorePath, 'utf-8');
     expect(gitignore).toContain('.freebuff/');

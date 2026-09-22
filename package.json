@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "NODE_OPTIONS=\"--expose-gc\" vitest run"
+    "test": "NODE_OPTIONS=\"--expose-gc\" vitest run --project=unit && npm run bench",
+    "bench": "NODE_OPTIONS=\"--expose-gc\" vitest run --project=benchmark",
+    "profile": "NODE_OPTIONS=\"--expose-gc\" vitest run scripts/profile-physics-tick.ts"
   },
   "dependencies": {
     "three": "^0.174.0",
