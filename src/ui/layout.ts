@@ -1,7 +1,4 @@
-/**
- * Layout Scaffolding (IBM Quantum Composer inspired 3-Region Layout):
- * Header, Left Palette, Center Stage, Right Inspector, Bottom HUD Strip.
- */
+
 
 export interface SimLayoutElements {
   headerEl: HTMLElement;
@@ -16,6 +13,7 @@ export interface SimLayoutElements {
   firstRunCalloutEl: HTMLElement;
   inspectorEl: HTMLElement;
   hudEl: HTMLElement;
+  footerValidationLink: HTMLAnchorElement;
 }
 
 export function buildSimLayout(root: HTMLElement): SimLayoutElements {
@@ -38,14 +36,14 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
         <!-- Stage Right-Edge Vertical Overlay Strip -->
         <div id="stage-overlay-strip" class="stage-overlay-strip"></div>
 
-        <!-- On-Demand 30s Popover Stripcharts -->
+        <!-- On-Demand 30s Popover Stripcharts (Stacked in Stage Corner) -->
         <div id="stage-popovers" class="stage-popovers"></div>
 
         <!-- First-Run Experience Callout -->
         <div id="first-run-callout" class="first-run-callout">
           <div class="first-run-text">
             <strong>Candidate A Simulation Ready.</strong><br>
-            Press <strong>RUN</strong> in the header to commence hydrodynamic and propulsion solving.
+            Select a preset from the header and press <strong>RUN</strong> to commence fluid inflow, propeller spool-up, and telemetry recording.
           </div>
           <button id="btn-first-run-dismiss" class="first-run-dismiss">Dismiss</button>
         </div>
@@ -69,8 +67,17 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
       <aside id="sim-inspector" class="sim-inspector"></aside>
     </div>
 
-    <!-- 3. Bottom HUD Strip (6 physical metrics at rest + stripchart popovers) -->
-    <footer id="sim-hud" class="sim-hud"></footer>
+    <!-- 3. Bottom HUD Strip & App Footer (with /validation route link) -->
+    <footer id="sim-footer-container" class="sim-footer-container">
+      <div id="sim-hud" class="sim-hud"></div>
+      <div class="footer-sub-bar">
+        <span class="footer-meta">Candidate A SeaPerch Simulator &bull; 60 Hz BEMT &bull; 2D Eulerian Coupling</span>
+        <span class="footer-sep">&bull;</span>
+        <a href="/validation" id="footer-validation-link" class="footer-nav-link" title="Open standalone /validation report with public oracles and spec comparisons">
+          🔬 Open Validation Suite (/validation)
+        </a>
+      </div>
+    </footer>
   `;
 
   const headerEl = root.querySelector('#sim-header') as HTMLElement;
@@ -85,8 +92,9 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
   const firstRunCalloutEl = root.querySelector('#first-run-callout') as HTMLElement;
   const inspectorEl = root.querySelector('#sim-inspector') as HTMLElement;
   const hudEl = root.querySelector('#sim-hud') as HTMLElement;
+  const footerValidationLink = root.querySelector('#footer-validation-link') as HTMLAnchorElement;
 
-  // First run dismiss handler
+
   const dismissBtn = root.querySelector('#btn-first-run-dismiss');
   dismissBtn?.addEventListener('click', () => {
     firstRunCalloutEl.classList.add('hidden');
@@ -113,6 +121,7 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
     fluidCanvasEl,
     firstRunCalloutEl,
     inspectorEl,
-    hudEl
+    hudEl,
+    footerValidationLink
   };
 }

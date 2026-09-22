@@ -1,39 +1,28 @@
+
+
 import { Pane } from 'tweakpane';
-import type { SimConfig } from '../core/config';
-import type { OverlayState, OverlayTunables } from '../render/overlays';
-import { MAX_STREAMLINES, MAX_PARTICLES_TUNABLE } from '../render/overlays';
+import { SimConfig } from '../core/config';
+import { OverlayState, OverlayTunables, MAX_STREAMLINES, MAX_PARTICLES_TUNABLE } from '../render/overlays';
+import { HandednessPreset } from '../prop/array';
 
 export interface TelemetryMetrics {
   fps: number;
   frameMs: number;
   gpuMs: number;
-  fluidMs: number;
-  substeps: number;
-  backend: string;
-
-  // GPU Fluid Per-Pass Timings (Phase 2)
-  submitMs: number;
-  sourcesMs: number;
-  curlMs: number;
-  vorticityMs: number;
-  advectMs: number;
-  divergenceMs: number;
-  pressureMs: number;
-  projectMs: number;
-  totalFluidMs: number;
-
-  // Compare Mode (CPU vs GPU diff)
-  compareMaxDiffU: number;
-  compareMaxDiffV: number;
-  compareMaxDiffDye: number;
-  compareRmsDiff: number;
+  fluidMs?: number;
+  substeps?: number;
+  backend?: string;
+  submitMs?: number;
+  sourcesMs?: number;
+  curlMs?: number;
+  vorticityMs?: number;
+  advectMs?: number;
+  divergenceMs?: number;
+  pressureMs?: number;
+  projectMs?: number;
+  totalFluidMs?: number;
 }
 
-/**
- * Phase 6b editable vehicle state shown in the "Vehicle" group. The pose/anchor
- * fields are MARINE-ordered (surge, sway, heave) and mapped to the world frame
- * by the app using the upright remap in src/render/frameMap.ts.
- */
 export interface VehiclePanelState {
   surgeM: number;
   swayM: number;
@@ -44,25 +33,57 @@ export interface VehiclePanelState {
   tetherAnchorHeaveM: number;
 }
 
+export interface PropellerPanelState {
+  design: 'candidateA' | 'kaplan' | 'wageningen';
+  material: 'rigid10k' | 'pa12cf15' | 'petg';
+  rpm: number;
+  pitchDeg: number;
+  handedness: 'CW' | 'CCW';
+}
+
+export interface ElectricalPanelState {
+  supplyV: number;
+  tetherLengthFt: number;
+  tetherAwg: number;
+  tetherResistance: number;
+  ambientTempC: number;
+  thermalEnabled: boolean;
+}
+
+export interface ArrayPanelState {
+  propulsorCount: number;
+  handednessPreset: HandednessPreset;
+  u0Throttle: number;
+  u1Throttle: number;
+  u2Throttle: number;
+  statorAttached: boolean;
+  statorSlotted: boolean;
+  statorIncidenceDeg: number;
+}
+
 export interface PanelCallbacks {
-  /** Re-poses the vehicle to the edited initial pose. */
+  onBackendChange?: (backend: 'gpu' | 'cpu') => void;
+  onResolutionChange?: (preset: '1024x512' | '512x256' | '256x128') => void;
+  onPressureMethodChange?: (method: 'jacobi' | 'multigrid') => void;
+  onInjectBurst?: () => void;
+  onResetFluid?: () => void;
   onVehicleInitPoseChange?: () => void;
   onVehicleResetPose?: () => void;
-  /** Tether on/off, anchor or spring constants changed. */
   onVehicleTetherChange?: () => void;
-  /** Drag or added-mass coefficient changed (re-derives the body properties). */
   onVehicleTunablesChange?: () => void;
-  onInjectBurst: () => void;
-  onResetFluid: () => void;
-  onRenderModeChange?: (mode: string) => void;
-  onResolutionChange?: (preset: '1024x512' | '512x256' | '256x128') => void;
-  onBackendChange?: (backend: 'gpu' | 'cpu') => void;
-  onPressureMethodChange?: (method: 'jacobi' | 'multigrid') => void;
-  onCompareToggle?: (active: boolean) => void;
   onSetSideCutawayView?: () => void;
   onResetOrbitView?: () => void;
   onSunChange?: (elevation: number, azimuth: number) => void;
   onOverlayToggle?: (key: keyof OverlayState, active: boolean) => void;
+
+  onPropDesignChange?: (design: 'candidateA' | 'kaplan' | 'wageningen') => void;
+  onPropMaterialChange?: (material: 'rigid10k' | 'pa12cf15' | 'petg') => void;
+  onPropRpmChange?: (rpm: number) => void;
+  onPropPitchChange?: (pitchDeg: number) => void;
+  onPropHandednessChange?: (h: 'CW' | 'CCW') => void;
+
+  onElectricalChange?: () => void;
+  onArrayChange?: () => void;
 }
 
 export class ControlPanel {
@@ -72,6 +93,34 @@ export class ControlPanel {
   private syncingOverlays = false;
   private vehicleFolder: ReturnType<Pane['addFolder']> | null = null;
 
+  public propState: PropellerPanelState = {
+    design: 'candidateA',
+    material: 'rigid10k',
+    rpm: 4140,
+    pitchDeg: 18.0,
+    handedness: 'CW'
+  };
+
+  public electricalState: ElectricalPanelState = {
+    supplyV: 12.0,
+    tetherLengthFt: 15.0,
+    tetherAwg: 24,
+    tetherResistance: 0.782,
+    ambientTempC: 20.0,
+    thermalEnabled: true
+  };
+
+  public arrayState: ArrayPanelState = {
+    propulsorCount: 3,
+    handednessPreset: 'all_cw',
+    u0Throttle: 1.0,
+    u1Throttle: 1.0,
+    u2Throttle: 1.0,
+    statorAttached: true,
+    statorSlotted: true,
+    statorIncidenceDeg: -5.2
+  };
+
   constructor(
     config: SimConfig,
     metrics: TelemetryMetrics,
@@ -80,131 +129,109 @@ export class ControlPanel {
     overlayTunables?: OverlayTunables,
     vehicleInit?: VehiclePanelState
   ) {
-    this.metrics = metrics;
+    this.metrics = Object.assign({ submitMs: 0, sourcesMs: 0, curlMs: 0, vorticityMs: 0, advectMs: 0, divergenceMs: 0, pressureMs: 0, projectMs: 0 }, metrics);
 
     this.pane = new Pane({
-      title: 'Simulation Telemetry & Controls',
+      title: 'Simulation Parameters & Telemetry',
       expanded: true
     });
 
-    // Performance Folder (Phase 0)
-    const perfFolder = this.pane.addFolder({ title: 'Engine Telemetry (Phase 0)', expanded: true });
-    perfFolder.addBinding(this.metrics, 'fps', { readonly: true, label: 'FPS', format: (v: number) => v.toFixed(1) });
-    perfFolder.addBinding(this.metrics, 'frameMs', { readonly: true, label: 'Render ms', format: (v: number) => v.toFixed(2) });
-    perfFolder.addBinding(this.metrics, 'fluidMs', { readonly: true, label: 'Fluid ms', format: (v: number) => v.toFixed(2) });
-    perfFolder.addBinding(this.metrics, 'substeps', { readonly: true, label: 'Substeps' });
-    perfFolder.addBinding(this.metrics, 'backend', { readonly: true, label: 'Backend' });
 
-    // Fluid Core Controls (Phase 1 & Phase 2)
-    const fluidFolder = this.pane.addFolder({ title: 'Fluid Solver (Phases 1 & 2)', expanded: true });
-    
-    // Backend Switcher (GPU TSL vs CPU Reference)
-    const backendBinding = fluidFolder.addBinding(config.fluid, 'backend', {
-      options: { 'GPU (TSL Compute)': 'gpu', 'CPU (Reference)': 'cpu' },
-      label: 'Backend'
-    });
-    backendBinding.on('change', (ev) => {
-      callbacks?.onBackendChange?.(ev.value as 'gpu' | 'cpu');
-    });
-
-    // Resolution Scaler (1024x512, 512x256, 256x128)
-    const resBinding = fluidFolder.addBinding(config.fluid, 'resolutionPreset', {
-      options: { '1024x512 (Ultra)': '1024x512', '512x256 (High)': '512x256', '256x128 (Standard)': '256x128' },
-      label: 'Resolution'
-    });
-    resBinding.on('change', (ev) => {
-      callbacks?.onResolutionChange?.(ev.value as '1024x512' | '512x256' | '256x128');
-    });
-
-    // Multigrid vs Jacobi Solver
-    const solverBinding = fluidFolder.addBinding(config.fluid, 'pressureMethod', {
-      options: { 'Multigrid (V-Cycle)': 'multigrid', 'Jacobi Poisson': 'jacobi' },
-      label: 'Poisson Solver'
-    });
-    solverBinding.on('change', (ev) => {
-      callbacks?.onPressureMethodChange?.(ev.value as 'jacobi' | 'multigrid');
-    });
-
-    // Side-by-side CPU vs GPU Compare Mode
-    const compareBinding = fluidFolder.addBinding(config.fluid, 'compareMode', {
-      label: 'Compare CPU/GPU'
-    });
-    compareBinding.on('change', (ev) => {
-      callbacks?.onCompareToggle?.(ev.value);
-    });
-
-    fluidFolder.addBinding(config.fluid, 'inflowActive', { label: 'Inflow Jet' });
-    fluidFolder.addBinding(config.fluid, 'inflowVelocity', { min: 0.1, max: 6.0, step: 0.1, label: 'Jet Velocity' });
+    const fluidFolder = this.pane.addFolder({ title: 'Fluid', expanded: true });
     fluidFolder.addBinding(config.fluid, 'viscosity', { min: 0.0, max: 0.005, step: 0.0001, label: 'Viscosity' });
     fluidFolder.addBinding(config.fluid, 'vorticityStrength', { min: 0.0, max: 8.0, step: 0.2, label: 'Vorticity' });
     fluidFolder.addBinding(config.fluid, 'pressureIterations', { min: 5, max: 100, step: 1, label: 'Pressure Iters' });
-    fluidFolder.addBinding(config.fluid, 'advectionScheme', {
-      options: { 'MacCormack (2nd order)': 'maccormack', 'Semi-Lagrangian': 'semi-lagrangian' },
-      label: 'Advection'
-    });
+    fluidFolder.addBinding(config.fluid, 'inflowVelocity', { min: 0.1, max: 6.0, step: 0.1, label: 'Inflow Velocity' });
+    fluidFolder.addBinding(config.fluid, 'inflowActive', { label: 'Inflow Jet Active' });
 
-    // Inflow action buttons
     const injectBtn = fluidFolder.addButton({ title: 'Inject Plume Burst' });
-    injectBtn.on('click', () => {
-      callbacks?.onInjectBurst();
-    });
+    injectBtn.on('click', () => callbacks?.onInjectBurst?.());
 
     const resetBtn = fluidFolder.addButton({ title: 'Reset Fluid Grid' });
-    resetBtn.on('click', () => {
-      callbacks?.onResetFluid();
-    });
+    resetBtn.on('click', () => callbacks?.onResetFluid?.());
 
-    // Per-Pass Timings Folder (gpuTimer results & submit time)
-    const gpuTimingFolder = this.pane.addFolder({ title: 'GPU Fluid Pass Timings (Phase 2)', expanded: false });
-    gpuTimingFolder.addBinding(this.metrics, 'submitMs', { readonly: true, label: 'CPU Submit ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'sourcesMs', { readonly: true, label: 'Sources ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'curlMs', { readonly: true, label: 'Curl ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'vorticityMs', { readonly: true, label: 'Vorticity ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'advectMs', { readonly: true, label: 'Advection ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'divergenceMs', { readonly: true, label: 'Divergence ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'pressureMs', { readonly: true, label: 'Pressure ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'projectMs', { readonly: true, label: 'Project ms', format: (v: number) => v.toFixed(3) });
-    gpuTimingFolder.addBinding(this.metrics, 'totalFluidMs', { readonly: true, label: 'Total Step ms', format: (v: number) => v.toFixed(3) });
 
-    // Compare Error Metrics
-    const compareFolder = this.pane.addFolder({ title: 'CPU vs GPU Difference (256×128)', expanded: false });
-    compareFolder.addBinding(this.metrics, 'compareMaxDiffU', { readonly: true, label: 'Max |Δu|', format: (v: number) => v.toFixed(6) });
-    compareFolder.addBinding(this.metrics, 'compareMaxDiffV', { readonly: true, label: 'Max |Δv|', format: (v: number) => v.toFixed(6) });
-    compareFolder.addBinding(this.metrics, 'compareMaxDiffDye', { readonly: true, label: 'Max |Δdye|', format: (v: number) => v.toFixed(6) });
-    compareFolder.addBinding(this.metrics, 'compareRmsDiff', { readonly: true, label: 'RMS Diff', format: (v: number) => v.toFixed(6) });
+    const propFolder = this.pane.addFolder({ title: 'Propeller', expanded: true });
+    propFolder.addBinding(this.propState, 'design', {
+      options: { 'Candidate A (BEMT)': 'candidateA', 'Kaplan (Ducted)': 'kaplan', 'Wageningen B-Series': 'wageningen' },
+      label: 'Design'
+    }).on('change', ev => callbacks?.onPropDesignChange?.(ev.value as any));
 
-    // Water & Environment (Phase 3)
-    const waterFolder = this.pane.addFolder({ title: 'Water & Environment (Phase 3)', expanded: true });
-    waterFolder.addBinding(config.water, 'surfaceVisible', { label: 'Surface Visible' });
-    waterFolder.addBinding(config.water, 'waveAmplitude', { min: 0.0, max: 0.02, step: 0.001, label: 'Gerstner Amp (m)' });
-    waterFolder.addBinding(config.water, 'waveFrequency', { min: 0.5, max: 8.0, step: 0.1, label: 'Gerstner Freq' });
-    waterFolder.addBinding(config.water, 'waveSpeed', { min: 0.1, max: 3.0, step: 0.1, label: 'Wave Speed' });
-    waterFolder.addBinding(config.water, 'foamThreshold', { min: 0.5, max: 5.0, step: 0.1, label: 'Foam Threshold' });
-    waterFolder.addBinding(config.water, 'causticIntensity', { min: 0.0, max: 3.0, step: 0.1, label: 'Caustics' });
-    waterFolder.addBinding(config.water, 'transmission', { min: 0.1, max: 1.0, step: 0.02, label: 'Transmission' });
-    waterFolder.addBinding(config.water, 'roughness', { min: 0.01, max: 0.3, step: 0.01, label: 'Roughness' });
+    propFolder.addBinding(this.propState, 'material', {
+      options: { 'Rigid 10K (1.80g)': 'rigid10k', 'PA12-CF15 (1.25g)': 'pa12cf15', 'PETG (1.38g)': 'petg' },
+      label: 'Material'
+    }).on('change', ev => callbacks?.onPropMaterialChange?.(ev.value as any));
 
-    const sunElBinding = waterFolder.addBinding(config.water, 'sunElevation', { min: 5, max: 85, step: 1, label: 'Sun Elevation (°)' });
-    const sunAzBinding = waterFolder.addBinding(config.water, 'sunAzimuth', { min: 0, max: 360, step: 5, label: 'Sun Azimuth (°)' });
-    const updateSun = () => {
-      callbacks?.onSunChange?.(config.water.sunElevation, config.water.sunAzimuth);
-    };
-    sunElBinding.on('change', updateSun);
-    sunAzBinding.on('change', updateSun);
+    propFolder.addBinding(this.propState, 'rpm', { min: 0, max: 6000, step: 20, label: 'RPM' })
+      .on('change', ev => callbacks?.onPropRpmChange?.(ev.value));
 
-    const cutawayBtn = waterFolder.addButton({ title: 'Preset: Side Cutaway View' });
-    cutawayBtn.on('click', () => {
-      callbacks?.onSetSideCutawayView?.();
-    });
+    propFolder.addBinding(this.propState, 'pitchDeg', { min: -30, max: 30, step: 0.5, label: 'Pitch (°)' })
+      .on('change', ev => callbacks?.onPropPitchChange?.(ev.value));
 
-    const orbitBtn = waterFolder.addButton({ title: 'Preset: Orbit View' });
-    orbitBtn.on('click', () => {
-      callbacks?.onResetOrbitView?.();
-    });
+    propFolder.addBinding(this.propState, 'handedness', {
+      options: { 'Right-Hand (CW)': 'CW', 'Left-Hand (CCW)': 'CCW' },
+      label: 'Handedness'
+    }).on('change', ev => callbacks?.onPropHandednessChange?.(ev.value as any));
 
-    // Overlays (Phase 6): shared-state toggles + tuning knobs
+
+    const elecFolder = this.pane.addFolder({ title: 'Electrical', expanded: false });
+    elecFolder.addBinding(this.electricalState, 'supplyV', { min: 9.0, max: 18.0, step: 0.1, label: 'Supply V' })
+      .on('change', () => callbacks?.onElectricalChange?.());
+
+    elecFolder.addBinding(this.electricalState, 'tetherLengthFt', { min: 0, max: 100, step: 1, label: 'Tether Length (ft)' })
+      .on('change', () => callbacks?.onElectricalChange?.());
+
+    elecFolder.addBinding(this.electricalState, 'tetherAwg', {
+      options: { '18 AWG (thick)': 18, '20 AWG': 20, '22 AWG': 22, '24 AWG (spec)': 24, '26 AWG (thin)': 26 },
+      label: 'AWG'
+    }).on('change', () => callbacks?.onElectricalChange?.());
+
+    elecFolder.addBinding(this.electricalState, 'ambientTempC', { min: 0, max: 45, step: 0.5, label: 'Ambient Temp (°C)' })
+      .on('change', () => callbacks?.onElectricalChange?.());
+
+    elecFolder.addBinding(this.electricalState, 'thermalEnabled', { label: 'Thermal On/Off' })
+      .on('change', () => callbacks?.onElectricalChange?.());
+
+
+    const arrayFolder = this.pane.addFolder({ title: 'Array', expanded: false });
+    arrayFolder.addBinding(this.arrayState, 'propulsorCount', { min: 1, max: 6, step: 1, label: 'Propulsor Count' })
+      .on('change', () => callbacks?.onArrayChange?.());
+
+    arrayFolder.addBinding(this.arrayState, 'handednessPreset', {
+      options: {
+        'All CW': 'all_cw',
+        'All CCW': 'all_ccw',
+        'Tandem (2x)': 'tandem',
+        'Contra-Rotating Coaxial': 'contra_rotating_coaxial',
+        'Symmetric Counter-Rotating': 'symmetric_counter_rotating'
+      },
+      label: 'Handedness Preset'
+    }).on('change', () => callbacks?.onArrayChange?.());
+
+    const perUnitFolder = arrayFolder.addFolder({ title: 'Per-Unit Overrides', expanded: false });
+    perUnitFolder.addBinding(this.arrayState, 'u0Throttle', { min: -1.0, max: 1.0, step: 0.05, label: 'Unit 0 Throttle' })
+      .on('change', () => callbacks?.onArrayChange?.());
+    perUnitFolder.addBinding(this.arrayState, 'u1Throttle', { min: -1.0, max: 1.0, step: 0.05, label: 'Unit 1 Throttle' })
+      .on('change', () => callbacks?.onArrayChange?.());
+    perUnitFolder.addBinding(this.arrayState, 'u2Throttle', { min: -1.0, max: 1.0, step: 0.05, label: 'Unit 2 Throttle' })
+      .on('change', () => callbacks?.onArrayChange?.());
+
+    const statorFolder = arrayFolder.addFolder({ title: 'Stator', expanded: true });
+    statorFolder.addBinding(this.arrayState, 'statorAttached', { label: 'Stator Attached' })
+      .on('change', () => callbacks?.onArrayChange?.());
+    statorFolder.addBinding(this.arrayState, 'statorSlotted', { label: 'Slotted Vane' })
+      .on('change', () => callbacks?.onArrayChange?.());
+    statorFolder.addBinding(this.arrayState, 'statorIncidenceDeg', { min: -15.0, max: 15.0, step: 0.2, label: 'Incidence (°)' })
+      .on('change', () => callbacks?.onArrayChange?.());
+
+
+    if (vehicleInit) {
+      this.buildVehicleGroup(config, vehicleInit, callbacks);
+    }
+
+
     if (overlayState && overlayTunables) {
-      const overlayFolder = this.pane.addFolder({ title: 'Overlays (Phase 6)', expanded: false });
+      const overlayFolder = this.pane.addFolder({ title: 'Overlays', expanded: false });
 
       const overlayKeys: (keyof OverlayState)[] = [
         'velocityVectors',
@@ -220,15 +247,12 @@ export class ControlPanel {
       for (const key of overlayKeys) {
         const binding = overlayFolder.addBinding(overlayState, key, { label: ControlPanel.OVERLAY_LABELS[key] });
         binding.on('change', (ev) => {
-          if (this.syncingOverlays) return; // external sync, no echo
+          if (this.syncingOverlays) return;
           callbacks?.onOverlayToggle?.(key, ev.value as boolean);
         });
         this.overlayBindings.set(key, binding);
       }
 
-      // Directive 7: tunables are hard-capped at the panel to match the
-      // runtime caps (MAX_STREAMLINES / MAX_PARTICLES_TUNABLE) — no path can
-      // dial CPU integration past the frame budget.
       overlayFolder.addBinding(overlayTunables, 'vectorStride', { min: 8, max: 96, step: 4, label: 'Vector Stride' });
       overlayFolder.addBinding(overlayTunables, 'vectorScale', { min: 0.01, max: 0.12, step: 0.005, label: 'Vector Scale' });
       overlayFolder.addBinding(overlayTunables, 'streamlineCount', { min: 10, max: MAX_STREAMLINES, step: 5, label: 'Streamlines' });
@@ -236,22 +260,46 @@ export class ControlPanel {
       overlayFolder.addBinding(overlayTunables, 'rollIndicatorGain', { min: 0.2, max: 4.0, step: 0.1, label: 'Roll Gain' });
     }
 
-    // Vehicle rigid body (Phase 6b)
-    if (vehicleInit) {
-      this.buildVehicleGroup(config, vehicleInit, callbacks);
-    }
+
+    const renderFolder = this.pane.addFolder({ title: 'Rendering', expanded: false });
+    const resBinding = renderFolder.addBinding(config.fluid, 'resolutionPreset', {
+      options: { '1024x512 (Ultra)': '1024x512', '512x256 (High)': '512x256', '256x128 (Standard)': '256x128' },
+      label: 'Resolution Scale'
+    });
+    resBinding.on('change', (ev) => callbacks?.onResolutionChange?.(ev.value as any));
+
+    renderFolder.addBinding(config.water, 'surfaceVisible', { label: 'Surface Visible' });
+    renderFolder.addBinding(config.water, 'waveAmplitude', { min: 0.0, max: 0.02, step: 0.001, label: 'Wave Amplitude' });
+    renderFolder.addBinding(config.water, 'causticIntensity', { min: 0.0, max: 3.0, step: 0.1, label: 'Caustics' });
+    renderFolder.addBinding(config.water, 'transmission', { min: 0.1, max: 1.0, step: 0.02, label: 'Transmission' });
+
+    const cutawayBtn = renderFolder.addButton({ title: 'Preset: Side Cutaway View' });
+    cutawayBtn.on('click', () => callbacks?.onSetSideCutawayView?.());
+
+    const orbitBtn = renderFolder.addButton({ title: 'Preset: Orbit View' });
+    orbitBtn.on('click', () => callbacks?.onResetOrbitView?.());
+
+
+    const diagFolder = this.pane.addFolder({ title: 'Diagnostics', expanded: false });
+    diagFolder.addBinding(this.metrics, 'fps', { readonly: true, label: 'FPS', format: (v: number) => v.toFixed(1) });
+    diagFolder.addBinding(this.metrics, 'frameMs', { readonly: true, label: 'Frame ms', format: (v: number) => v.toFixed(2) });
+    diagFolder.addBinding(this.metrics, 'gpuMs', { readonly: true, label: 'Total GPU ms', format: (v: number) => v.toFixed(2) });
+    diagFolder.addBinding(this.metrics, 'submitMs', { readonly: true, label: 'CPU Submit ms', format: (v: number) => (v ?? 0).toFixed(3) });
+    diagFolder.addBinding(this.metrics, 'sourcesMs', { readonly: true, label: 'Sources ms', format: (v: number) => (v ?? 0).toFixed(3) });
+    diagFolder.addBinding(this.metrics, 'curlMs', { readonly: true, label: 'Curl ms', format: (v: number) => (v ?? 0).toFixed(3) });
+    diagFolder.addBinding(this.metrics, 'vorticityMs', { readonly: true, label: 'Vorticity ms', format: (v: number) => (v ?? 0).toFixed(3) });
+    diagFolder.addBinding(this.metrics, 'advectMs', { readonly: true, label: 'Advection ms', format: (v: number) => (v ?? 0).toFixed(3) });
+    diagFolder.addBinding(this.metrics, 'divergenceMs', { readonly: true, label: 'Divergence ms', format: (v: number) => (v ?? 0).toFixed(3) });
+    diagFolder.addBinding(this.metrics, 'pressureMs', { readonly: true, label: 'Pressure ms', format: (v: number) => (v ?? 0).toFixed(3) });
+    diagFolder.addBinding(this.metrics, 'projectMs', { readonly: true, label: 'Project ms', format: (v: number) => (v ?? 0).toFixed(3) });
   }
 
-  /**
-   * Phase 6b — "Vehicle" group: initial pose, tether, drag coefficients and
-   * added-mass coefficients (the last two behind "advanced" folds).
-   */
   private buildVehicleGroup(
     config: SimConfig,
     vehicleInit: VehiclePanelState,
     callbacks?: PanelCallbacks
   ): void {
-    const folder = this.pane.addFolder({ title: 'Vehicle (Phase 6b)', expanded: false });
+    const folder = this.pane.addFolder({ title: 'Vehicle', expanded: false });
     this.vehicleFolder = folder;
 
     const pose = folder.addFolder({ title: 'Initial Pose', expanded: true });
@@ -259,7 +307,7 @@ export class ControlPanel {
       ['surgeM', 'Surge X_b (m)', -0.4, 0.4, 0.005],
       ['swayM', 'Sway Y_b (m)', -0.4, 0.4, 0.005],
       ['heaveM', 'Heave Z_b (m, up)', -0.25, 0.22, 0.005],
-      ['yawDeg', 'Yaw Z (\u00B0)', -180, 180, 1]
+      ['yawDeg', 'Yaw Z (°)', -180, 180, 1]
     ];
     for (const [key, label, min, max, step] of poseFields) {
       pose.addBinding(vehicleInit, key, { min, max, step, label }).on('change', () => {
@@ -287,19 +335,19 @@ export class ControlPanel {
     tether.addBinding(config.vehicle, 'tetherStiffnessNm', { min: 0.1, max: 10, step: 0.1, label: 'Stiffness k (N/m)' }).on('change', () => {
       callbacks?.onVehicleTetherChange?.();
     });
-    tether.addBinding(config.vehicle, 'tetherDamping', { min: 0, max: 4, step: 0.05, label: 'Damping c (N\u00B7s/m)' }).on('change', () => {
+    tether.addBinding(config.vehicle, 'tetherDamping', { min: 0, max: 4, step: 0.05, label: 'Damping c (N·s/m)' }).on('change', () => {
       callbacks?.onVehicleTetherChange?.();
     });
 
-    const drag = folder.addFolder({ title: 'Drag Coefficients (advanced)', expanded: false });
+    const drag = folder.addFolder({ title: 'Drag', expanded: false });
     const dragFields: [keyof SimConfig['vehicle'], string, number, number, number][] = [
-      ['dragCdASurge', 'CdA Surge (m\u00B2)', 0.001, 0.05, 0.0005],
-      ['dragCdASway', 'CdA Sway (m\u00B2)', 0.001, 0.05, 0.0005],
-      ['dragCdAHeave', 'CdA Heave (m\u00B2)', 0.001, 0.08, 0.0005],
-      ['dragLinSurge', 'Linear Surge (N\u00B7s/m)', 0, 2, 0.01],
-      ['dragLinSway', 'Linear Sway (N\u00B7s/m)', 0, 2, 0.01],
-      ['dragLinHeave', 'Linear Heave (N\u00B7s/m)', 0, 2, 0.01],
-      ['rotDragLinRoll', 'Rot Linear Roll (N\u00B7m\u00B7s/rad)', 0.0005, 0.05, 0.0005],
+      ['dragCdASurge', 'CdA Surge (m²)', 0.001, 0.05, 0.0005],
+      ['dragCdASway', 'CdA Sway (m²)', 0.001, 0.05, 0.0005],
+      ['dragCdAHeave', 'CdA Heave (m²)', 0.001, 0.08, 0.0005],
+      ['dragLinSurge', 'Linear Surge (N·s/m)', 0, 2, 0.01],
+      ['dragLinSway', 'Linear Sway (N·s/m)', 0, 2, 0.01],
+      ['dragLinHeave', 'Linear Heave (N·s/m)', 0, 2, 0.01],
+      ['rotDragLinRoll', 'Rot Linear Roll (N·m·s/rad)', 0.0005, 0.05, 0.0005],
       ['rotDragLinPitch', 'Rot Linear Pitch', 0.0005, 0.05, 0.0005],
       ['rotDragLinYaw', 'Rot Linear Yaw', 0.0005, 0.05, 0.0005]
     ];
@@ -309,7 +357,7 @@ export class ControlPanel {
       });
     }
 
-    const addedMass = folder.addFolder({ title: 'Added Mass (advanced)', expanded: false });
+    const addedMass = folder.addFolder({ title: 'Added-Mass', expanded: false });
     const amFactors: [keyof SimConfig['vehicle'], string, number, number, number][] = [
       ['addedMassSurgeFactor', 'Surge factor', 0, 3, 0.05],
       ['addedMassSwayFactor', 'Sway factor', 0, 3, 0.05],
@@ -320,26 +368,8 @@ export class ControlPanel {
         callbacks?.onVehicleTunablesChange?.();
       });
     }
-    const amRotational: [keyof SimConfig['vehicle'], string][] = [
-      ['addedMassRollFactor', 'Rot Roll (kg\u00B7m\u00B2)'],
-      ['addedMassPitchFactor', 'Rot Pitch (kg\u00B7m\u00B2)'],
-      ['addedMassYawFactor', 'Rot Yaw (kg\u00B7m\u00B2)']
-    ];
-    for (const [key, label] of amRotational) {
-      addedMass.addBinding(config.vehicle, key, { min: 0, max: 0.01, step: 0.0001, label }).on('change', () => {
-        callbacks?.onVehicleTunablesChange?.();
-      });
-    }
-
-    folder.addBinding(config.vehicle, 'vehicleSubstepDivider', { min: 1, max: 4, step: 1, label: 'Substep \u00D7 fluid' }).on('change', () => {
-      callbacks?.onVehicleTunablesChange?.();
-    });
-    folder.addBinding(config.vehicle, 'angularRateClampRadS', { min: 2, max: 40, step: 1, label: 'Rate Clamp (rad/s)' }).on('change', () => {
-      callbacks?.onVehicleTunablesChange?.();
-    });
   }
 
-  /** Re-reads the vehicle bindings after an external pose change. */
   public refreshVehicleGroup(): void {
     this.vehicleFolder?.refresh();
   }
@@ -360,10 +390,6 @@ export class ControlPanel {
     this.pane.refresh();
   }
 
-  /**
-   * Syncs the Tweakpane overlay bindings from an external state change
-   * (e.g. icon-strip click) without re-firing change callbacks.
-   */
   public syncOverlayState(state: OverlayState): void {
     this.syncingOverlays = true;
     for (const [key, binding] of this.overlayBindings) {

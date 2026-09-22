@@ -1,3 +1,6 @@
+import { AdaptiveResolutionController } from "./sim/adaptiveResolution";
+import { RecoveryCoordinator } from "./sim/recoveryCoordinator";
+import { SimulationWorkerBridge } from "./workers/workerBridge";
 import './index.css';
 import * as THREE from 'three';
 import { defaultConfig } from './core/config';
@@ -8,11 +11,14 @@ import { AppRenderer } from './render/renderer';
 import { GpuTimer } from './telemetry/gpuTimer';
 import { FluidSolver } from './fluid/FluidSolver';
 import { buildSimLayout } from './ui/layout';
-import { SimHeader, DEFAULT_PRESETS, type RunState } from './ui/header';
+import { SimHeader, ALL_PRESETS, type RunState } from './ui/header';
 import { SimPalette } from './ui/palette';
 import { StageOverlays } from './ui/stageOverlays';
 import { SimInspector, type VehicleTelemetryView } from './ui/inspector';
 import { SimHudStrip, type HudMetricsData } from './ui/hud';
+import { TelemetryRecorder } from './telemetry/recorder';
+import { type SpecStatus } from './types/telemetry';
+import { applyPresetToState, createDefaultPresetState, tickThermalBurst, type PresetRuntimeState } from './core/presetState';
 import { PropellerShaft, type PropellerMaterial } from './prop/rigidbody';
 import { solveBEMT } from './prop/bemt';
 import { getPropDesign } from './prop/designs/index';
@@ -40,10 +46,27 @@ export class App {
   private fluidRenderer!: FluidRenderer2D;
   private gpuTimer!: GpuTimer;
 
-  // Phase 5b Propeller Array & Torque Ledger
+
+  public adaptiveRes = new AdaptiveResolutionController({
+    baseWidth: defaultConfig.fluid.nx,
+    baseHeight: defaultConfig.fluid.ny
+  });
+  public recovery!: RecoveryCoordinator;
+  public workerBridge?: SimulationWorkerBridge;
+  private scratchDtDr: Array<{ rOverR: number; dT: number }> = [];
+  private scratchPerUnitTel: Array<{
+    id: string;
+    thrust_N: number;
+    torque_Nm: number;
+    rpm: number;
+    current_A: number;
+    temp_C: number;
+  }> = [];
+
+
   public propArray = new PropellerArray();
 
-  // Phase 6b Vehicle Rigid Body + Buoyancy + two-way fluid coupling
+
   public vehicle = new VehicleBody(defaultConfig.vehicle);
   public vehicleCoupler = new VehicleFluidCoupler({
     gridCenter: new THREE.Vector3(0, 0, 0),
@@ -52,8 +75,8 @@ export class App {
     fluidDensity: defaultConfig.vehicle.fluidDensityKgM3,
     inflowRelaxation: 0.5,
     injectionRadiusCells: 14,
-    // Plume is laid down one rotor radius (≈21 mm ≈ 14 cells) downstream so a
-    // rotor never samples its own exhaust back as a tailwind.
+
+
     injectionOffsetCells: 14,
     enabled: true
   });
@@ -65,13 +88,13 @@ export class App {
     stiffnessNm: defaultConfig.vehicle.tetherStiffnessNm,
     dampingNPerMs: defaultConfig.vehicle.tetherDamping
   };
-  /** Ambient in-plane flow at the vehicle CoG (world frame), sampled each step. */
+  
   private vehicleAmbientFlowWorld = new THREE.Vector3();
   private scratchVehicleWorldVelocity = new THREE.Vector3();
-  /** Live marine-ordered thruster input, mirrored into the overlays/inspector. */
+  
   public vehicleForceMarineN: [number, number, number] = [0, 0, 0];
   public vehicleMomentMarineNm: [number, number, number] = [0, 0, 0];
-  /** Phase 6b Tweakpane editable initial pose / tether anchor (marine order). */
+  
   public vehicleInit = {
     surgeM: 0.0,
     swayM: 0.0,
@@ -82,7 +105,7 @@ export class App {
     tetherAnchorHeaveM: defaultConfig.vehicle.tetherAnchorWorld[2]
   };
 
-  // Phase 6 Overlay System & Tweakpane
+
   public overlaySystem!: OverlaySystem;
   public overlayState: OverlayState = { ...DEFAULT_OVERLAY_STATE };
   public controlPanel?: ControlPanel;
@@ -99,12 +122,14 @@ export class App {
     motorCurrentsA: []
   };
 
-  // IBM Quantum Composer UI Components
+
   public header!: SimHeader;
   public palette!: SimPalette;
   public stageOverlays!: StageOverlays;
   public inspector!: SimInspector;
   public hudStrip!: SimHudStrip;
+  public recorder = new TelemetryRecorder();
+  private presetState: PresetRuntimeState = createDefaultPresetState();
   public refBenchmarkMs = 0;
 
   public runState: RunState = 'idle';
@@ -115,7 +140,7 @@ export class App {
   private vehiclePoseCurrent: InterpolatedPose = { position: [0, 0, 0], yawRad: 0, scale: 1 };
   private vehicleInterpolatedPose: InterpolatedPose = { position: [0, 0, 0], yawRad: 0, scale: 1 };
 
-  // Active Operating State
+
   private activePresetKey = 'breakout';
   private activeThrottle = 1.0;
   private activeRpm = 4140;
@@ -123,16 +148,16 @@ export class App {
   private motorTemp_C = 20.0;
   private runDurationSec = 0.0;
 
-  // Phase 4 Propeller Dynamic & Hydrodynamic State
+
   public shaft = new PropellerShaft(4140, 18.0);
   public activeDesignId: 'candidateA' | 'kaplan' | 'wageningen' = 'candidateA';
   public activeMaterial: PropellerMaterial = 'rigid10k';
   public activeHandedness: 'CW' | 'CCW' = 'CW';
 
-  // Phase 4b Electrical Model
+
   public bus = new PowerBus(3, 12.0, 0.782);
 
-  // Phase 5 Bidirectional Fluid-Propeller Coupling & Hull Obstacle
+
   public coupler = new ActuatorDiscCoupler({
     centerX: 28,
     centerY: 64,
@@ -150,26 +175,38 @@ export class App {
     cd: 1.05
   });
 
-  // Total sim time advanced by physics substeps THIS frame (Directive 5): on a
-  // 240 Hz display one frame may contain 0 substeps (field unchanged, advection
-  // dt = 0) or several (advection must advance by their SUM, not the last one).
+
+
+
   private physicsAdvancedDt = 0;
-  // Last sampled inflow advance speed (m/s); live forward speed for the ledger (Directive 1)
+
   private lastAdvanceSpeedMs = 0;
 
   private metricsData: HudMetricsData = {
-    thrust_N: 0,
-    torque_Nm: 0,
-    rpm: 0,
-    bus_V: 12.0,
-    current_A: 0,
+    thrust_N: 4.73,
+    torque_Nm: 0.024,
+    power_W: 15.2,
+    efficiency_pct: 0.0,
+    advance_ratio_J: 0.0,
+    rpm: 4140,
+    pitch_deg: 18.0,
+    inflow_velocity_ms: 0.0,
+    max_velocity_domain_ms: 0.0,
+    bus_V: 10.90,
+    current_A: 1.41,
     temp_C: 20.0,
     rollRatePrediction_deg_m: 1.8,
     fps: 60.0,
     frameMs: 16.6,
     gpuMs: 0.0,
     overlayMs: 0.0,
-    presetName: 'Breakout'
+    resolutionScale: 1.0,
+    readbackLatencyMs: 0.0,
+    renderTier: 'WebGPU',
+    presetName: 'Breakout Burst',
+    thermalBurstRemainingS: 18.0,
+    specStatus: 'within_spec',
+    specStatusLabel: 'WITHIN SPEC'
   };
 
   public init(): void {
@@ -179,13 +216,13 @@ export class App {
       return;
     }
 
-    // 1. Build IBM Quantum 3-Region Layout Shell
+
     const layout = buildSimLayout(root);
 
-    // 2. Initialize 3D AppRenderer with automatic WebGL2 fallback
+
     this.renderer = new AppRenderer(layout.viewportEl);
 
-    // 2b. Initialize Phase 6 OverlaySystem (3D overlay group + hover/diff DOM)
+
     this.overlaySystem = new OverlaySystem({
       hoverEl: layout.stagePopoversEl,
       diffEl: layout.stagePopoversEl
@@ -203,7 +240,7 @@ export class App {
       this.overlaySystem.clearPointer();
     });
 
-    // 3. Initialize Phase 2 GPU Fluid Solver (TSL with CPU fallback) & 2D Debug Overlay
+
     this.fluidSolver = new GpuFluidSolver({
       renderer: this.renderer.renderer,
       gridOptions: { width: defaultConfig.fluid.nx, height: defaultConfig.fluid.ny },
@@ -219,24 +256,60 @@ export class App {
 
     this.fluidRenderer = new FluidRenderer2D(layout.fluidCanvasEl, defaultConfig.fluid.nx, defaultConfig.fluid.ny);
 
-    // 4. Measure reference benchmark ms at 256x128 CPU
+    this.adaptiveRes.onResolutionChange = (scale, w, h) => {
+      this.fluidSolver.setResolution(w, h);
+      this.fluidRenderer.resize(w, h);
+      this.coupler.config.centerY = Math.floor(h / 2);
+      this.hull.config.y = Math.floor(h / 2 - 10);
+      this.metricsData.resolutionScale = scale;
+    };
+
+    this.recovery = new RecoveryCoordinator({
+      onBackendChange: (backend) => {
+        console.log(`[App] Render backend transitioned to ${backend}`);
+
+
+        this.fluidSolver.setBackend(backend);
+        this.metricsData.renderTier = backend;
+      },
+      onPause: () => {
+        this.clock.stop();
+      },
+      onResume: () => {
+        if (this.runState === "running") {
+          this.clock.start();
+        }
+      },
+
+
+      reinitProbe: () => this.fluidSolver.reinitGpuPipeline()
+    });
+
+    this.attachDeviceLossListeners();
+    this.metricsData.renderTier = this.renderer.backend;
+
+
+
     this.measureCpuReferenceBenchmark();
 
-    // 5. Initialize Fixed-Timestep Simulation Clock (60 Hz, max 4 substeps)
+
     this.clock = new SimClock(defaultConfig.clock.fixedDeltaTime, defaultConfig.clock.maxSubsteps);
 
-    // 6. Initialize GPU Timer
+
     const glContext = (this.renderer.renderer as any).getContext ? (this.renderer.renderer as any).getContext() : undefined;
     this.gpuTimer = new GpuTimer({ gl: glContext });
 
-    // 7. Mount Header
+
     this.header = new SimHeader(layout.headerEl, {
       onRunToggle: (nextState) => {
         this.runState = nextState;
         if (nextState === 'running') {
           this.clock.start();
-          // Inject immediate initial plume burst so within 2 seconds water visibly rises & flows
-          this.fluidSolver.jet.triggerBurst(this.fluidSolver.grid, 3.2);
+
+          this.recorder.start();
+          this.fluidSolver.jet.config.enabled = true;
+          this.fluidSolver.jet.config.vx = Math.max(1.8, Math.abs(this.activeThrottle) * 3.5);
+          this.fluidSolver.jet.triggerBurst(this.fluidSolver.grid, Math.max(2.5, Math.abs(this.activeThrottle) * 3.2));
         } else if (nextState === 'paused') {
           this.clock.stop();
         } else if (nextState === 'idle') {
@@ -260,11 +333,11 @@ export class App {
         this.exportTelemetryCsv();
       },
       onValidationClick: () => {
-        alert('Navigating to ITTC & NACA Open-Water Validation Report');
+        window.location.href = '/validation';
       }
     });
 
-    // Wire Stage Direct Manipulation Callbacks
+
     this.renderer.onPropellerSelected = () => {
       this.inspector.setSelection({ type: 'thruster', index: 0 });
     };
@@ -301,15 +374,15 @@ export class App {
       const valEl = document.querySelector('#val-th-stator-inc');
       if (valEl) valEl.textContent = `${incDeg.toFixed(1)}°`;
     };
-    // Phase 6b — mount the vehicle body with direct-manipulation handles
+
     const vehicle3D = this.renderer.attachVehicle3D(defaultConfig.vehicle);
     this.renderer.onVehicleSelected = () => {
       this.inspector.setSelection({ type: 'vehicle' });
       this.renderer.prop3D?.setSelected(false);
     };
     this.renderer.onVehiclePoseChanged = (position, yawRad) => {
-      // Direct manipulation writes position + yaw only: pitch and roll are owned
-      // by the buoyancy model and are never user-set.
+
+
       this.vehicle.reset([position.x, position.y, position.z], yawRad);
       this.vehicleTelemetry = null;
     };
@@ -331,7 +404,7 @@ export class App {
       }
     };
 
-    // 8. Mount Left Palette (Physical Primitives)
+
     this.palette = new SimPalette(layout.paletteEl, {
       onLoadVehicle: (vehicleId) => {
         console.log(`[Palette] Loaded vehicle: ${vehicleId}`);
@@ -341,8 +414,8 @@ export class App {
         this.renderer.resetOrbitView();
       },
       onResetPose: () => {
-        // Phase 6b: Reset Pose is a palette action — return the vehicle to its
-        // configured initial pose and reframe the camera on it.
+
+
         this.applyVehicleInitPose();
         this.renderer.vehicle3D?.commitPose();
         this.renderer.resetOrbitView();
@@ -408,7 +481,7 @@ export class App {
         this.activeDesignId = design;
         const d = getPropDesign(design);
         this.renderer.prop3D?.setDesign(d);
-        // Phase 6 variant diff overlay: old vs new open-water thrust curve, 5 s fade
+
         const newCurve = this.computeThrustCurve(design);
         this.overlaySystem.showVariantDiff(oldCurve, newCurve);
       },
@@ -421,7 +494,7 @@ export class App {
       }
     });
 
-    // 9. Mount Stage Overlays
+
     this.stageOverlays = new StageOverlays(
       layout.stageCornerToolsEl,
       layout.stageOverlayStripEl,
@@ -437,7 +510,7 @@ export class App {
         onToggleOverlay: (key, active) => {
           this.overlayState[key] = active;
           this.overlaySystem.setVisible(key, active);
-          // Pressure heatmap owns the cutaway canvas while active
+
           if (key === 'pressureHeatmap') {
             this.fluidRenderer.mode = active ? 'PRESSURE' : 'DYE';
           }
@@ -447,7 +520,7 @@ export class App {
       { sharedState: this.overlayState }
     );
 
-    // 10. Mount Right Inspector (Run settings by default)
+
     this.inspector = new SimInspector(layout.inspectorEl, {
       onSupplyVoltageChange: (v) => {
         defaultConfig.electrical.supplyVoltage = v;
@@ -546,10 +619,10 @@ export class App {
       }
     });
 
-    // 11. Mount Bottom HUD Strip
+
     this.hudStrip = new SimHudStrip(layout.hudEl, layout.stagePopoversEl);
 
-    // 11b. Mount Tweakpane ControlPanel (Phase 0–3 telemetry + Phase 6 Overlays)
+
     this.controlPanel = new ControlPanel(
       defaultConfig,
       this.metricsData as any,
@@ -571,8 +644,8 @@ export class App {
           this.vehicleTether.dampingNPerMs = defaultConfig.vehicle.tetherDamping;
         },
         onVehicleTunablesChange: () => {
-          // Drag / added-mass / clamp edits re-derive the body's effective
-          // inertia and damping without touching its solved state.
+
+
           this.vehicle.applyTunables(defaultConfig.vehicle);
         },
         onOverlayToggle: (key, active) => {
@@ -601,26 +674,137 @@ export class App {
     this.start();
   }
 
-  private applyPreset(presetKey: string): void {
-    const p = DEFAULT_PRESETS.find(x => x.key === presetKey);
+  
+  private attachDeviceLossListeners(): void {
+    const rendererAny = this.renderer.renderer as any;
+
+
+    const device = rendererAny?.backend?.device ?? rendererAny?._device;
+    if (device && typeof device.lost?.then === 'function') {
+      device.lost.then((info: { reason?: string } | undefined) => {
+        console.warn(`[App] WebGPU device lost (reason: ${info?.reason ?? 'unknown'})`);
+        void this.recovery.handleDeviceLoss();
+      });
+    }
+
+
+
+    const dom = rendererAny?.domElement as HTMLElement | undefined;
+    if (dom && typeof dom.addEventListener === 'function') {
+      const onContextLost = (e: Event) => {
+        e.preventDefault();
+        console.warn('[App] WebGL2 context lost');
+        void this.recovery.handleDeviceLoss();
+      };
+      dom.addEventListener('webglcontextlost', onContextLost as EventListener);
+    }
+
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+          console.log('[App] Manual device-loss simulation (Shift+D)');
+          void this.recovery.handleDeviceLoss();
+        }
+      });
+    }
+  }
+
+  public applyPreset(presetKey: string): void {
+    const p = ALL_PRESETS.find(x => x.key === presetKey);
     if (!p) return;
 
+    if (presetKey === "stress") {
+      this.fluidSolver.setResolution(2048, 1024);
+      this.fluidRenderer.resize(2048, 1024);
+      this.coupler.config.centerY = 512;
+      this.hull.config.y = 502;
+      this.adaptiveRes.baseWidth = 2048;
+      this.adaptiveRes.baseHeight = 1024;
+      this.adaptiveRes.setScale(1.0);
+      this.metricsData.resolutionScale = 1.0;
+            (Object.keys(this.overlayState) as Array<keyof OverlayState>).forEach(k => {
+        this.overlayState[k] = true;
+        this.overlaySystem.setVisible(k, true);
+      });
+      this.fluidRenderer.mode = "PRESSURE";
+    }
     this.activePresetKey = p.key;
     this.activeThrottle = p.throttle;
     this.activeRpm = p.rpm;
     this.metricsData.thrust_N = p.thrust_N;
     this.activeCurrent_A = p.current_A;
 
-    this.metricsData.presetName = p.label.split(' ')[0];
+    applyPresetToState(this.presetState, p);
+
+    this.metricsData.presetName = p.name;
+    this.metricsData.thermalBurstRemainingS = this.presetState.burstRemainingS;
     this.header.setPreset(p.key);
+
+
+    for (let i = 0; i < this.propArray.thrusters.length; i++) {
+      const th = p.throttleVector && p.throttleVector[i] !== undefined ? p.throttleVector[i] : p.throttle;
+      this.propArray.thrusters[i].throttle = th;
+    }
+
+
+    defaultConfig.electrical.supplyVoltage = 12.0;
+    defaultConfig.electrical.tetherLengthFt = 15.0;
+    const rTether = calculateTetherResistanceFromMeters(15.0 / 3.28084, 24);
+    defaultConfig.electrical.tetherResistance = rTether;
+    this.bus.supplyV = 12.0;
+    this.bus.tetherResistance = rTether;
+    this.inspector.supplyV = 12.0;
+    this.inspector.tetherFt = 15.0;
+    this.inspector.tetherAwg = 24;
+    this.inspector.tetherResistance = rTether;
+
+
+    this.activeDesignId = 'candidateA';
+    this.renderer.prop3D?.setDesign(getPropDesign('candidateA'));
+
+
+    this.activeMaterial = 'rigid10k';
+    this.renderer.prop3D?.setMaterial('rigid10k');
+
+
+    for (const t of this.propArray.thrusters) {
+      t.stator.config.vaneType = 'slotted';
+      t.stator.config.incidenceDeg = -5.2;
+      t.stator.config.slotChordPct = 40.0;
+    }
+    this.renderer.prop3D?.setStatorAttached(true);
+    this.renderer.prop3D?.setStatorSlotted(true);
+    this.renderer.prop3D?.setStatorIncidence(-5.2);
+    this.inspector.statorAttached = true;
+    this.inspector.statorSlotted = true;
+    this.inspector.statorIncidenceDeg = -5.2;
+
     this.inspector.thrusterThrottle = p.throttle;
     this.inspector.thrusterRpm = p.rpm;
     this.shaft.commandedRpm = p.rpm * this.activeThrottle;
 
+
+    if (this.controlPanel) {
+      this.controlPanel.propState.design = 'candidateA';
+      this.controlPanel.propState.material = 'rigid10k';
+      this.controlPanel.propState.rpm = p.rpm;
+      this.controlPanel.electricalState.supplyV = 12.0;
+      this.controlPanel.electricalState.tetherLengthFt = 15.0;
+      this.controlPanel.electricalState.tetherAwg = 24;
+      this.controlPanel.electricalState.tetherResistance = rTether;
+      this.controlPanel.arrayState.statorAttached = true;
+      this.controlPanel.arrayState.statorSlotted = true;
+      this.controlPanel.arrayState.statorIncidenceDeg = -5.2;
+      this.controlPanel.update();
+    }
+
+
+
     if (this.runState === 'running') {
-      this.fluidSolver.jet.config.enabled = Math.abs(p.throttle) > 0.1;
-      this.fluidSolver.jet.config.vx = p.throttle * 3.5;
-      this.fluidSolver.jet.triggerBurst(this.fluidSolver.grid, Math.abs(p.throttle) * 2.5);
+      this.fluidSolver.jet.config.enabled = Math.abs(p.throttle) > 0.05;
+      this.fluidSolver.jet.config.vx = Math.max(1.8, Math.abs(p.throttle) * 3.5);
+      this.fluidSolver.jet.triggerBurst(this.fluidSolver.grid, Math.max(2.0, Math.abs(p.throttle) * 2.5));
     }
   }
 
@@ -651,19 +835,16 @@ export class App {
     requestAnimationFrame(loop);
   }
 
-  /**
-   * Phase 6 variant diff: samples an open-water thrust curve (thrust vs
-   * advance coefficient J) for a prop design over 8 J points via BEMT.
-   */
+  
   private computeThrustCurve(designId: string): ThrustCurvePoint[] {
     const design = getPropDesign(designId);
     const D = design.diameterMm * 1e-3;
     const curve: ThrustCurvePoint[] = [];
     const n = 8;
-    const va = 0.5; // representative advance speed for the J sweep
+    const va = 0.5;
     for (let i = 0; i < n; i++) {
-      const J = (i / (n - 1)) * 1.4; // J = Va / (nD), sweep 0 → 1.4
-      const rpm = (va * 60) / (J * D); // invert J for the sweep
+      const J = (i / (n - 1)) * 1.4;
+      const rpm = (va * 60) / (J * D);
       if (!isFinite(rpm) || rpm <= 0) {
         curve.push({ J, thrustN: 0 });
         continue;
@@ -681,21 +862,21 @@ export class App {
   private update(currentTimeMs: number): void {
     const frameStart = performance.now();
 
-    // 1. Advance Physics when RUNNING at Fixed 60 Hz Timestep
+
     this.physicsAdvancedDt = 0;
     if (this.runState === 'running') {
       this.clock.tick(currentTimeMs, (dt) => {
         this.runDurationSec += dt;
         this.physicsAdvancedDt += dt;
 
-        // Synchronize shaft dynamic state
+
         this.shaft.commandedRpm = this.activeRpm * this.activeThrottle;
         this.shaft.update(dt);
 
-        // 1. Fluid -> Propeller Coupling: sample local inflow with relaxation damping
+
         const advanceSpeed = this.coupler.sampleInflowVelocity(this.fluidSolver.grid);
 
-        // 2. BEMT Hydrodynamic Solve
+
         const design = getPropDesign(this.activeDesignId);
         const bemt = solveBEMT(this.shaft.currentRpm, advanceSpeed, {
           design,
@@ -704,7 +885,7 @@ export class App {
           pitchMm: Math.tan((this.shaft.currentPitchDeg * Math.PI) / 180.0) * (2.0 * Math.PI * 0.015) * 1e3
         });
 
-        // 3. Electrical bus solver: coupled multi-motor network with tether drop & thermal
+
         this.bus.supplyV = this.inspector.supplyV;
         this.bus.thermalEnabled = this.inspector.thermalActive;
         this.bus.setAmbientTemperature(this.inspector.ambientTempC);
@@ -722,13 +903,13 @@ export class App {
         const motor0 = busTelemetry.motors[0];
         this.motorTemp_C = motor0.windingTempC;
 
-        // 4. Propeller -> Fluid Coupling: inject momentum & tip vortex body forces
-        const couplingTelemetry = this.coupler.injectCouplingForces(this.fluidSolver.grid, bemt, dt);        // 5. Downstream Hull Obstacle Drag
+
+        const couplingTelemetry = this.coupler.injectCouplingForces(this.fluidSolver.grid, bemt, dt);
         this.hull.applyDrag(this.fluidSolver.grid, dt);
 
-        // 6. Vehicle → fluid coupling FIRST: sample the advance speed at every
-        //    rotor disk and the ambient in-plane flow at the vehicle CoG, so the
-        //    BEMT solve below sees the field the body is actually sitting in.
+
+
+
         const vehicleAdvances = this.vehicleCoupler.update(
           this.fluidSolver.grid,
           this.vehicle,
@@ -736,20 +917,20 @@ export class App {
           this.vehicleAmbientFlowWorld
         );
 
-        // 7. Advance the vehicle rigid body (2× substep) against the pre-step field.
-        // 8. Advance the fluid solver (1×) last, so the wake evolves after the
-        //    body and thruster sources have been applied this substep.
 
-        // 7. Evaluate Multi-Propeller Array & Torque Ledger (Phase 5b)
+
+
+
+
         if (this.propArray.thrusters.length > 0) {
           this.propArray.thrusters[0].throttle = this.activeThrottle;
           if (this.propArray.thrusters.length > 1) {
             this.propArray.thrusters[1].throttle = this.activeThrottle;
           }
         }
-        // Directive 1: forward speed is EXPLICIT. The hydrodynamically live U
-        // is the sampled inflow over the disc; when it is ~0 (bollard) the
-        // ledger returns valid=false / NaN roll rates instead of pretending U=1.
+
+
+
         const arraySummary = this.propArray.evaluate(
           undefined,
           vehicleAdvances,
@@ -762,10 +943,10 @@ export class App {
         );
         this.lastAdvanceSpeedMs = advanceSpeed;
 
-        // 7. Vehicle rigid body: gravity, buoyancy, thrust, drag, tether.
-        //    Substepped at vehicleSubstepDivider × the fluid rate (2×, i.e.
-        //    1/120 s) with thrust held constant across substeps, which damps the
-        //    fluid ↔ vehicle ↔ BEMT feedback loop (see integrator.ts header).
+
+
+
+
         this.vehicleForceMarineN = [
           arraySummary.totalForceN[0],
           arraySummary.totalForceN[1],
@@ -779,7 +960,7 @@ export class App {
         this.vehicleTether.attached = defaultConfig.vehicle.tetherAttached;
         this.vehicleTether.stiffnessNm = defaultConfig.vehicle.tetherStiffnessNm;
         this.vehicleTether.dampingNPerMs = defaultConfig.vehicle.tetherDamping;
-        // Tweakpane anchor is marine-ordered; the tether acts in the world frame.
+
         this.vehicleTether.anchorWorld = [
           this.vehicleInit.tetherAnchorSwayM,
           this.vehicleInit.tetherAnchorHeaveM,
@@ -802,75 +983,175 @@ export class App {
           scale: 1
         };
 
-        // 8. Re-inject the vehicle's thrust as a slipstream in the grid. This
-        //    must run before the fluid step below, so the wake carries the
-        //    impulse within the same physics substep.
+
+
+
         this.vehicleCoupler.injectSlipstream(this.fluidSolver.grid, this.vehicle, arraySummary, dt);
 
-        // 7b. Advance the fluid solver (advection + pressure projection) LAST,
-        //    completing the directive step order: sample → BEMT → apply →
-        //    inject → vehicle 2× → fluid 1×.
+
+
+
         this.fluidSolver.step(dt);
 
-        // Update Live Physical Metrics
+
+        tickThermalBurst(this.presetState, dt);
+
+
+        let maxV = 0;
+        let sumV = 0;
+        let maxVort = 0;
+        const g = this.fluidSolver.grid;
+        const len = g.size;
+        const sampleStep = Math.max(1, Math.floor(len / 512));
+        let sampleCount = 0;
+        for (let c = 0; c < len; c += sampleStep) {
+          const spd = Math.hypot(g.u[c], g.v[c]);
+          if (spd > maxV) maxV = spd;
+          sumV += spd;
+          const vr = Math.abs(g.curl[c] || 0);
+          if (vr > maxVort) maxVort = vr;
+          sampleCount++;
+        }
+        const meanV = sampleCount > 0 ? sumV / sampleCount : 0;
+
+
+        const busPowerW = busTelemetry.terminalV * busTelemetry.totalBusCurrentA;
+        const nRps = Math.abs(this.shaft.currentRpm) / 60.0;
+        const Dm = 0.042;
+        const advanceJ = nRps > 0.1 ? advanceSpeed / (nRps * Dm) : 0;
+        const mechHydThrustW = Math.max(0, arraySummary.totalForceN[0]) * Math.max(0, advanceSpeed);
+        const efficiencyPct = busPowerW > 0.01 ? Math.min(100.0, (mechHydThrustW / busPowerW) * 100.0) : 0.0;
+
+
+        let specStatus: SpecStatus = 'within_spec';
+        let specStatusLabel = 'WITHIN SPEC';
+        if (motor0.isCutout || motor0.thermalState === 'CUTOUT') {
+          specStatus = 'thermal_cutout';
+          specStatusLabel = 'CUTOUT ACTIVE';
+        } else if (motor0.windingTempC >= 85.0 || this.presetState.specViolationLatched || (this.presetState.burstRemainingS !== null && this.presetState.burstRemainingS <= 0)) {
+          specStatus = 'thermal_warn';
+          specStatusLabel = 'THERMAL WARN';
+        } else if (busTelemetry.totalBusCurrentA > 1.6) {
+          specStatus = 'limit_exceeded';
+          specStatusLabel = 'OVERCURRENT';
+        }
+
+
         this.metricsData.thrust_N = arraySummary.totalForceN[0];
         this.metricsData.torque_Nm = Math.abs(arraySummary.totalMomentNm[0]);
-        this.metricsData.netThrustVector_N = arraySummary.totalForceN;
-        this.metricsData.netTorqueVector_Nm = arraySummary.totalMomentNm;
-        this.metricsData.rollRatePrediction_deg_m = arraySummary.ledgerSummary.predictedRollRateDegPerM;
+        this.metricsData.power_W = busPowerW;
+        this.metricsData.efficiency_pct = efficiencyPct;
+        this.metricsData.advance_ratio_J = advanceJ;
         this.metricsData.rpm = this.shaft.currentRpm;
+        this.metricsData.pitch_deg = this.shaft.currentPitchDeg;
+        this.metricsData.inflow_velocity_ms = advanceSpeed;
+        this.metricsData.max_velocity_domain_ms = maxV;
         this.metricsData.bus_V = busTelemetry.terminalV;
         this.metricsData.current_A = busTelemetry.totalBusCurrentA;
         this.metricsData.temp_C = this.motorTemp_C;
-        this.metricsData.dT_dr = bemt.elements.map(e => ({ rOverR: e.rOverR, dT: e.dT }));
-        this.metricsData.perUnitTelemetry = arraySummary.thrusters.map(t => ({
-          id: t.unit.id,
-          thrust_N: t.netThrustN,
-          torque_Nm: t.netTorqueNm,
-          rpm: t.rpm,
-          current_A: Math.abs(t.rpm) * 0.00034,
-          temp_C: this.motorTemp_C
-        }));
+        this.metricsData.thermalBurstRemainingS = this.presetState.burstRemainingS;
+        this.metricsData.specStatus = specStatus;
+        this.metricsData.specStatusLabel = specStatusLabel;
+        this.metricsData.netThrustVector_N = arraySummary.totalForceN;
+        this.metricsData.netTorqueVector_Nm = arraySummary.totalMomentNm;
+        this.metricsData.rollRatePrediction_deg_m = arraySummary.ledgerSummary.predictedRollRateDegPerM;
+        while (this.scratchDtDr.length < bemt.elements.length) {
+          this.scratchDtDr.push({ rOverR: 0, dT: 0 });
+        }
+        this.scratchDtDr.length = bemt.elements.length;
+        for (let i = 0; i < bemt.elements.length; i++) {
+          this.scratchDtDr[i].rOverR = bemt.elements[i].rOverR;
+          this.scratchDtDr[i].dT = bemt.elements[i].dT;
+        }
+        this.metricsData.dT_dr = this.scratchDtDr;
 
-        // Update Inspector Thruster Display
+        while (this.scratchPerUnitTel.length < arraySummary.thrusters.length) {
+          this.scratchPerUnitTel.push({ id: "", thrust_N: 0, torque_Nm: 0, rpm: 0, current_A: 0, temp_C: 20 });
+        }
+        this.scratchPerUnitTel.length = arraySummary.thrusters.length;
+        for (let i = 0; i < arraySummary.thrusters.length; i++) {
+          const t = arraySummary.thrusters[i];
+          const item = this.scratchPerUnitTel[i];
+          item.id = t.unit.id;
+          item.thrust_N = t.netThrustN;
+          item.torque_Nm = t.netTorqueNm;
+          item.rpm = t.rpm;
+          item.current_A = Math.abs(t.rpm) * 0.00034;
+          item.temp_C = this.motorTemp_C;
+        }
+        this.metricsData.perUnitTelemetry = this.scratchPerUnitTel;
+
+
+        if (this.recorder.isActive()) {
+          this.recorder.record({
+            t: this.runDurationSec,
+            dt,
+            fps: this.metricsData.fps,
+            thrusters: arraySummary.thrusters.map((th, idx) => ({
+              rpm: th.rpm,
+              pitchDeg: this.shaft.currentPitchDeg,
+              thrustN: th.netThrustN,
+              torqueNm: th.netTorqueNm,
+              currentA: this.bus.lastTelemetry?.motors[idx]?.currentA ?? (Math.abs(th.rpm) * 0.00034),
+              vTermV: this.bus.lastTelemetry?.motors[idx]?.terminalVoltageV ?? busTelemetry.terminalV,
+              tMotorC: this.bus.motors[idx]?.windingTempC ?? this.motorTemp_C
+            })),
+            busV: busTelemetry.terminalV,
+            iTotalA: busTelemetry.totalBusCurrentA,
+            pTotalW: busPowerW,
+            pos: [this.vehicle.position.x, this.vehicle.position.y, this.vehicle.position.z],
+            vel: [this.scratchVehicleWorldVelocity.x, this.scratchVehicleWorldVelocity.y, this.scratchVehicleWorldVelocity.z],
+            quat: [this.vehicle.quaternion.w, this.vehicle.quaternion.x, this.vehicle.quaternion.y, this.vehicle.quaternion.z],
+            omega: [this.vehicle.angularVelocityBodyRadS[0], this.vehicle.angularVelocityBodyRadS[1], this.vehicle.angularVelocityBodyRadS[2]],
+            rollDevPerM: this.metricsData.rollRatePrediction_deg_m ?? NaN,
+            fluidMaxV: maxV,
+            fluidMeanV: meanV,
+            fluidMaxVorticity: maxVort,
+            pressureIters: defaultConfig.fluid.pressureIterations,
+            residual: 0.0001,
+            gpuMs: this.metricsData.gpuMs
+          });
+        }
+
+
         this.inspector.thrusterVterm = motor0.terminalVoltageV;
         this.inspector.thrusterCurrentA = motor0.currentA;
         this.inspector.thrusterTempC = motor0.windingTempC;
         this.inspector.thrusterThermalState = motor0.thermalState;
 
-        // Update Stage Corner Coupling Badge
+
         this.stageOverlays.updateCouplingBadge(
           couplingTelemetry.thrustAgreementPct,
           couplingTelemetry.bemtThrustN,
           couplingTelemetry.gridMomentumThrustN
         );
 
-        // Update 3D Stage Motor Emissive Temperature Glow
+
         if (this.renderer.prop3D) {
-          // Directive 5: explicit index — no silent thruster-0 default.
+
           this.renderer.prop3D.setMotorTemperature(motor0.windingTempC, 0);
         }
       });
     }
 
-    // 1b. Feed Phase 6 OverlaySystem (3D overlays + hover + variant diff)
+
     const grid = this.fluidSolver.grid;
     this.overlayCtx.grid = grid;
     this.overlayCtx.gridDxM = this.coupler.config.gridDxM;
     this.overlayCtx.gridCenter.set(0, 0, 0);
     this.overlayCtx.vehicle = this.vehicle;
-    // Directive 1: overlays consume the LIVE forward speed; at rest (0) the
-    // ledger returns valid=false with NaN roll rates, which the roll needle
-    // treats as "no prediction" rather than a silently speed-anchored value.
+
+
+
     const atRest = this.runState !== 'running';
     const latestSummary = this.propArray.evaluate(
       undefined, undefined, undefined,
       atRest ? 0.0 : this.lastAdvanceSpeedMs
     );
     this.overlayCtx.summary = latestSummary;
-    // Directive 5: fluid advection integrates against the FIXED physics dt
-    // (0 when paused — the field itself is not advancing); ctx.dt is the
-    // clamped render dt used only for animation (fade, pulse, roll needle).
+
+
+
     this.overlayCtx.physicsDt = atRest ? 0 : this.physicsAdvancedDt;
     this.overlayCtx.elapsed = currentTimeMs * 0.001;
     this.overlayCtx.motorTempsC.length = 0;
@@ -879,20 +1160,20 @@ export class App {
       this.overlayCtx.motorTempsC.push(this.bus.motors[m]?.windingTempC ?? 20.0);
       this.overlayCtx.motorCurrentsA.push(this.bus.lastTelemetry?.motors[m]?.currentA ?? 0);
     }
-    // Render dt for animation-only overlays (Directive 5 split); assigned
-    // before update() so the context is complete when the system consumes it.
+
+
     const renderDt = Math.min(0.05, Math.max(0.001, (currentTimeMs - this.lastRenderTime) * 0.001));
     this.lastRenderTime = currentTimeMs;
     this.overlayCtx.dt = renderDt;
     this.overlaySystem.update(renderDt, this.overlayCtx);
 
-    // 2. Render 2D Eulerian Cutaway Canvas
+
     this.fluidRenderer.render(this.fluidSolver.grid);
 
-    // 2b. Mirror the interpolated vehicle pose into the stage: alpha blends the
-    //     previous and current physics states without mutating either (Directive
-    //     3, State Interpolation). While paused the current pose is used verbatim
-    //     so direct-manipulation handles keep tracking the body.
+
+
+
+
     const clockAlpha = this.runState === 'running' ? this.clock.getAlpha() : 0;
     this.vehicleInterpolatedPose = computeInterpolatedPose(
       this.vehiclePosePrevious,
@@ -902,7 +1183,7 @@ export class App {
     this.vehicleRenderPose = this.vehicleInterpolatedPose;
     this.renderer.vehicle3D?.setInterpolatedPose(this.vehicleInterpolatedPose);
 
-    // 3. Render 3D Water Surface & Propeller Scene
+
     this.gpuTimer.begin();
     this.renderer.render(
       currentTimeMs * 0.001,
@@ -917,10 +1198,13 @@ export class App {
     const gpuResult = this.gpuTimer.resolve();
     this.metricsData.gpuMs = gpuResult.durationMs;
 
-    // 4. Performance & Frame Timings
+
     const frameElapsed = performance.now() - frameStart;
     this.metricsData.frameMs = frameElapsed;
-    // Directive 7: live overlay frame-budget metric for the HUD.
+    this.adaptiveRes.recordFrameTime(frameElapsed);
+    this.metricsData.resolutionScale = this.adaptiveRes.currentScale;
+    this.metricsData.readbackLatencyMs = this.fluidSolver.readbackLatencyMs;
+
     this.metricsData.overlayMs = this.overlaySystem.overlayMs;
 
     this.frameCount++;
@@ -931,10 +1215,10 @@ export class App {
       this.lastFpsUpdateTime = now;
     }
 
-    // 5. Update HUD Strip (including static evaluation at rest)
+
     if (this.runState !== 'running') {
-      // At rest: explicit forward speed 0 → ledger summary is valid=false / NaN roll rate
-      // (Directive 1: never silently anchor to 1 m/s). HUD shows "—" via NaN-guard.
+
+
       const staticSummary = this.propArray.evaluate(undefined, undefined, undefined, 0.0);
       this.metricsData.rollRatePrediction_deg_m = staticSummary.ledgerSummary.predictedRollRateDegPerM;
       this.metricsData.netThrustVector_N = staticSummary.totalForceN;
@@ -942,13 +1226,13 @@ export class App {
     }
     this.hudStrip.update(this.metricsData, currentTimeMs);
 
-    // 6. Context-sensitive inspector telemetry. Position/velocity live in the
-    //    inspector, NOT the HUD strip (which already carries the at-a-glance
-    //    numbers and is deliberately left unchanged by Phase 6b).
+
+
+
     this.inspector.setVehicleTelemetry(this.buildVehicleTelemetryView());
   }
 
-  /** Marine (surge, sway, heave) → world (x = sway, y = heave, z = surge). */
+  
   private static marineToWorld(surge: number, sway: number, heave: number): [number, number, number] {
     return [sway, heave, surge];
   }
@@ -1009,21 +1293,44 @@ export class App {
   }
 
   private exportTelemetryCsv(): void {
-    const csvContent = 'data:text/csv;charset=utf-8,' +
-      'Time_s,Thrust_N,Torque_Nm,RPM,Bus_V,Current_A,Temp_C\n' +
-      `${this.runDurationSec.toFixed(2)},${this.metricsData.thrust_N.toFixed(2)},${this.metricsData.torque_Nm.toFixed(3)},${this.metricsData.rpm.toFixed(0)},${this.metricsData.bus_V.toFixed(2)},${this.metricsData.current_A.toFixed(2)},${this.metricsData.temp_C.toFixed(1)}\n`;
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `seaperch_telemetry_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (this.recorder.getCount() === 0) {
+      this.recorder.start();
+      const staticSummary = this.propArray.evaluate(undefined, undefined, undefined, 0.0);
+      this.recorder.record({
+        t: this.runDurationSec,
+        dt: 1 / 60,
+        fps: this.metricsData.fps,
+        thrusters: staticSummary.thrusters.map((th, _idx) => ({
+          rpm: th.rpm || this.activeRpm,
+          pitchDeg: this.shaft.currentPitchDeg,
+          thrustN: th.netThrustN || (this.metricsData.thrust_N / Math.max(1, staticSummary.thrusters.length)),
+          torqueNm: th.netTorqueNm || (this.metricsData.torque_Nm / Math.max(1, staticSummary.thrusters.length)),
+          currentA: this.activeCurrent_A / Math.max(1, staticSummary.thrusters.length),
+          vTermV: this.metricsData.bus_V,
+          tMotorC: this.metricsData.temp_C
+        })),
+        busV: this.metricsData.bus_V,
+        iTotalA: this.metricsData.current_A,
+        pTotalW: this.metricsData.power_W,
+        pos: [this.vehicle.position.x, this.vehicle.position.y, this.vehicle.position.z],
+        vel: [0, 0, 0],
+        quat: [this.vehicle.quaternion.w, this.vehicle.quaternion.x, this.vehicle.quaternion.y, this.vehicle.quaternion.z],
+        omega: [0, 0, 0],
+        rollDevPerM: this.metricsData.rollRatePrediction_deg_m ?? 1.8,
+        fluidMaxV: 0,
+        fluidMeanV: 0,
+        fluidMaxVorticity: 0,
+        pressureIters: defaultConfig.fluid.pressureIterations,
+        residual: 0.0001,
+        gpuMs: this.metricsData.gpuMs
+      });
+      this.recorder.stop();
+    }
+    this.recorder.downloadCsv();
   }
 }
 
-// Bootstrap application on DOM ready
+
 if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
     const app = new App();

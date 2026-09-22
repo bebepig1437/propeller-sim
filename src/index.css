@@ -1,11 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {
-  /* Typography */
+  
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 
-  /* Theme Colors (Physics instrument dark theme, #0e1116 class) */
+  
   --bg-base: #0e1116;
   --bg-surface: #161b22;
   --bg-surface-elevated: #21262d;
@@ -14,12 +14,12 @@
   --border-hover: #484f58;
   --border-focus: #58a6ff;
 
-  /* Text Hierarchy */
+  
   --text-primary: #f0f6fc;
   --text-secondary: #8b949e;
   --text-muted: #484f58;
 
-  /* Accent Colors — exactly one per physical meaning */
+  
   --accent-thrust: #00f2ff;
   --accent-thrust-subtle: rgba(0, 242, 255, 0.12);
   --accent-torque: #f59e0b;
@@ -29,20 +29,20 @@
   --accent-current: #a855f7;
   --accent-current-subtle: rgba(168, 85, 247, 0.12);
 
-  /* Primary Action: RUN button state */
+  
   --accent-run: #10b981;
   --accent-run-hover: #34d399;
   --accent-paused: #eab308;
   --accent-error: #f43f5e;
 
-  /* Dimensions */
+  
   --header-height: 48px;
   --hud-height: 38px;
   --palette-width: 240px;
   --inspector-width: 280px;
 }
 
-/* Reset & Global */
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -62,7 +62,7 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Base Application Shell */
+
 #app, .sim-instrument {
   width: 100vw;
   height: 100vh;
@@ -72,9 +72,9 @@ html, body {
   overflow: hidden;
 }
 
-/* ------------------------------------------------------------- */
-/* 1. Header: Title | Preset Dropdown | RUN | Share             */
-/* ------------------------------------------------------------- */
+
+
+
 .sim-header {
   height: var(--header-height);
   min-height: var(--header-height);
@@ -140,23 +140,30 @@ html, body {
   border-color: var(--border-focus);
 }
 
-/* Single Primary Action: RUN Button */
+
 .btn-run {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 20px;
+  padding: 6px 14px;
   border-radius: 6px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   font-family: var(--font-mono);
   letter-spacing: 0.5px;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all 0.15s ease;
   user-select: none;
-  min-width: 100px;
+  width: 104px;
+  min-width: 104px;
+  max-width: 104px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .btn-run.state-idle {
@@ -214,9 +221,9 @@ html, body {
   color: var(--text-primary);
 }
 
-/* ------------------------------------------------------------- */
-/* 2. Main 3-Region Workspace: Palette | Stage | Inspector       */
-/* ------------------------------------------------------------- */
+
+
+
 .sim-body {
   flex: 1;
   display: grid;
@@ -225,7 +232,7 @@ html, body {
   position: relative;
 }
 
-/* Left Palette */
+
 .sim-palette {
   background-color: var(--bg-surface);
   border-right: 1px solid var(--border-subtle);
@@ -235,6 +242,10 @@ html, body {
   padding: 12px;
   gap: 16px;
   user-select: none;
+  width: var(--palette-width);
+  min-width: var(--palette-width);
+  max-width: var(--palette-width);
+  contain: layout size;
 }
 
 .palette-section {
@@ -315,7 +326,7 @@ html, body {
   font-weight: 600;
 }
 
-/* Center Stage (3D Viewport) */
+
 .sim-stage {
   position: relative;
   width: 100%;
@@ -338,7 +349,7 @@ html, body {
   display: block;
 }
 
-/* Stage Corner Tools (Cutaway toggle) */
+
 .stage-corner-tools {
   position: absolute;
   top: 12px;
@@ -400,7 +411,7 @@ html, body {
   display: none !important;
 }
 
-/* Stage Right-Edge Vertical Overlay Strip */
+
 .stage-overlay-strip {
   position: absolute;
   top: 12px;
@@ -461,7 +472,7 @@ html, body {
   color: var(--accent-current);
 }
 
-/* Tooltip on hover */
+
 .btn-overlay-toggle::after {
   content: attr(data-tooltip);
   position: absolute;
@@ -488,7 +499,7 @@ html, body {
   visibility: visible;
 }
 
-/* 2D Cutaway Container (Overlay over stage when toggled) */
+
 .fluid-cutaway-container {
   position: absolute;
   top: 50px;
@@ -540,7 +551,7 @@ html, body {
   color: var(--text-muted);
 }
 
-/* ── Phase 6 Overlay hover numeric label (hover-only, no persistent chrome) ── */
+
 .overlay-hover-label {
   position: absolute;
   z-index: 30;
@@ -570,7 +581,7 @@ html, body {
   color: color-mix(in srgb, var(--accent-torque) 45%, var(--bg-primary, #0a0d12));
 }
 
-/* ── Phase 6 Variant diff mini-plot (auto-fires on design swap, fades after 5s) ── */
+
 .overlay-variant-diff {
   position: absolute;
   bottom: 12px;
@@ -585,7 +596,7 @@ html, body {
   transition: opacity 0.15s linear;
 }
 
-/* Popover Stripcharts in Stage Corner */
+
 .stage-popovers {
   position: absolute;
   bottom: 12px;
@@ -638,7 +649,7 @@ html, body {
   display: block;
 }
 
-/* First-Run Callout */
+
 .first-run-callout {
   position: absolute;
   bottom: 24px;
@@ -680,7 +691,7 @@ html, body {
   border-color: var(--accent-thrust);
 }
 
-/* Right Inspector */
+
 .sim-inspector {
   background-color: var(--bg-surface);
   border-left: 1px solid var(--border-subtle);
@@ -690,6 +701,10 @@ html, body {
   padding: 12px;
   gap: 16px;
   user-select: none;
+  width: var(--inspector-width);
+  min-width: var(--inspector-width);
+  max-width: var(--inspector-width);
+  contain: layout size;
 }
 
 .inspector-header {
@@ -753,7 +768,7 @@ html, body {
   background: var(--accent-thrust);
 }
 
-/* Collapsible "Advanced" Fold (closed by default) */
+
 details.inspector-advanced {
   border-top: 1px solid var(--border-subtle);
   padding-top: 8px;
@@ -796,9 +811,9 @@ details.inspector-advanced[open] summary {
   padding-left: 8px;
 }
 
-/* ------------------------------------------------------------- */
-/* 3. Bottom HUD Strip: 6 Core Metrics + Performance            */
-/* ------------------------------------------------------------- */
+
+
+
 .sim-hud {
   height: var(--hud-height);
   min-height: var(--hud-height);
@@ -820,7 +835,7 @@ details.inspector-advanced[open] summary {
   gap: 20px;
 }
 
-/* Exactly 6 physical metrics at rest */
+
 .hud-metric {
   display: inline-flex;
   align-items: baseline;
@@ -873,11 +888,11 @@ details.inspector-advanced[open] summary {
   color: var(--text-primary);
 }
 
-/* ------------------------------------------------------------- */
-/* 4. Responsive Breakpoints: Tablet & Phone                     */
-/* ------------------------------------------------------------- */
 
-/* Tablet (< 1280px, >= 768px) */
+
+
+
+
 @media (max-width: 1279px) and (min-width: 768px) {
   :root {
     --palette-width: 56px;
@@ -902,7 +917,7 @@ details.inspector-advanced[open] summary {
   }
 }
 
-/* Phone (< 768px) */
+
 @media (max-width: 767px) {
   .sim-body {
     grid-template-columns: 1fr;
@@ -921,3 +936,235 @@ details.inspector-advanced[open] summary {
     display: none;
   }
 }
+
+
+
+
+
+
+.btn-run {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.btn-run.state-idle {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #041f14;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-run.state-idle:hover {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  box-shadow: 0 0 24px rgba(52, 211, 153, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-run.state-running {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border-color: #10b981;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+  animation: pulse-green 2s infinite ease-in-out;
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.25); }
+  50% { box-shadow: 0 0 18px rgba(16, 185, 129, 0.5); }
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+
+.stage-popovers {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 40;
+  pointer-events: none;
+  max-height: calc(100% - 28px);
+  overflow-y: auto;
+}
+
+.stripchart-popover {
+  pointer-events: auto;
+  background: rgba(10, 16, 26, 0.94);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 12px rgba(56, 189, 248, 0.1);
+  width: 258px;
+  transition: all 0.2s ease;
+}
+
+.stripchart-popover:hover {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.stripchart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.stripchart-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stripchart-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stripchart-pin, .stripchart-close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.stripchart-pin:hover, .stripchart-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.stripchart-pin.is-pinned {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.2);
+}
+
+.stripchart-canvas {
+  display: block;
+  width: 240px;
+  height: 54px;
+  background: rgba(4, 9, 15, 0.85);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+
+.sim-footer-container {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  user-select: none;
+  z-index: 30;
+}
+
+.footer-sub-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 4px 16px;
+  background: rgba(6, 10, 16, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.footer-nav-link {
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  transition: all 0.15s ease;
+}
+
+.footer-nav-link:hover {
+  color: #ffffff;
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+
+.hud-burst-timer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: rgba(14, 23, 38, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.hud-burst-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.hud-burst-val {
+  color: #00f2ff;
+  font-weight: 700;
+}
+
+
+.hud-spec-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.hud-spec-badge.status-within_spec {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.hud-spec-badge.status-thermal_warn {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  animation: pulse-red 1.2s infinite;
+}
+
+.hud-spec-badge.status-thermal_cutout,
+.hud-spec-badge.status-limit_exceeded {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  animation: pulse-red 0.8s infinite;
+}
+
+
+.hud-accent-cyan .hud-metric-val { color: #00f2ff; }
+.hud-accent-amber .hud-metric-val { color: #f59e0b; }
+.hud-accent-violet .hud-metric-val { color: #c084fc; }
+.hud-accent-emerald .hud-metric-val { color: #10b981; }
+.hud-accent-sky .hud-metric-val { color: #38bdf8; }
+.hud-accent-teal .hud-metric-val { color: #14b8a6; }
