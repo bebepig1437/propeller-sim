@@ -3,7 +3,6 @@ import type { BoundaryHandler } from './boundary';
 
 export type AdvectionScheme = 'SEMI_LAGRANGIAN' | 'MACCORMACK';
 
-// Temporary buffers for MacCormack advection to avoid allocations during loop
 let phiStarBuffer: Float32Array | null = null;
 let phiStarStarBuffer: Float32Array | null = null;
 
@@ -15,10 +14,6 @@ function ensureMacCormackBuffers(size: number): { phiStar: Float32Array; phiStar
   return { phiStar: phiStarBuffer, phiStarStar: phiStarStarBuffer! };
 }
 
-/**
- * 1st-order Semi-Lagrangian advection:
- * phi(x, t+dt) = phi(x - u(x)*dt, t) via bilinear interpolation.
- */
 export function advectSemiLagrangian(
   grid: FluidGrid,
   sourceField: Float32Array,
@@ -39,7 +34,6 @@ export function advectSemiLagrangian(
     for (let x = 1; x < W - 1; x++) {
       const idx = rowOffset + x;
 
-      // Backtrace position in grid space
       const traceX = x - effectiveDt * u[idx] * invDx;
       const traceY = y - effectiveDt * v[idx] * invDx;
 
@@ -52,13 +46,6 @@ export function advectSemiLagrangian(
   }
 }
 
-/**
- * 2nd-order MacCormack advection with monotonic error-limiter clamping:
- * 1. Forward step: phi* = SL(phi^n, dt)
- * 2. Backward step: phi** = SL(phi*, -dt)
- * 3. Correction: phi^(n+1) = phi* + 0.5 * (phi^n - phi**)
- * 4. Monotonic clamp: clamp phi^(n+1) to [min_neighbor, max_neighbor] in phi^n.
- */
 export function advectMacCormack(
   grid: FluidGrid,
   sourceField: Float32Array,
@@ -74,22 +61,17 @@ export function advectMacCormack(
   const invDx = grid.invDx;
   const { phiStar, phiStarStar } = ensureMacCormackBuffers(grid.size);
 
-  // Step 1: Forward advection into phiStar
   advectSemiLagrangian(grid, sourceField, phiStar, dt, boundary, 1.0);
 
-  // Step 2: Backward advection from phiStar into phiStarStar
   advectSemiLagrangian(grid, phiStar, phiStarStar, dt, boundary, -1.0);
 
-  // Step 3: MacCormack combination + monotonic limiter
   for (let y = 1; y < H - 1; y++) {
     const rowOffset = y * W;
     for (let x = 1; x < W - 1; x++) {
       const idx = rowOffset + x;
 
-      // 2nd-order corrected value
       const corrected = phiStar[idx] + 0.5 * (sourceField[idx] - phiStarStar[idx]);
 
-      // Backtrace source location to sample local neighborhood in sourceField
       const traceX = Math.max(0.5, Math.min(W - 1.5, x - dt * u[idx] * invDx));
       const traceY = Math.max(0.5, Math.min(H - 1.5, y - dt * v[idx] * invDx));
 
@@ -111,7 +93,6 @@ export function advectMacCormack(
       const minVal = Math.min(v00, v10, v01, v11);
       const maxVal = Math.max(v00, v10, v01, v11);
 
-      // Monotonic clamp to avoid overshoot/oscillations
       targetField[idx] = Math.max(minVal, Math.min(maxVal, corrected));
     }
   }
@@ -125,9 +106,6 @@ export function advectMacCormack(
   }
 }
 
-/**
- * High-level advection dispatcher
- */
 export function advect(
   scheme: AdvectionScheme,
   grid: FluidGrid,

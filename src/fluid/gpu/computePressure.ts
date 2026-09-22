@@ -1,17 +1,3 @@
-/**
- * GPU Jacobi Pressure Poisson Solver Compute Pass (TSL)
- *
- * Citation:
- * Harris, M. J. (2004). "Fast Fluid Dynamics on the GPU".
- * In R. Fernando (Ed.), GPU Gems: Programming Techniques, Tips, and Tricks for Real-Time Graphics (Chapter 38).
- * Addison-Wesley. https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-38-fast-fluid-dynamics-gpu
- *
- * Poisson Equation:
- *   Laplacian(p) = div(u)
- * Jacobi Relaxation:
- *   p^(k+1)(x, y) = 0.25 * [ p^k(x-1,y) + p^k(x+1,y) + p^k(x,y-1) + p^k(x,y+1) - dx^2 * div(x,y) ]
- */
-
 import {
   Fn,
   instanceIndex,
@@ -47,7 +33,6 @@ export function createPressureComputeNode(
   const pNextStorage = storage(pNextAttr, 'float', size);
   const divStorage = storage(divAttr, 'float', size);
 
-  // Forward Jacobi step: pNext = Jacobi(p, div)
   const jacobiForwardShader = Fn(() => {
     const idx = instanceIndex;
     const W = uint(width);
@@ -58,7 +43,6 @@ export function createPressureComputeNode(
     const isInterior = x.greaterThan(uint(0)).and(x.lessThan(sub(W, uint(1))))
       .and(y.greaterThan(uint(0))).and(y.lessThan(sub(H, uint(1))));
 
-    // Neumann boundary mirroring on boundary cells
     const xLeft = x.greaterThan(uint(0)).select(sub(x, uint(1)), x);
     const xRight = x.lessThan(sub(W, uint(1))).select(add(x, uint(1)), x);
     const yDown = y.greaterThan(uint(0)).select(sub(y, uint(1)), y);
@@ -78,7 +62,6 @@ export function createPressureComputeNode(
     pNextStorage.element(idx).assign(isInterior.select(target, pStorage.element(idx)));
   });
 
-  // Backward Jacobi step: p = Jacobi(pNext, div) for ping-pong
   const jacobiBackwardShader = Fn(() => {
     const idx = instanceIndex;
     const W = uint(width);

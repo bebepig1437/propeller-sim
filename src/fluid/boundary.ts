@@ -63,7 +63,6 @@ export class BoundaryHandler {
     const u = grid.u;
     const v = grid.v;
 
-    // Bottom Edge (y = 0)
     switch (this.edges.bottom) {
       case 'SOLID':
         for (let x = 0; x < W; x++) {
@@ -85,7 +84,6 @@ export class BoundaryHandler {
         break;
     }
 
-    // Top Edge (y = H - 1)
     const topRow = (H - 1) * W;
     const topSub = (H - 2) * W;
     switch (this.edges.top) {
@@ -109,7 +107,6 @@ export class BoundaryHandler {
         break;
     }
 
-    // Left Edge (x = 0)
     switch (this.edges.left) {
       case 'SOLID':
         for (let y = 0; y < H; y++) {
@@ -134,7 +131,6 @@ export class BoundaryHandler {
         break;
     }
 
-    // Right Edge (x = W - 1)
     switch (this.edges.right) {
       case 'SOLID':
         for (let y = 0; y < H; y++) {
@@ -159,7 +155,6 @@ export class BoundaryHandler {
         break;
     }
 
-    // Corners
     u[0] = 0.5 * (u[1] + u[W]);
     v[0] = 0.5 * (v[1] + v[W]);
     u[W - 1] = 0.5 * (u[W - 2] + u[2 * W - 1]);
@@ -175,7 +170,6 @@ export class BoundaryHandler {
     const H = grid.height;
     const p = grid.pressure;
 
-    // 2-layer symmetric mirror Neumann condition
     for (let y = 0; y < H; y++) {
       p[y * W + 0] = p[y * W + 2];
       p[y * W + 1] = p[y * W + 2];

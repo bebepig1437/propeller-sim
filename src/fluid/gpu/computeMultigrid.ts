@@ -1,18 +1,3 @@
-/**
- * GPU Geometric Multigrid (V-Cycle) Pressure Poisson Solver (TSL)
- *
- * Citation:
- * 1. Briggs, W. L., Henson, V. E., & McCormick, S. F. (2000). "A Multigrid Tutorial" (2nd ed.). SIAM.
- * 2. Harris, M. J. (2004). "Fast Fluid Dynamics on the GPU". In GPU Gems 1, Chapter 38.
- *
- * Multigrid V-Cycle Architecture:
- * 1. Pre-smoothing: 4 Jacobi iterations on fine grid (h)
- * 2. Restrict residual: r_h = div - Laplacian(p_h) -> r_{2h} via 4-cell area averaging
- * 3. Coarse solve: 12 Jacobi iterations on coarse grid (2h)
- * 4. Prolongate error: interpolate e_{2h} -> e_h bilinearly
- * 5. Correction & Post-smoothing: p_h <- p_h + e_h, followed by 4 smoothing sweeps
- */
-
 import {
   Fn,
   instanceIndex,
@@ -49,7 +34,6 @@ export function createMultigridComputeNodes(
   const fineSize = fineWidth * fineHeight;
   const coarseSize = coarseWidth * coarseHeight;
 
-  // Buffer attributes
   const finePAttr = buffers?.fineP ?? new StorageBufferAttribute(new Float32Array(fineSize), 1);
   const finePNextAttr = buffers?.finePNext ?? new StorageBufferAttribute(new Float32Array(fineSize), 1);
   const fineDivAttr = buffers?.fineDiv ?? new StorageBufferAttribute(new Float32Array(fineSize), 1);
@@ -68,9 +52,8 @@ export function createMultigridComputeNodes(
   const coarseENextStorage = storage(coarseENextAttr, 'float', coarseSize);
 
   const dx2Uniform = uniform(1.0);
-  const coarseDx2Uniform = uniform(4.0); // (2*dx)^2
+  const coarseDx2Uniform = uniform(4.0);
 
-  // 1. Fine Residual: r = div - Laplacian(p)
   const residualShader = Fn(() => {
     const idx = instanceIndex;
     const W = uint(fineWidth);
@@ -96,14 +79,12 @@ export function createMultigridComputeNodes(
       add(finePStorage.element(idxDown), finePStorage.element(idxUp))
     );
 
-    // laplacian(p) = (sumP - 4*p) / dx^2
     const lapP = div(sub(sumP, mul(float(4.0), finePStorage.element(idx))), dx2Uniform);
     const res = sub(fineDivStorage.element(idx), lapP);
 
     fineResidualStorage.element(idx).assign(isInterior.select(res, float(0.0)));
   });
 
-  // 2. Restrict to Coarse Grid: 4-cell area averaging
   const restrictShader = Fn(() => {
     const idx = instanceIndex;
     const cW = uint(coarseWidth);
@@ -128,10 +109,9 @@ export function createMultigridComputeNodes(
 
     const avg = mul(float(0.25), add(add(r00, r10), add(r01, r11)));
     coarseRStorage.element(idx).assign(avg);
-    coarseEStorage.element(idx).assign(float(0.0)); // zero initial coarse error
+    coarseEStorage.element(idx).assign(float(0.0));
   });
 
-  // 3. Coarse Jacobi Step
   const coarseJacobiShader = Fn(() => {
     const idx = instanceIndex;
     const cW = uint(coarseWidth);
@@ -161,7 +141,6 @@ export function createMultigridComputeNodes(
     coarseENextStorage.element(idx).assign(isInterior.select(target, coarseEStorage.element(idx)));
   });
 
-  // 4. Prolongate & Correct Fine Grid: p <- p + prolongate(e_2h)
   const prolongateCorrectShader = Fn(() => {
     const idx = instanceIndex;
     const fW = uint(fineWidth);
@@ -171,7 +150,6 @@ export function createMultigridComputeNodes(
     const fx = idx.remainder(fW);
     const fy = idx.div(fW);
 
-    // Map fine coordinate to coarse space
     const cx = clamp(mul(float(fx), float(0.5)), float(0.0), sub(float(cW), float(1.0)));
     const cy = clamp(mul(float(fy), float(0.5)), float(0.0), sub(float(cH), float(1.0)));
 

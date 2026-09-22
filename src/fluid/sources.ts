@@ -41,13 +41,11 @@ export class InflowJet {
     const yStart = Math.max(1, Math.floor(this.config.y));
     const yEnd = Math.min(H - 2, Math.floor(this.config.y + this.config.height));
 
-    // Slight periodic swirl perturbation to initiate interesting Kelvin-Helmholtz vortex shedding
     const perturbation = Math.sin(simTime * 8.0) * 0.15 * this.config.vx;
 
     for (let y = yStart; y <= yEnd; y++) {
       const rowOffset = y * W;
-      // Smooth parabolic profile across jet opening
-      const yNorm = ((y - yStart) / (yEnd - yStart) - 0.5) * 2.0; // [-1, 1]
+      const yNorm = ((y - yStart) / (yEnd - yStart) - 0.5) * 2.0;
       const profile = Math.max(0, 1.0 - yNorm * yNorm);
 
       for (let x = xStart; x <= xEnd; x++) {

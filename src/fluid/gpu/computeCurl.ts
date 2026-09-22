@@ -1,15 +1,3 @@
-/**
- * GPU Curl / Vorticity Scalar Compute Pass (TSL)
- *
- * Citation:
- * Fedkiw, R., Stam, J., & Jensen, H. W. (2001). "Visual Simulation of Smoke".
- * Proceedings of SIGGRAPH 2001, pp. 15–22. https://doi.org/10.1145/383259.383260
- *
- * Curl Formulation (Central Differences):
- *   omega = dv/dx - du/dy
- *   omega(x, y) = 0.5 * invDx * [ (v(x+1, y) - v(x-1, y)) - (u(x, y+1) - u(x, y-1)) ]
- */
-
 import {
   Fn,
   instanceIndex,
@@ -53,11 +41,9 @@ export function createCurlComputeNode(
     const x = idx.remainder(W);
     const y = idx.div(W);
 
-    // Interior check: x in [1..W-2] and y in [1..H-2]
     const isInterior = x.greaterThan(uint(0)).and(x.lessThan(sub(W, uint(1))))
       .and(y.greaterThan(uint(0))).and(y.lessThan(sub(H, uint(1))));
 
-    // Clamped neighbor indices
     const xLeft = x.greaterThan(uint(0)).select(sub(x, uint(1)), x);
     const xRight = x.lessThan(sub(W, uint(1))).select(add(x, uint(1)), x);
     const yDown = y.greaterThan(uint(0)).select(sub(y, uint(1)), y);

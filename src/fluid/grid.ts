@@ -11,22 +11,18 @@ export class FluidGrid {
   public readonly dx: number;
   public readonly invDx: number;
 
-  // Velocity buffers
   public u: Float32Array;
   public uPrev: Float32Array;
   public v: Float32Array;
   public vPrev: Float32Array;
 
-  // Pressure & Divergence buffers
   public pressure: Float32Array;
   public pressurePrev: Float32Array;
   public div: Float32Array;
 
-  // Scalar Dye tracer
   public dye: Float32Array;
   public dyePrev: Float32Array;
 
-  // Vorticity / Curl buffer
   public curl: Float32Array;
 
   constructor(options?: GridOptions) {
@@ -68,30 +64,18 @@ export class FluidGrid {
     return y * this.width + x;
   }
 
-  /**
-   * Check if coordinate (x, y) is within grid bounds [0..width-1, 0..height-1].
-   */
   public inBounds(x: number, y: number): boolean {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }
 
-  /**
-   * Explicit interior check: true if (x, y) is strictly inside boundaries (0 < x < W-1, 0 < y < H-1).
-   */
   public isInterior(x: number, y: number): boolean {
     return x > 0 && x < this.width - 1 && y > 0 && y < this.height - 1;
   }
 
-  /**
-   * Explicit boundary check: true if (x, y) is on the outer border cells.
-   */
   public isBoundary(x: number, y: number): boolean {
     return this.inBounds(x, y) && (x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1);
   }
 
-  /**
-   * Get scalar value from a buffer at (x, y) with bounds checking.
-   */
   public get(field: Float32Array, x: number, y: number): number {
     if (!this.inBounds(x, y)) {
       throw new RangeError(

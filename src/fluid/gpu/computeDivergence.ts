@@ -1,15 +1,3 @@
-/**
- * GPU Divergence Compute Pass (TSL)
- *
- * Citation:
- * Harris, M. J. (2004). "Fast Fluid Dynamics on the GPU".
- * In R. Fernando (Ed.), GPU Gems: Programming Techniques, Tips, and Tricks for Real-Time Graphics (Chapter 38).
- * Addison-Wesley. https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-38-fast-fluid-dynamics-gpu
- *
- * Formulation:
- *   div(u) = 0.5 * invDx * [ (u(x+1, y) - u(x-1, y)) + (v(x, y+1) - v(x, y-1)) ]
- */
-
 import {
   Fn,
   instanceIndex,

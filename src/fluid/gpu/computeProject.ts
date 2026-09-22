@@ -1,17 +1,3 @@
-/**
- * GPU Velocity Projection Compute Pass (TSL)
- *
- * Citation:
- * Harris, M. J. (2004). "Fast Fluid Dynamics on the GPU".
- * In R. Fernando (Ed.), GPU Gems: Programming Techniques, Tips, and Tricks for Real-Time Graphics (Chapter 38).
- * Addison-Wesley. https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-38-fast-fluid-dynamics-gpu
- *
- * Projection Step:
- *   u^(n+1) = u* - grad(p)
- *   u(x, y) <- u(x, y) - 0.5 * invDx * (p(x+1, y) - p(x-1, y))
- *   v(x, y) <- v(x, y) - 0.5 * invDx * (p(x, y+1) - p(x, y-1))
- */
-
 import {
   Fn,
   instanceIndex,

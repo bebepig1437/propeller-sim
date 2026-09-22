@@ -2,13 +2,13 @@ import type { FluidGrid } from './grid';
 
 export interface HullConfig {
   enabled: boolean;
-  x: number;          // Left X coordinate in grid cells (downstream of prop, e.g. 45)
-  y: number;          // Top Y coordinate in grid cells (e.g. 54)
-  width: number;      // Hull length in cells (e.g. 30)
-  height: number;     // Hull height in cells (e.g. 20)
-  cd: number;         // Hydrodynamic drag coefficient (default 1.05)
-  gridDxM: number;    // Grid cell size in meters
-  depthM: number;     // Out-of-plane physical depth in meters
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  cd: number;
+  gridDxM: number;
+  depthM: number;
   fluidDensity: number;
 }
 
@@ -50,10 +50,6 @@ export class HullObstacle {
     };
   }
 
-  /**
-   * Applies hydrodynamic drag force from the fixed hull obstacle onto the fluid velocity field,
-   * decelerating the slipstream and producing realistic hull wake shadowing.
-   */
   public applyDrag(grid: FluidGrid, dt: number): HullTelemetry {
     if (!this.config.enabled) {
       this.lastTelemetry.dragForceX_N = 0;
@@ -70,7 +66,6 @@ export class HullObstacle {
 
     const { x, y, width, height, cd, gridDxM, depthM, fluidDensity } = this.config;
 
-    // Cache cell indices occupied by the hull body
     if (
       this.cachedGridW !== W ||
       this.cachedGridH !== H ||
@@ -100,7 +95,6 @@ export class HullObstacle {
 
       for (let py = yMin; py <= yMax; py++) {
         for (let px = xMin; px <= xMax; px++) {
-          // Rounded elliptical hull cross-section
           const normX = (px - cx) / rx;
           const normY = (py - cy) / ry;
           if (normX * normX + normY * normY <= 1.0) {
@@ -117,7 +111,6 @@ export class HullObstacle {
     const cellVolM3 = gridDxM * gridDxM * depthM;
     const cellMassKg = fluidDensity * cellVolM3;
 
-    // Acceleration a = F_drag / M_fluid = (0.5 * rho * Cd * A * V^2) / (rho * V_hull) = (0.5 * Cd * A * V^2) / V_hull
     const frontalAreaM2 = height * gridDxM * depthM;
     const totalHullVolM3 = nCells * cellVolM3;
     const dragCoeff = (0.5 * cd * frontalAreaM2) / totalHullVolM3;
@@ -133,16 +126,13 @@ export class HullObstacle {
       const speed = Math.sqrt(curU * curU + curV * curV);
 
       if (speed > 1e-4) {
-        // Semi-implicit quadratic drag update: V_new = V / (1 + dragCoeff * V * dt)
         const denom = 1.0 + dragCoeff * speed * dt;
         const newU = curU / denom;
         const newV = curV / denom;
 
-        // Force on fluid = m * (V_new - V) / dt
         const fxFluid = cellMassKg * (newU - curU) / dt;
         const fyFluid = cellMassKg * (newV - curV) / dt;
 
-        // Force on hull = - Force on fluid
         totalFx -= fxFluid;
         totalFy -= fyFluid;
 

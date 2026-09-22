@@ -37,27 +37,23 @@ export class FluidRenderer2D {
     const pixels = this.pixelBuffer;
 
     if (this.mode === 'DYE') {
-      // Marine bioluminescent cyan-blue dye rendering
       for (let i = 0; i < size; i++) {
         const d = Math.min(1.0, Math.max(0, dye[i]));
         if (d <= 0.001) {
-          pixels[i] = 0x00000000; // Fully transparent
+          pixels[i] = 0x00000000;
           continue;
         }
 
-        // Color mapping: deep indigo -> bright turquoise/cyan -> incandescent white
         const r = Math.min(255, Math.floor(d * d * 220));
         const g = Math.min(255, Math.floor(d * 242));
         const b = Math.min(255, Math.floor(255 * Math.sqrt(d)));
         const a = Math.min(240, Math.floor(d * 240));
 
-        // Little-endian ABGR: (a << 24) | (b << 16) | (g << 8) | r
         pixels[i] = (a << 24) | (b << 16) | (g << 8) | r;
       }
     } else if (this.mode === 'VORTICITY') {
-      // Diverging red/blue vorticity colormap
       for (let i = 0; i < size; i++) {
-        const c = curl[i] * 0.15; // scale
+        const c = curl[i] * 0.15;
         const a = Math.min(220, Math.floor(Math.abs(c) * 255));
         if (a <= 5) {
           pixels[i] = 0x00000000;
@@ -66,12 +62,10 @@ export class FluidRenderer2D {
 
         let r = 0, g = 0, b = 0;
         if (c > 0) {
-          // Counter-clockwise swirl: Cyan/Blue
           r = 0;
           g = Math.min(255, Math.floor(c * 200));
           b = Math.min(255, Math.floor(c * 255));
         } else {
-          // Clockwise swirl: Orange/Amber
           r = Math.min(255, Math.floor(-c * 255));
           g = Math.min(255, Math.floor(-c * 120));
           b = 0;
@@ -79,7 +73,6 @@ export class FluidRenderer2D {
         pixels[i] = (a << 24) | (b << 16) | (g << 8) | r;
       }
     } else if (this.mode === 'VELOCITY') {
-      // Speed magnitude heatmap
       for (let i = 0; i < size; i++) {
         const speed = Math.hypot(u[i], v[i]) * 0.4;
         const s = Math.min(1.0, speed);
@@ -90,7 +83,6 @@ export class FluidRenderer2D {
         pixels[i] = (a << 24) | (b << 16) | (g << 8) | r;
       }
     } else {
-      // Pressure
       for (let i = 0; i < size; i++) {
         const p = pressure[i] * 2.0;
         const normP = Math.min(1.0, Math.max(-1.0, p));
@@ -112,13 +104,12 @@ export class FluidRenderer2D {
     const dyeB = gridB.dye;
 
     for (let i = 0; i < size; i++) {
-      const diff = Math.abs(dyeA[i] - dyeB[i]) * 10.0; // amplify for clear visual inspection
+      const diff = Math.abs(dyeA[i] - dyeB[i]) * 10.0;
       const d = Math.min(1.0, Math.max(0.0, diff));
       if (d <= 0.002) {
         pixels[i] = 0x00000000;
         continue;
       }
-      // High-contrast magenta/gold error color
       const r = Math.min(255, Math.floor(d * 255));
       const g = Math.min(255, Math.floor(d * d * 180));
       const b = Math.min(255, Math.floor(d * 240));
@@ -129,10 +120,6 @@ export class FluidRenderer2D {
     this.ctx.putImageData(this.imageData, 0, 0);
   }
 
-  /**
-   * Diagnostic method sampling raw field cell values from the authoritative grid.
-   * Fulfills cutaway consistency requirement: exact floating point match.
-   */
   public sampleField(grid: FluidGrid, x: number, y: number, mode = this.mode): number {
     const cx = Math.max(0, Math.min(grid.width - 1, Math.floor(x)));
     const cy = Math.max(0, Math.min(grid.height - 1, Math.floor(y)));
@@ -145,9 +132,6 @@ export class FluidRenderer2D {
     return grid.dye[idx];
   }
 
-  /**
-   * Renders scientific diagnostic axis labels in grid units and numeric colorbar ticks.
-   */
   private renderDiagnosticOverlay(grid: FluidGrid): void {
     const ctx = this.ctx;
     if (!ctx || typeof ctx.fillText !== 'function') return;
@@ -162,10 +146,8 @@ export class FluidRenderer2D {
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
       ctx.lineWidth = 1;
 
-      // Axis border in grid units
       ctx.strokeRect(10, 10, W - 20, H - 20);
 
-      // X Axis Ticks (0, W/4, W/2, 3W/4, W)
       const xSteps = [0, Math.floor(grid.width * 0.25), Math.floor(grid.width * 0.5), Math.floor(grid.width * 0.75), grid.width];
       xSteps.forEach(gx => {
         const px = 10 + (gx / grid.width) * (W - 20);

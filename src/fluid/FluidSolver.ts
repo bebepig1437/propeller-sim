@@ -30,7 +30,6 @@ export class FluidSolver {
   public boundary: BoundaryHandler;
   public jet: InflowJet;
 
-  // Solver hyperparameters
   public dt: number;
   public advectionScheme: AdvectionScheme;
   public viscosity: number;
@@ -38,7 +37,6 @@ export class FluidSolver {
   public pressureIterations: number;
   public pressureMethod: "jacobi" | "multigrid";
 
-  // Profiling & Diagnostics
   public metrics: FluidSolverMetrics;
   public lastPressureResult: PressureSolveResult | null = null;
   public simTime = 0;
@@ -68,7 +66,6 @@ export class FluidSolver {
     const t0 = performance.now();
     const dt = customDt ?? this.dt;
 
-    // CFL Guard: check maximum velocity magnitude
     const cflLimit = 2.0;
     let maxVel = 0;
     for (let i = 0; i < this.grid.size; i++) {
@@ -78,12 +75,10 @@ export class FluidSolver {
     const cfl = (maxVel * dt) * this.grid.invDx;
 
     if (cfl > cflLimit) {
-      // Substep to satisfy CFL condition and prevent NaN instability
       const maxSubsteps = 8;
       const substeps = Math.min(maxSubsteps, Math.ceil(cfl / cflLimit));
       const subDt = dt / substeps;
 
-      // If velocity still exceeds stability limit at max substeps, clamp velocity to prevent NaN explosion
       const maxAllowedVel = (cflLimit * this.grid.dx) / subDt;
       if (maxVel > maxAllowedVel) {
         const clampRatio = maxAllowedVel / maxVel;
@@ -100,7 +95,6 @@ export class FluidSolver {
       this.stepSingle(dt);
     }
 
-    // Diagnostics & Update Metrics
     this.metrics.stepTimeMs = performance.now() - t0;
     this.metrics.maxDivergence = getMaxDivergence(this.grid);
     if (this.lastPressureResult) {
@@ -115,32 +109,26 @@ export class FluidSolver {
   private stepSingle(dt: number): void {
     this.simTime += dt;
 
-    // 1. Inject Sources (Inflow Jet velocity & dye)
     this.jet.inject(this.grid, this.simTime);
 
-    // 2. Vorticity Confinement (Fedkiw 2001)
     if (this.vorticityStrength > 0) {
       applyVorticityConfinement(this.grid, dt, this.vorticityStrength);
       this.boundary.applyVelocityBoundary(this.grid);
     }
 
-    // 3. Diffuse velocity (optional viscous diffusion)
     if (this.viscosity > 0) {
       this.diffuseVelocity(dt);
     }
 
-    // 4. Advect Velocity (Self-advection)
     this.grid.swapU();
     this.grid.swapV();
     advect(this.advectionScheme, this.grid, this.grid.uPrev, this.grid.u, dt, this.boundary, true);
     advect(this.advectionScheme, this.grid, this.grid.vPrev, this.grid.v, dt, this.boundary, true);
     this.boundary.applyVelocityBoundary(this.grid);
 
-    // 5. Advect Scalar Dye field
     this.grid.swapDye();
     advect(this.advectionScheme, this.grid, this.grid.dyePrev, this.grid.dye, dt, this.boundary, false);
 
-    // 6. Project: Pressure Poisson Solve -> Divergence-Free Velocity
     this.lastPressureResult = projectVelocity(this.grid, this.pressureIterations, this.boundary, this.pressureMethod);
     computeCurl(this.grid);
   }
@@ -154,7 +142,6 @@ export class FluidSolver {
     vPrev.set(v);
 
     const denom = 1.0 / (1.0 + 4.0 * a);
-    // 4 Jacobi iterations for diffusion are sufficient for water viscosity
     for (let iter = 0; iter < 4; iter++) {
       for (let y = 1; y < H - 1; y++) {
         const row = y * W;
