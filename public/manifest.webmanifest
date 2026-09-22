@@ -1,0 +1,29 @@
+{
+  "name": "SeaPerch Propeller & Vehicle Simulator",
+  "short_name": "SeaPerch Sim",
+  "description": "Browser-runtime underwater vehicle simulator for Candidate A Reconciled High-Burst Vector-Skewed Propulsor",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape-primary",
+  "background_color": "#030712",
+  "theme_color": "#030712",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
