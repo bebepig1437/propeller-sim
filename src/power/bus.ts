@@ -3,7 +3,7 @@ import { DCMotorModel, MotorOperatingState, MABUCHI_RC280RA_SPECS } from '../mot
 export interface MotorChannelConfig {
   id: string;
   name: string;
-  throttle: number; // [-1.0, 1.0]
+  throttle: number;
 }
 
 export interface PowerBusTelemetry {
@@ -78,21 +78,12 @@ export class PowerBus {
     this.lastTelemetry = this.busTelemetryRing[0];
   }
 
-  /**
-   * Solves the coupled multi-motor non-linear electrical network with tether voltage sag.
-   *
-   * Correctness guarantees:
-   * 1. Uses signed algebraic sum of currents: regenerative braking unloads tether.
-   * 2. Uses single converged vTerminal consistently across all motor states and telemetry.
-   * 3. Consults motor temperatures: enforces cutout (100°C / 90°C hysteresis) & thermal derating.
-   * 4. Enforces per-motor and total bus current limits.
-   */
   public solveBusNetwork(
     throttles: number[],
     loadTorqueFns: ((omegaRadS: number) => number)[]
   ): PowerBusTelemetry {
     const numMotors = this.motors.length;
-    let vTerminal = this.supplyV; // Initial terminal voltage estimate
+    let vTerminal = this.supplyV;
 
     const maxIters = 60;
     const tol = 1e-7;
@@ -115,11 +106,9 @@ export class PowerBus {
         const motor = this.motors[m];
         motor.thermalEnabled = this.thermalEnabled;
 
-        // Apply thermal protection
         if (motor.isCutout && this.thermalEnabled) {
           u = 0;
         } else if (this.thermalEnabled && motor.windingTempC > motor.specs.warnWindingTempC) {
-          // Gradual thermal derating between 85°C and 100°C
           const derate = Math.max(0.4, 1.0 - (motor.windingTempC - 85.0) / 30.0);
           u *= derate;
         }
@@ -127,28 +116,23 @@ export class PowerBus {
         const loadFn = loadTorqueFns[m] ?? (() => 0);
         const state = motor.solveVoltageMode(vTerminal, u, loadFn, motorStates[m]);
 
-        // Clamp per-motor current limit
         let current = state.currentA;
         if (Math.abs(current) > this.maxMotorCurrentA) {
           current = Math.sign(current) * this.maxMotorCurrentA;
           state.currentA = current;
         }
 
-        // Signed algebraic addition: regenerative current (< 0) reduces total tether draw
         totalMotorCurrent += current;
       }
 
-      // Enforce total bus current limit
       let netBusCurrent = totalMotorCurrent + this.quiescentCurrentA;
       if (Math.abs(netBusCurrent) > this.maxBusCurrentA) {
         netBusCurrent = Math.sign(netBusCurrent) * this.maxBusCurrentA;
       }
 
-      // Tether drop and updated terminal voltage
       const vDrop = netBusCurrent * this.tetherResistance;
       const vTerminalNew = this.supplyV - vDrop;
 
-      // Relaxed iterative update
       const vRelaxed = 0.5 * vTerminal + 0.5 * vTerminalNew;
       if (Math.abs(vRelaxed - vTerminal) < tol) {
         vTerminal = vRelaxed;
@@ -160,7 +144,6 @@ export class PowerBus {
     const netBusCurrent = totalMotorCurrent + this.quiescentCurrentA;
     const vDrop = netBusCurrent * this.tetherResistance;
 
-    // Synchronize all motor states to final converged terminal voltage
     for (let m = 0; m < numMotors; m++) {
       motorStates[m].terminalVoltageV = vTerminal;
     }
@@ -188,9 +171,6 @@ export class PowerBus {
     return telemetry;
   }
 
-  /**
-   * Advances thermal status for all motors over dtSeconds.
-   */
   public stepThermal(dtSeconds: number): void {
     if (!this.thermalEnabled || !this.lastTelemetry || dtSeconds <= 0) return;
     for (let m = 0; m < this.motors.length; m++) {
