@@ -40,13 +40,7 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
         <div id="stage-popovers" class="stage-popovers"></div>
 
         <!-- First-Run Experience Callout -->
-        <div id="first-run-callout" class="first-run-callout">
-          <div class="first-run-text">
-            <strong>Candidate A Simulation Ready.</strong><br>
-            Select a preset from the header and press <strong>RUN</strong> to commence fluid inflow, propeller spool-up, and telemetry recording.
-          </div>
-          <button id="btn-first-run-dismiss" class="first-run-dismiss">Dismiss</button>
-        </div>
+        <div id="first-run-callout" class="first-run-callout hidden"></div>
 
         <!-- 2D Cutaway Surface (Hidden unless Cutaway View is active) -->
         <div id="fluid-cutaway-container" class="fluid-cutaway-container hidden">

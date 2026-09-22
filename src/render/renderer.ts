@@ -439,6 +439,40 @@ export class AppRenderer {
     this.controls.update();
   }
 
+  public playIntroCameraMove(onComplete?: () => void): void {
+    const startPos = new THREE.Vector3(1.15, 0.65, 1.35);
+    const targetPos = new THREE.Vector3(0.65, 0.42, 0.85);
+    const duration = 1200;
+    const startTime = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    this.camera.position.copy(startPos);
+    this.controls.target.set(0.0, 0.0, 0.0);
+    this.controls.update();
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1.0, elapsed / duration);
+      const ease = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+      this.camera.position.lerpVectors(startPos, targetPos, ease);
+      this.controls.update();
+      if (progress < 1.0) {
+        if (typeof requestAnimationFrame !== "undefined") {
+          requestAnimationFrame(step);
+        }
+      } else {
+        this.camera.position.copy(targetPos);
+        this.controls.update();
+        if (onComplete) onComplete();
+      }
+    };
+    if (typeof requestAnimationFrame !== "undefined") {
+      requestAnimationFrame(step);
+    } else {
+      this.camera.position.copy(targetPos);
+      this.controls.update();
+      if (onComplete) onComplete();
+    }
+  }
+
   private createTestTankStructure(): THREE.Group {
     const tank = new THREE.Group();
 
