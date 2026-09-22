@@ -1,5 +1,4 @@
 import { DCMotorModel, MotorOperatingState, MABUCHI_RC280RA_SPECS } from '../motor/motor';
-import { calculateTetherState, TetherVoltageDrop } from './tether';
 
 export interface MotorChannelConfig {
   id: string;
@@ -36,6 +35,8 @@ export class PowerBus {
   public maxMotorCurrentA: number;
   public maxBusCurrentA: number;
   public motors: DCMotorModel[] = [];
+  private busTelemetryRing: PowerBusTelemetry[] = [];
+  private ringIdx = 0;
   public lastTelemetry: PowerBusTelemetry | null = null;
   public thermalEnabled = true;
 
@@ -55,6 +56,26 @@ export class PowerBus {
     for (let i = 0; i < count; i++) {
       this.motors.push(new DCMotorModel(MABUCHI_RC280RA_SPECS));
     }
+
+    for (let s = 0; s < 4; s++) {
+      const motorStates: MotorOperatingState[] = [];
+      for (let i = 0; i < count; i++) {
+        motorStates.push(this.motors[i].createIdleState(this.supplyV));
+      }
+      this.busTelemetryRing.push({
+        supplyV: this.supplyV,
+        terminalV: this.supplyV,
+        voltageDropV: 0,
+        totalBusCurrentA: 0,
+        totalPowerSupplyW: 0,
+        tetherLossWatts: 0,
+        motorDeliveredPowerW: 0,
+        electricalEfficiency: 0,
+        quiescentCurrentA: this.quiescentCurrentA,
+        motors: motorStates
+      });
+    }
+    this.lastTelemetry = this.busTelemetryRing[0];
   }
 
   /**
@@ -76,12 +97,18 @@ export class PowerBus {
     const maxIters = 60;
     const tol = 1e-7;
 
-    let motorStates: MotorOperatingState[] = [];
+    const telemetry = this.busTelemetryRing[(this.ringIdx++) % 4];
+    const motorStates = telemetry.motors;
+    while (motorStates.length < numMotors) {
+      const idx = motorStates.length;
+      motorStates.push(this.motors[idx]?.createIdleState(vTerminal) ?? (new DCMotorModel(MABUCHI_RC280RA_SPECS)).createIdleState(vTerminal));
+    }
+    motorStates.length = numMotors;
+
     let totalMotorCurrent = 0;
 
     for (let iter = 0; iter < maxIters; iter++) {
       totalMotorCurrent = 0;
-      motorStates = [];
 
       for (let m = 0; m < numMotors; m++) {
         let u = throttles[m] ?? 0;
@@ -98,7 +125,7 @@ export class PowerBus {
         }
 
         const loadFn = loadTorqueFns[m] ?? (() => 0);
-        const state = motor.solveVoltageMode(vTerminal, u, loadFn);
+        const state = motor.solveVoltageMode(vTerminal, u, loadFn, motorStates[m]);
 
         // Clamp per-motor current limit
         let current = state.currentA;
@@ -107,7 +134,6 @@ export class PowerBus {
           state.currentA = current;
         }
 
-        motorStates.push(state);
         // Signed algebraic addition: regenerative current (< 0) reduces total tether draw
         totalMotorCurrent += current;
       }
@@ -135,32 +161,28 @@ export class PowerBus {
     const vDrop = netBusCurrent * this.tetherResistance;
 
     // Synchronize all motor states to final converged terminal voltage
-    for (const state of motorStates) {
-      state.terminalVoltageV = vTerminal;
+    for (let m = 0; m < numMotors; m++) {
+      motorStates[m].terminalVoltageV = vTerminal;
     }
 
-    const tetherState: TetherVoltageDrop = calculateTetherState(
-      netBusCurrent,
-      this.supplyV,
-      this.tetherResistance
-    );
-
+    const tetherLossWatts = netBusCurrent * netBusCurrent * this.tetherResistance;
     const totalPowerSupply = this.supplyV * netBusCurrent;
-    const motorDeliveredPower = motorStates.reduce((acc, m) => acc + m.powerElecW, 0);
+    let motorDeliveredPower = 0;
+    for (let m = 0; m < numMotors; m++) {
+      motorDeliveredPower += motorStates[m].powerElecW;
+    }
     const electricalEfficiency = totalPowerSupply > 0.01 ? Math.min(1.0, motorDeliveredPower / totalPowerSupply) : 0;
 
-    const telemetry: PowerBusTelemetry = {
-      supplyV: this.supplyV,
-      terminalV: vTerminal,
-      voltageDropV: vDrop,
-      totalBusCurrentA: netBusCurrent,
-      totalPowerSupplyW: totalPowerSupply,
-      tetherLossWatts: tetherState.jouleLossWatts,
-      motorDeliveredPowerW: motorDeliveredPower,
-      electricalEfficiency,
-      quiescentCurrentA: this.quiescentCurrentA,
-      motors: motorStates
-    };
+    telemetry.supplyV = this.supplyV;
+    telemetry.terminalV = vTerminal;
+    telemetry.voltageDropV = vDrop;
+    telemetry.totalBusCurrentA = netBusCurrent;
+    telemetry.totalPowerSupplyW = totalPowerSupply;
+    telemetry.tetherLossWatts = tetherLossWatts;
+    telemetry.motorDeliveredPowerW = motorDeliveredPower;
+    telemetry.electricalEfficiency = electricalEfficiency;
+    telemetry.quiescentCurrentA = this.quiescentCurrentA;
+    telemetry.motors = motorStates;
 
     this.lastTelemetry = telemetry;
     return telemetry;

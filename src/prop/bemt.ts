@@ -199,10 +199,54 @@ export function evaluateBlendedSectionAero(
  * 7. Handedness (CW / CCW) with exact torque symmetry.
  * 8. Reynolds number scaling and material surface roughness.
  */
+const MAX_PREALLOC_ELEMENTS = 64;
+const BEMT_RING_SIZE = 8;
+let bemtRingIndex = 0;
+
+function createBemtElement(): BEMTElemResult {
+  return {
+    radiusM: 0,
+    rOverR: 0,
+    chordM: 0,
+    twistDeg: 0,
+    inflowAngleDeg: 0,
+    alphaDeg: 0,
+    cl: 0,
+    cd: 0,
+    reynolds: 0,
+    dT: 0,
+    dQ: 0,
+    axialInducedMs: 0,
+    tangentialInducedMs: 0
+  };
+}
+
+const bemtResultRing: BEMTResult[] = Array.from({ length: BEMT_RING_SIZE }, () => ({
+  thrustN: 0,
+  torqueNm: 0,
+  powerMechW: 0,
+  advanceRatioJ: 0,
+  kt: 0,
+  kq: 0,
+  efficiency: 0,
+  rpm: 0,
+  advanceSpeedMs: 0,
+  handedness: "CW",
+  elements: Array.from({ length: MAX_PREALLOC_ELEMENTS }, createBemtElement)
+}));
+
+export function cloneBEMTResult(res: BEMTResult): BEMTResult {
+  return {
+    ...res,
+    elements: res.elements.map(e => ({ ...e }))
+  };
+}
+
 export function solveBEMT(
   rpm: number,
   advanceSpeedMs: number,
-  params?: PropellerBEMTParams
+  params?: PropellerBEMTParams,
+  out?: BEMTResult
 ): BEMTResult {
   const design = params?.design ?? CANDIDATE_A_DESIGN;
   const D = (params?.diameterMm ?? design.diameterMm) * 1e-3;
@@ -220,11 +264,17 @@ export function solveBEMT(
   const Rhub = Dhub / 2.0;
   const dr = (R - Rhub) / N;
 
+  const targetResult = out ?? bemtResultRing[bemtRingIndex++ % BEMT_RING_SIZE];
+  const targetElements = targetResult.elements;
+  while (targetElements.length < N) {
+    targetElements.push(createBemtElement());
+  }
+  targetElements.length = N;
+
   // Zero-RPM handling: A stationary propeller in flow produces locked-rotor drag.
   // Must return non-empty elements with vi = viTheta = 0.
   if (Math.abs(rpm) < 1.0) {
     let totalThrust = 0;
-    const elements: BEMTElemResult[] = [];
 
     for (let i = 0; i < N; i++) {
       const r = Rhub + (i + 0.5) * dr;
@@ -243,36 +293,33 @@ export function solveBEMT(
       const dT = -Math.sign(advanceSpeedMs || 1) * polar.cd * qDyn * chord * dr * B;
       totalThrust += dT;
 
-      elements.push({
-        radiusM: r,
-        rOverR,
-        chordM: chord,
-        twistDeg: (theta * 180.0) / Math.PI,
-        inflowAngleDeg: (phi * 180.0) / Math.PI,
-        alphaDeg: (alpha * 180.0) / Math.PI,
-        cl: polar.cl,
-        cd: polar.cd,
-        reynolds: re,
-        dT,
-        dQ: 0,
-        axialInducedMs: 0,
-        tangentialInducedMs: 0
-      });
+      const el = targetElements[i];
+      el.radiusM = r;
+      el.rOverR = rOverR;
+      el.chordM = chord;
+      el.twistDeg = (theta * 180.0) / Math.PI;
+      el.inflowAngleDeg = (phi * 180.0) / Math.PI;
+      el.alphaDeg = (alpha * 180.0) / Math.PI;
+      el.cl = polar.cl;
+      el.cd = polar.cd;
+      el.reynolds = re;
+      el.dT = dT;
+      el.dQ = 0;
+      el.axialInducedMs = 0;
+      el.tangentialInducedMs = 0;
     }
 
-    return {
-      thrustN: totalThrust,
-      torqueNm: 0,
-      powerMechW: 0,
-      advanceRatioJ: 0,
-      kt: 0,
-      kq: 0,
-      efficiency: 0,
-      rpm: 0,
-      advanceSpeedMs,
-      handedness,
-      elements
-    };
+    targetResult.thrustN = totalThrust;
+    targetResult.torqueNm = 0;
+    targetResult.powerMechW = 0;
+    targetResult.advanceRatioJ = 0;
+    targetResult.kt = 0;
+    targetResult.kq = 0;
+    targetResult.efficiency = 0;
+    targetResult.rpm = 0;
+    targetResult.advanceSpeedMs = advanceSpeedMs;
+    targetResult.handedness = handedness;
+    return targetResult;
   }
 
   const signRpm = Math.sign(rpm);
@@ -282,7 +329,6 @@ export function solveBEMT(
 
   let totalThrust = 0;
   let totalTorque = 0;
-  const elements: BEMTElemResult[] = [];
 
   for (let i = 0; i < N; i++) {
     const r = Rhub + (i + 0.5) * dr;
@@ -380,21 +426,20 @@ export function solveBEMT(
     totalThrust += dT;
     totalTorque += dQ;
 
-    elements.push({
-      radiusM: r,
-      rOverR,
-      chordM: chord,
-      twistDeg: (theta * 180.0) / Math.PI,
-      inflowAngleDeg: (phiConv * 180.0) / Math.PI,
-      alphaDeg: (alphaConv * 180.0) / Math.PI,
-      cl: clConv,
-      cd: cdConv,
-      reynolds: reConv,
-      dT,
-      dQ,
-      axialInducedMs: vi,
-      tangentialInducedMs: viTheta
-    });
+    const el = targetElements[i];
+    el.radiusM = r;
+    el.rOverR = rOverR;
+    el.chordM = chord;
+    el.twistDeg = (theta * 180.0) / Math.PI;
+    el.inflowAngleDeg = (phiConv * 180.0) / Math.PI;
+    el.alphaDeg = (alphaConv * 180.0) / Math.PI;
+    el.cl = clConv;
+    el.cd = cdConv;
+    el.reynolds = reConv;
+    el.dT = dT;
+    el.dQ = dQ;
+    el.axialInducedMs = vi;
+    el.tangentialInducedMs = viTheta;
   }
 
   // Directional signs for reverse rotation
@@ -419,17 +464,15 @@ export function solveBEMT(
     efficiency = Math.min(1.0, Math.max(0.0, (totalThrust * advanceSpeedMs) / powerMech));
   }
 
-  return {
-    thrustN: totalThrust,
-    torqueNm: directedTorque,
-    powerMechW: powerMech,
-    advanceRatioJ: J,
-    kt,
-    kq,
-    efficiency,
-    rpm,
-    advanceSpeedMs,
-    handedness,
-    elements
-  };
+  targetResult.thrustN = totalThrust;
+  targetResult.torqueNm = directedTorque;
+  targetResult.powerMechW = powerMech;
+  targetResult.advanceRatioJ = J;
+  targetResult.kt = kt;
+  targetResult.kq = kq;
+  targetResult.efficiency = efficiency;
+  targetResult.rpm = rpm;
+  targetResult.advanceSpeedMs = advanceSpeedMs;
+  targetResult.handedness = handedness;
+  return targetResult;
 }

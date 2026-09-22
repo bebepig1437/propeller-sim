@@ -275,7 +275,9 @@ export class VehicleFluidCoupler {
       this.lastTelemetry.rawAdvanceSpeedsMs
     );
     this.ambientFlowAtVehicle(grid, vehicle, units, outAmbientFlow);
-    this.lastTelemetry.ambientFlowWorld = [outAmbientFlow.x, outAmbientFlow.y, outAmbientFlow.z];
+    this.lastTelemetry.ambientFlowWorld[0] = outAmbientFlow.x;
+    this.lastTelemetry.ambientFlowWorld[1] = outAmbientFlow.y;
+    this.lastTelemetry.ambientFlowWorld[2] = outAmbientFlow.z;
     return advances;
   }
 }

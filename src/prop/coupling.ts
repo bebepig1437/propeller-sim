@@ -299,9 +299,14 @@ export class ActuatorDiscCoupler {
     const cells = this.cachedCells;
     const nCells = cells.length;
     // Actuator disc theoretical slipstream velocity: V_wake = Va + 2*vi
-    const meanInduced = bemt.elements && bemt.elements.length > 0
-      ? bemt.elements.reduce((acc, el) => acc + el.axialInducedMs, 0) / bemt.elements.length
-      : 0;
+    let sumInduced = 0;
+    const numEl = bemt.elements ? bemt.elements.length : 0;
+    if (numEl > 0) {
+      for (let i = 0; i < numEl; i++) {
+        sumInduced += bemt.elements[i].axialInducedMs;
+      }
+    }
+    const meanInduced = numEl > 0 ? sumInduced / numEl : 0;
 
     let sumInjectedForceN = 0;
 
