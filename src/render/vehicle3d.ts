@@ -253,4 +253,121 @@ export class Vehicle3D {
 
   // -------------------------------------------------------------------- state
 
+  public getPosition(): THREE.Vector3 {
+    return this.position;
+  }
+
+  public getYawRad(): number {
+    return this.yawRad;
+  }
+
+  /** Mirrors the physics body pose (called every frame after the solver). */
+  public setPose(position: THREE.Vector3, quaternion: THREE.Quaternion): void {
+    this.position.copy(position);
+    this.body.quaternion.copy(quaternion);
+    this.yawRad = this.extractYawRad(quaternion);
+    this.root.position.copy(position);
+    this.syncHandlePose();
+  }
+
+  public setInterpolatedPose(pose: { position: [number, number, number]; yawRad: number; scale: number }): void {
+    this.position.set(pose.position[0], pose.position[1], pose.position[2]);
+    this.body.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), pose.yawRad);
+    this.yawRad = pose.yawRad;
+    this.root.position.copy(this.position);
+    this.root.scale.setScalar(pose.scale);
+    this.syncHandlePose();
+  }
+
+  private extractYawRad(q: THREE.Quaternion): number {
+    return new THREE.Euler().setFromQuaternion(q, 'YXZ').y;
+  }
+
+  private syncHandlePose(): void {
+    this.handleGroup.position.copy(this.position);
+    this.handleGroup.rotation.set(0, 0, 0);
+  }
+
+  public setSelected(selected: boolean): void {
+    this.isSelected = selected;
+    this.handleGroup.visible = selected;
+    this.frameMaterial.color.setHex(selected ? COLOR_FRAME_SELECTED : COLOR_FRAME);
+    this.frameMaterial.emissiveIntensity = selected ? 1.4 : 0.6;
+  }
+
+  /** Objects eligible for picking (frame body + handles). */
+  public pickables(): THREE.Object3D[] {
+    return [this.body, this.grabSphere, this.heaveHandle, this.yawRing];
+  }
+
+  public isHandle(object: THREE.Object3D): 'grab' | 'heave' | 'yaw' | null {
+    let node: THREE.Object3D | null = object;
+    while (node) {
+      if (node === this.grabSphere) return 'grab';
+      if (node === this.heaveHandle) return 'heave';
+      if (node === this.yawRing) return 'yaw';
+      node = node.parent;
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------- drag gestures
+
+  public beginHorizontalDrag(pointerWorld: THREE.Vector3): void {
+    this.dragOffset.copy(this.position).sub(pointerWorld);
+  }
+
+  public updateHorizontalDrag(pointerWorld: THREE.Vector3): void {
+    this.position.copy(pointerWorld).add(this.dragOffset);
+    this.root.position.copy(this.position);
+    this.syncHandlePose();
+    this.callbacks.onPoseChanged?.(this.position, this.yawRad);
+  }
+
+  public beginHeaveDrag(clientY: number): void {
+    this.dragStartClientY = clientY;
+    this.dragStartHeaveM = this.position.y;
+  }
+
+  /** metersPerPixel converts a screen-space drag into world meters along +Y. */
+  public updateHeaveDrag(clientY: number, metersPerPixel: number): void {
+    this.position.y = this.dragStartHeaveM + (this.dragStartClientY - clientY) * metersPerPixel;
+    this.root.position.copy(this.position);
+    this.syncHandlePose();
+    this.callbacks.onPoseChanged?.(this.position, this.yawRad);
+  }
+
+  public beginYawDrag(pointerWorld: THREE.Vector3): void {
+    this.yawStartPointerAngle = Math.atan2(pointerWorld.z - this.position.z, pointerWorld.x - this.position.x);
+    this.yawStartRad = this.yawRad;
+  }
+
+  public updateYawDrag(pointerWorld: THREE.Vector3): void {
+    const angle = Math.atan2(pointerWorld.z - this.position.z, pointerWorld.x - this.position.x);
+    let delta = angle - this.yawStartPointerAngle;
+    while (delta > Math.PI) delta -= 2 * Math.PI;
+    while (delta < -Math.PI) delta += 2 * Math.PI;
+    this.yawRad = this.yawStartRad + delta;
+    this.body.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.yawRad);
+    this.callbacks.onPoseChanged?.(this.position, this.yawRad);
+  }
+
+  public commitDrag(): void {
+    this.callbacks.onPoseCommit?.(this.position, this.yawRad);
+  }
+
+  public commitPose(): void {
+    this.callbacks.onPoseChanged?.(this.position, this.yawRad);
+    this.callbacks.onPoseCommit?.(this.position, this.yawRad);
+  }
+
+  public dispose(): void {
+    this.root.removeFromParent();
+    this.body.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+    });
+    this.frameMaterial.dispose();
+    this.handleMaterial.dispose();
+  }
 }

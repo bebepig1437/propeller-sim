@@ -6,6 +6,8 @@ import { CausticTextureGenerator, applyUnderwaterOpticalProperties } from './wat
 import { Propeller3D } from '../prop/geometry';
 import { CANDIDATE_A_DESIGN } from '../prop/designs/index';
 import type { FluidGrid } from '../fluid/grid';
+import type { SimConfig } from '../core/config';
+import { Vehicle3D, pointerToHorizontalPlane } from './vehicle3d';
 
 export interface RendererInitResult {
   backend: 'WebGPU' | 'WebGL2';
@@ -79,6 +81,9 @@ export class AppRenderer {
   private tankStructure: THREE.Group;
   private isDisposed = false;
 
+  // Phase 6b vehicle body + direct manipulation (null until attachVehicle3D)
+  public vehicle3D?: Vehicle3D;
+
   // Propeller Direct Manipulation Callbacks
   public onPropellerSelected?: () => void;
   public onPropellerPositionChanged?: (zM: number) => void;
@@ -86,6 +91,13 @@ export class AppRenderer {
   public onHandednessChanged?: (handedness: 'CW' | 'CCW') => void;
   public onIncidenceChanged?: (incidenceDeg: number) => void;
   public onRemoveThruster?: () => void;
+
+  // Vehicle Direct Manipulation Callbacks
+  public onVehicleSelected?: () => void;
+  public onVehiclePoseChanged?: (position: THREE.Vector3, yawRad: number) => void;
+  public onVehiclePoseCommit?: (position: THREE.Vector3, yawRad: number) => void;
+
+  private vehicleDragMode: 'grab' | 'heave' | 'yaw' | null = null;
 
   private isDraggingTranslate = false;
   private isDraggingPitch = false;
@@ -190,6 +202,124 @@ export class AppRenderer {
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', this.onResize);
     }
+  }
+
+  /**
+   * Phase 6b — mounts the vehicle body in the stage with its direct-manipulation
+   * handles. Called from the main app once the vehicle config is known.
+   */
+  public attachVehicle3D(config: SimConfig['vehicle']): Vehicle3D {
+    if (this.vehicle3D) return this.vehicle3D;
+    this.vehicle3D = new Vehicle3D(
+      {
+        cornerHalfGapM: config.frameTrussCornerHalfGapM,
+        mountSwayM: 0.075,
+        propDiameterM: 0.042,
+        cobAboveCogM: config.cobAboveCogMm * 1e-3
+      },
+      {
+        onSelected: () => this.onVehicleSelected?.(),
+        onPoseChanged: (position, yawRad) => this.onVehiclePoseChanged?.(position, yawRad),
+        onPoseCommit: (position, yawRad) => this.onVehiclePoseCommit?.(position, yawRad)
+      }
+    );
+    this.scene.add(this.vehicle3D.root);
+    this.setupVehicleInteraction();
+    return this.vehicle3D;
+  }
+
+  private setupVehicleInteraction(): void {
+    if (typeof window === 'undefined' || !this.renderer.domElement) return;
+    const dom = this.renderer.domElement as HTMLElement;
+    if (typeof dom.addEventListener !== 'function') return;
+
+    const ndc = new THREE.Vector2();
+    const hitPoint = new THREE.Vector3();
+
+    const toNdc = (e: { clientX: number; clientY: number }) => {
+      const rect = dom.getBoundingClientRect();
+      ndc.set(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      return rect;
+    };
+
+    const pointerWorld = (e: PointerEvent, planeY: number): THREE.Vector3 | null => {
+      toNdc(e);
+      return pointerToHorizontalPlane(ndc, this.camera, planeY, hitPoint);
+    };
+
+    const metersPerPixel = (rect: DOMRect): number => {
+      const v3 = this.vehicle3D;
+      if (!v3) return 0.001;
+      const dist = this.camera.position.distanceTo(v3.getPosition());
+      const worldHeight = 2 * Math.tan(((this.camera.fov * Math.PI) / 180) / 2) * dist;
+      return worldHeight / Math.max(1, rect.height);
+    };
+
+    dom.addEventListener('pointerdown', (e: PointerEvent) => {
+      const v3 = this.vehicle3D;
+      if (!v3) return;
+
+      toNdc(e);
+      this.raycaster.setFromCamera(ndc, this.camera);
+      const intersects = this.raycaster.intersectObjects(v3.pickables(), true);
+      if (intersects.length === 0) return;
+
+      const handle = v3.isHandle(intersects[0].object);
+
+      // Shift-drag on the body (or a grab on the vertical arrow) moves heave.
+      if (handle === 'heave' || (e.shiftKey && handle === 'grab')) {
+        this.vehicleDragMode = 'heave';
+        v3.beginHeaveDrag(e.clientY);
+      } else if (handle === 'yaw') {
+        const p = pointerWorld(e, v3.getPosition().y);
+        if (!p) return;
+        this.vehicleDragMode = 'yaw';
+        v3.beginYawDrag(p);
+      } else if (handle === 'grab') {
+        const p = pointerWorld(e, v3.getPosition().y);
+        if (!p) return;
+        this.vehicleDragMode = 'grab';
+        v3.beginHorizontalDrag(p);
+      } else {
+        // Bare frame click: select the vehicle, no drag.
+        v3.setSelected(true);
+        this.onVehicleSelected?.();
+        return;
+      }
+
+      this.controls.enabled = false;
+      v3.setSelected(true);
+      this.onVehicleSelected?.();
+      e.stopPropagation();
+    });
+
+    dom.addEventListener('pointermove', (e: PointerEvent) => {
+      const v3 = this.vehicle3D;
+      if (!v3 || !this.vehicleDragMode) return;
+
+      const rect = toNdc(e);
+      if (this.vehicleDragMode === 'heave') {
+        v3.updateHeaveDrag(e.clientY, metersPerPixel(rect));
+        return;
+      }
+      const p = pointerWorld(e, v3.getPosition().y);
+      if (!p) return;
+      if (this.vehicleDragMode === 'grab') v3.updateHorizontalDrag(p);
+      else v3.updateYawDrag(p);
+    });
+
+    const onPointerUp = () => {
+      if (!this.vehicleDragMode) return;
+      const v3 = this.vehicle3D;
+      this.vehicleDragMode = null;
+      this.controls.enabled = true;
+      v3?.commitDrag();
+    };
+
+    window.addEventListener('pointerup', onPointerUp);
   }
 
   private createRenderer(container: HTMLElement, width: number, height: number): RendererInitResult {
@@ -536,6 +666,7 @@ export class AppRenderer {
     this.waterSurface.dispose();
     this.caustics.dispose();
     this.prop3D?.dispose();
+    this.vehicle3D?.dispose();
     this.skyTexture.dispose();
     this.renderer.dispose();
   }

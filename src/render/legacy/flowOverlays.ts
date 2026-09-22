@@ -218,9 +218,8 @@ export class FlowOverlays {
     // 1. Update CoG / CoB Visualizers
     if (this.config.showCogCob) {
       this.cogMarker.position.copy(vPos);
-      const cobWorld = vehicle.localToWorldPoint(
-        new THREE.Vector3(...vehicle.buoyancyForces.cobOffsetBodyM)
-      );
+      const [cobSurge, cobSway, cobHeave] = vehicle.buoyancyForces.cobOffsetMarineM;
+      const cobWorld = vehicle.localToWorldPoint(new THREE.Vector3(cobSway, cobHeave, cobSurge));
       this.cobMarker.position.copy(cobWorld);
 
       const armPos = this.rightingArmLine.geometry.attributes.position as THREE.BufferAttribute;
