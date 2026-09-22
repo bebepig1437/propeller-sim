@@ -10,6 +10,14 @@
  * Display units are converted exclusively in UI layer.
  * See CONVENTIONS.md for official signs, frames, and marine SNAME dynamics.
  */
+export interface RotorMountTuning {
+  id: string;
+  surgeM: number;
+  swayM: number;
+  heaveM: number;
+  spinAxis: 'surge' | 'sway' | 'heave';
+}
+
 export type AdvectionScheme = 'semi-lagrangian' | 'maccormack';
 export type BoundaryConditionType = 'solid' | 'outflow' | 'free-slip';
 export type PropellerMaterialType = 'rigid10k' | 'pa12cf15' | 'petg';
@@ -73,13 +81,63 @@ export interface SimConfig {
     displacedVolumeCm3: number;  // 200.0 cm3
     cobAboveCogMm: number;       // 12.5 mm
     fluidDensityKgM3: number;    // 1000.0 kg/m3
+
+    // Frame geometry (mirrors public/vehicles/candidateA.json "geometry" section)
+    frameLengthM: number;        // Surge extent, 0.20 m
+    frameWidthM: number;         // Sway extent, 0.16 m
+    frameHeightM: number;        // Heave extent, 0.14 m
+    propInertiaZzKgM2: number;   // Single prop spin-axis inertia (Rigid 10K: 3.92e-7)
+
+    // Frame truss lumped-mass model (mirrors candidateA.json "geometry.frame_truss"):
+    // the inertia tensor is built from these 8 corner nodes + 12 rail midpoints.
+    frameTrussNodeCount: number;          // 8 corner nodes
+    frameTrussNodeMassFraction: number;   // 0.6 of frame mass in nodes
+    frameTrussRailMassFraction: number;   // 0.4 in the 12 rails
+    frameTrussCornerHalfGapM: number;     // 0.088 m CoG→corner offset
+    rotorMounts: RotorMountTuning[];      // marine body mount points + spin axes
+
+    // Quadratic drag Cd*A (m^2) — frame-face derived, see src/vehicle/drag.ts provenance
+    dragCdASurge: number;
+    dragCdASway: number;
+    dragCdAHeave: number;
+    // Linear viscous drag (N·s/m) per body axis — dominates at creeping speeds
+    dragLinSurge: number;
+    dragLinSway: number;
+    dragLinHeave: number;
+    // Rotational drag: quadratic c_rot |w|w + linear c_lin w, per body axis
+    rotDragQuadRoll: number;
+    rotDragQuadPitch: number;
+    rotDragQuadYaw: number;
+    rotDragLinRoll: number;
+    rotDragLinPitch: number;
+    rotDragLinYaw: number;
+
+    // Added-mass coefficients (multiples of 0.5 * rho * V_displaced for translation;
+    // ellipsoid-coefficient rotational diagonal). See vehicle/body.ts derivation.
+    addedMassTranslationalScale: number; // default 1.0 -> 0.5 * rho * V per axis base
+    addedMassSurgeFactor: number;        // 0.85 (slender along surge)
+    addedMassSwayFactor: number;         // 1.00
+    addedMassHeaveFactor: number;        // 1.20 (flat top/bottom plates entrain more)
+    addedMassRollFactor: number;
+    addedMassPitchFactor: number;
+    addedMassYawFactor: number;
+
+    // Tether (spring to anchor when attached)
+    tetherAttached: boolean;      // default false: free-swimming vehicle
+    tetherAnchorWorld: [number, number, number]; // spring anchor, world frame
+    tetherStiffnessNm: number;    // spring constant k (N/m)
+    tetherDamping: number;        // damping c (N·s/m)
+
+    // Integrator
+    vehicleSubstepDivider: number; // 2 -> vehicle steps at 2x fluid rate (1/120 s)
+    angularRateClampRadS: number;  // energy-injection guard for explicit Euler (10 rad/s)
   };
 
   // Clock & Execution Tunables
   clock: {
     targetFps: number;           // 60 Hz
     fixedDeltaTime: number;      // 1 / 60 s (~0.01667)
-    maxSubsteps: number;         // 5 (clamp to avoid spiral of death)
+    maxSubsteps: number;         // 4 (clamp to avoid spiral of death)
   };
 
   // Render & Debug
@@ -157,12 +215,64 @@ export const defaultConfig: SimConfig = {
     motorCount: 3,
     displacedVolumeCm3: 200.0,
     cobAboveCogMm: 12.5,
-    fluidDensityKgM3: 1000.0
+    fluidDensityKgM3: 1000.0,
+
+    // Frame geometry — candidateA.json "geometry" section (0.20 x 0.16 x 0.14 m)
+    frameLengthM: 0.20,
+    frameWidthM: 0.16,
+    frameHeightM: 0.14,
+    propInertiaZzKgM2: 3.92e-7, // Rigid 10K single prop
+
+    // Frame truss lumped-mass model (candidateA.json geometry.frame_truss)
+    frameTrussNodeCount: 8,
+    frameTrussNodeMassFraction: 0.6,
+    frameTrussRailMassFraction: 0.4,
+    frameTrussCornerHalfGapM: 0.088,
+    rotorMounts: [
+      { id: 'port', surgeM: 0.0, swayM: -0.075, heaveM: 0.0, spinAxis: 'surge' },
+      { id: 'starboard', surgeM: 0.0, swayM: 0.075, heaveM: 0.0, spinAxis: 'surge' },
+      { id: 'vertical', surgeM: 0.0, swayM: 0.0, heaveM: 0.0, spinAxis: 'heave' }
+    ],
+
+    // Quadratic drag Cd*A (m^2) — frame-face derived, see src/vehicle/drag.ts provenance
+    dragCdASurge: 0.0079,
+    dragCdASway: 0.0129,
+    dragCdAHeave: 0.0227,
+    dragLinSurge: 0.15,
+    dragLinSway: 0.35,
+    dragLinHeave: 0.45,
+    // Rotational damping (quadratic N·m·s²/rad², linear N·m·s/rad) per body axis
+    rotDragQuadRoll: 4.5e-4,
+    rotDragQuadPitch: 9.5e-4,
+    rotDragQuadYaw: 8.5e-4,
+    rotDragLinRoll: 0.005,
+    rotDragLinPitch: 0.008,
+    rotDragLinYaw: 0.008,
+
+    // Added mass — factors on 0.5*rho*V = 0.1 kg translational base (see body.ts)
+    addedMassTranslationalScale: 1.0,
+    addedMassSurgeFactor: 0.85,
+    addedMassSwayFactor: 1.0,
+    addedMassHeaveFactor: 1.2,
+    // Rotational diagonal from bounding-ellipsoid shape factors (body.ts)
+    addedMassRollFactor: 0.00075,
+    addedMassPitchFactor: 0.00125,
+    addedMassYawFactor: 0.0011,
+
+    // Tether spring (free-swimming by default)
+    tetherAttached: false,
+    tetherAnchorWorld: [0, 0.22, 0], // surface supply point
+    tetherStiffnessNm: 0.8,
+    tetherDamping: 0.35,
+
+    // Integrator
+    vehicleSubstepDivider: 2,
+    angularRateClampRadS: 10.0
   },
   clock: {
     targetFps: 60,
     fixedDeltaTime: 1.0 / 60.0,
-    maxSubsteps: 5
+    maxSubsteps: 4
   },
   render: {
     exposure: 1.1,
