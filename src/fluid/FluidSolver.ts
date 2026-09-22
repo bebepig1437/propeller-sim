@@ -13,6 +13,7 @@ export interface FluidSolverParams {
   viscosity?: number;
   vorticityStrength?: number;
   pressureIterations?: number;
+  pressureMethod?: "jacobi" | "multigrid";
   jetConfig?: Partial<InflowJetConfig>;
 }
 
@@ -35,6 +36,7 @@ export class FluidSolver {
   public viscosity: number;
   public vorticityStrength: number;
   public pressureIterations: number;
+  public pressureMethod: "jacobi" | "multigrid";
 
   // Profiling & Diagnostics
   public metrics: FluidSolverMetrics;
@@ -51,6 +53,7 @@ export class FluidSolver {
     this.viscosity = params?.viscosity ?? 0.0001;
     this.vorticityStrength = params?.vorticityStrength ?? 4.0;
     this.pressureIterations = params?.pressureIterations ?? 40;
+    this.pressureMethod = params?.pressureMethod ?? "jacobi";
 
     this.metrics = {
       stepTimeMs: 0,
@@ -138,7 +141,7 @@ export class FluidSolver {
     advect(this.advectionScheme, this.grid, this.grid.dyePrev, this.grid.dye, dt, this.boundary, false);
 
     // 6. Project: Pressure Poisson Solve -> Divergence-Free Velocity
-    this.lastPressureResult = projectVelocity(this.grid, this.pressureIterations, this.boundary);
+    this.lastPressureResult = projectVelocity(this.grid, this.pressureIterations, this.boundary, this.pressureMethod);
     computeCurl(this.grid);
   }
 
