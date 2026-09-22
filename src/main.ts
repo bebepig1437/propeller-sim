@@ -1,6 +1,8 @@
 import { AdaptiveResolutionController } from "./sim/adaptiveResolution";
 import { RecoveryCoordinator } from "./sim/recoveryCoordinator";
 import { SimulationWorkerBridge } from "./workers/workerBridge";
+import { CanvasRecorder } from "./ui/recorder";
+import { parseSimStateFromUrl, serializeSimStateToUrl } from "./core/urlState";
 import './index.css';
 import * as THREE from 'three';
 import { defaultConfig } from './core/config';
@@ -41,6 +43,7 @@ import { VehicleFluidCoupler } from './vehicle/coupling';
 
 export class App {
   private clock!: SimClock;
+  private videoRecorder: CanvasRecorder = new CanvasRecorder();
   private renderer!: AppRenderer;
   private fluidSolver!: GpuFluidSolver;
   private fluidRenderer!: FluidRenderer2D;
@@ -322,12 +325,39 @@ export class App {
         this.applyPreset(presetKey);
       },
       onShare: () => {
-        const stateUrl = new URL(window.location.href);
-        stateUrl.searchParams.set('preset', this.activePresetKey);
-        stateUrl.searchParams.set('supply_v', this.inspector.supplyV.toFixed(1));
-        stateUrl.searchParams.set('tether_ft', this.inspector.tetherFt.toString());
-        navigator.clipboard?.writeText(stateUrl.toString());
-        alert(`Configuration URL copied to clipboard:\n${stateUrl.toString()}`);
+        const shareUrl = serializeSimStateToUrl({
+          preset: this.activePresetKey,
+          vehicle: "candidateA",
+          pitch: this.shaft.commandedPitchDeg,
+          handedness: this.activeHandedness,
+          stator: this.inspector.statorSlotted ? "slotted" : "solid",
+          supplyV: this.inspector.supplyV,
+          tetherFt: this.inspector.tetherFt,
+          tetherAwg: this.inspector.tetherAwg
+        });
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(shareUrl).catch(() => {});
+        }
+        this.showNotification("Configuration URL copied to clipboard");
+      },
+      onRecordToggle: async () => {
+        if (this.videoRecorder.recording) {
+          this.header.setRecordingState(false);
+          const blob = await this.videoRecorder.stop();
+          if (blob) {
+            this.videoRecorder.download(blob);
+            this.showNotification("Simulation recording downloaded (.webm)");
+          }
+        } else {
+          const domEl = this.renderer.renderer.domElement as HTMLCanvasElement;
+          const started = this.videoRecorder.start(domEl, 60);
+          if (started) {
+            this.header.setRecordingState(true);
+            this.showNotification("Recording started (60 FPS WebM)");
+          } else {
+            this.showNotification("Video recording not supported in this browser");
+          }
+        }
       },
       onExportCsv: () => {
         this.exportTelemetryCsv();
@@ -670,11 +700,80 @@ export class App {
       document.body.appendChild(inspectorHost);
     }
 
+    const urlState = parseSimStateFromUrl();
+    if (urlState.preset) {
+      this.applyPreset(urlState.preset);
+    }
+    if (urlState.pitch !== undefined) {
+      this.shaft.commandedPitchDeg = urlState.pitch;
+      this.inspector.thrusterPitch = urlState.pitch;
+    }
+    if (urlState.handedness) {
+      this.activeHandedness = urlState.handedness;
+      this.inspector.thrusterHandedness = urlState.handedness;
+    }
+    if (urlState.stator) {
+      const isSlotted = urlState.stator === "slotted";
+      this.inspector.statorSlotted = isSlotted;
+      for (const t of this.propArray.thrusters) {
+        t.stator.config.vaneType = isSlotted ? "slotted" : (urlState.stator === "none" ? "none" : "solid");
+      }
+    }
+    if (urlState.supplyV !== undefined) {
+      this.inspector.supplyV = urlState.supplyV;
+      this.bus.supplyV = urlState.supplyV;
+    }
+    if (urlState.tetherFt !== undefined) {
+      this.inspector.tetherFt = urlState.tetherFt;
+      this.bus.tetherResistance = calculateTetherResistanceFromMeters(urlState.tetherFt / 3.28084, this.inspector.tetherAwg);
+      this.inspector.tetherResistance = this.bus.tetherResistance;
+    }
+    if (urlState.tetherAwg !== undefined) {
+      this.inspector.tetherAwg = urlState.tetherAwg;
+      this.bus.tetherResistance = calculateTetherResistanceFromMeters(this.inspector.tetherM, urlState.tetherAwg);
+      this.inspector.tetherResistance = this.bus.tetherResistance;
+    }
+
+    const isFirstVisit = (() => {
+      try {
+        if (typeof localStorage === "undefined") return false;
+        return localStorage.getItem("seaperch_first_run_seen") !== "true";
+      } catch {
+        return false;
+      }
+    })();
+
+    if (isFirstVisit) {
+      (Object.keys(this.overlayState) as Array<keyof OverlayState>).forEach(k => {
+        this.overlayState[k] = false;
+        this.overlaySystem.setVisible(k, false);
+      });
+      this.stageOverlays.state = { ...this.overlayState };
+      this.stageOverlays.render();
+      this.renderer.playIntroCameraMove();
+    } else {
+      this.renderer.resetOrbitView();
+    }
+
     console.log('[App] IBM Quantum-inspired instrument UI ready.');
     this.start();
   }
 
   
+  private showNotification(msg: string): void {
+    if (typeof document === "undefined") return;
+    const existing = document.querySelector(".toast-notification");
+    existing?.remove();
+    const toast = document.createElement("div");
+    toast.className = "toast-notification";
+    toast.innerHTML = `<span>ℹ️</span><span>${msg}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      setTimeout(() => toast.remove(), 400);
+    }, 3000);
+  }
+
   private attachDeviceLossListeners(): void {
     const rendererAny = this.renderer.renderer as any;
 
@@ -1335,5 +1434,11 @@ if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
     const app = new App();
     app.init();
+  });
+}
+
+if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
   });
 }

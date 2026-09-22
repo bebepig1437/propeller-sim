@@ -1,6 +1,4 @@
-
-
-export type RunState = 'idle' | 'running' | 'paused' | 'error';
+export type RunState = "idle" | "running" | "paused" | "error";
 
 export interface HeaderCallbacks {
   onRunToggle: (nextState: RunState) => void;
@@ -8,6 +6,7 @@ export interface HeaderCallbacks {
   onShare: () => void;
   onExportCsv: () => void;
   onValidationClick: () => void;
+  onRecordToggle?: () => void;
 }
 
 export interface OperatingPointPreset {
@@ -24,9 +23,9 @@ export interface OperatingPointPreset {
 
 export const DEFAULT_PRESETS: OperatingPointPreset[] = [
   {
-    key: 'breakout',
-    name: 'Breakout Burst',
-    label: 'Breakout Burst (100% / +4.73 N / 1.41 A / 18s)',
+    key: "breakout",
+    name: "Breakout Burst",
+    label: "Breakout Burst (100% / +4.73 N / 1.41 A / 18s)",
     throttle: 1.0,
     rpm: 4140,
     thrust_N: 4.73,
@@ -35,9 +34,9 @@ export const DEFAULT_PRESETS: OperatingPointPreset[] = [
     throttleVector: [1.0, 1.0, 1.0]
   },
   {
-    key: 'heavy_lift',
-    name: 'Nominal Heavy Lift',
-    label: 'Nominal Heavy Lift (88% / +3.99 N / 1.25 A / 50s)',
+    key: "heavy_lift",
+    name: "Nominal Heavy Lift",
+    label: "Nominal Heavy Lift (88% / +3.99 N / 1.25 A / 50s)",
     throttle: 0.881,
     rpm: 3800,
     thrust_N: 3.99,
@@ -46,9 +45,9 @@ export const DEFAULT_PRESETS: OperatingPointPreset[] = [
     throttleVector: [0.881, 0.881, 0.881]
   },
   {
-    key: 'cruise',
-    name: 'Continuous Cruise',
-    label: 'Continuous Cruise (67% / +2.49 N / 0.85 A / unlimited)',
+    key: "cruise",
+    name: "Continuous Cruise",
+    label: "Continuous Cruise (67% / +2.49 N / 0.85 A / unlimited)",
     throttle: 0.670,
     rpm: 3000,
     thrust_N: 2.49,
@@ -57,9 +56,9 @@ export const DEFAULT_PRESETS: OperatingPointPreset[] = [
     throttleVector: [0.670, 0.670, 0.0]
   },
   {
-    key: 'full_dive',
-    name: 'Controlled Full Dive',
-    label: 'Controlled Full Dive (-84% / -2.82 N / 1.18 A / 65s)',
+    key: "full_dive",
+    name: "Controlled Full Dive",
+    label: "Controlled Full Dive (-84% / -2.82 N / 1.18 A / 65s)",
     throttle: -0.840,
     rpm: 3650,
     thrust_N: -2.82,
@@ -68,9 +67,9 @@ export const DEFAULT_PRESETS: OperatingPointPreset[] = [
     throttleVector: [-0.840, -0.840, -0.840]
   },
   {
-    key: 'reverse_station',
-    name: 'Reverse Station',
-    label: 'Reverse Station (-48% / -0.93 N / 0.51 A / unlimited)',
+    key: "reverse_station",
+    name: "Reverse Station",
+    label: "Reverse Station (-48% / -0.93 N / 0.51 A / unlimited)",
     throttle: -0.480,
     rpm: 2100,
     thrust_N: -0.93,
@@ -97,9 +96,11 @@ export const ALL_PRESETS: OperatingPointPreset[] = [...DEFAULT_PRESETS, STRESS_P
 export class SimHeader {
   private container: HTMLElement;
   private callbacks: HeaderCallbacks;
-  private runState: RunState = 'idle';
+  private runState: RunState = "idle";
   private runBtn!: HTMLButtonElement;
   private presetSelect!: HTMLSelectElement;
+  private recordBtn!: HTMLButtonElement;
+  private isRecording: boolean = false;
 
   constructor(container: HTMLElement, callbacks: HeaderCallbacks) {
     this.container = container;
@@ -107,7 +108,17 @@ export class SimHeader {
     this.render();
   }
 
+  private isFirstVisit(): boolean {
+    try {
+      if (typeof localStorage === "undefined") return false;
+      return localStorage.getItem("seaperch_first_run_seen") !== "true";
+    } catch {
+      return false;
+    }
+  }
+
   private render(): void {
+    const firstVisit = this.isFirstVisit();
     this.container.innerHTML = `
       <div class="header-left">
         <span class="brand-icon">🌊</span>
@@ -120,16 +131,24 @@ export class SimHeader {
       <div class="header-center">
         <label for="preset-selector" class="sr-only">Operating Point Preset</label>
         <select id="preset-selector" class="preset-dropdown" title="Select operating point preset">
-          ${DEFAULT_PRESETS.map(p => `<option value="${p.key}">${p.label}</option>`).join('')}
+          ${DEFAULT_PRESETS.map(p => `<option value="${p.key}">${p.label}</option>`).join("")}
         </select>
 
-        <button id="btn-run" class="btn-run state-idle" title="Click RUN to start inflow, spool propeller, and record telemetry">
-          <span class="run-icon">▶</span>
-          <span class="run-text">RUN</span>
-        </button>
+        <div class="run-control-wrapper">
+          <button id="btn-run" class="btn-run state-idle ${firstVisit ? "pulse-once" : ""}" title="Click RUN to start inflow, spool propeller, and record telemetry">
+            <span class="run-icon">▶</span>
+            <span class="run-text">RUN</span>
+          </button>
+          <div id="run-callout-text" class="run-callout-text ${firstVisit ? "" : "hidden"}">Press RUN to start.</div>
+        </div>
       </div>
 
       <div class="header-right">
+        <button id="btn-record" class="btn-icon btn-record" title="Record stage viewport to WebM video">
+          <span class="record-dot">⏺</span>
+          <span class="btn-label" id="record-label">REC</span>
+        </button>
+
         <button id="btn-export-csv" class="btn-icon" title="Export Full Telemetry Time Series (.CSV)">
           <svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -157,57 +176,87 @@ export class SimHeader {
       </div>
     `;
 
-    this.runBtn = this.container.querySelector('#btn-run') as HTMLButtonElement;
-    this.presetSelect = this.container.querySelector('#preset-selector') as HTMLSelectElement;
+    this.runBtn = this.container.querySelector("#btn-run") as HTMLButtonElement;
+    this.presetSelect = this.container.querySelector("#preset-selector") as HTMLSelectElement;
+    this.recordBtn = this.container.querySelector("#btn-record") as HTMLButtonElement;
 
-    this.runBtn.addEventListener('click', () => {
+    this.runBtn.addEventListener("click", () => {
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("seaperch_first_run_seen", "true");
+        }
+      } catch {}
+      this.runBtn.classList.remove("pulse-once");
+      const callout = this.container.querySelector("#run-callout-text");
+      callout?.classList.add("hidden");
+
       let nextState: RunState;
-      if (this.runState === 'idle') {
-        nextState = 'running';
-      } else if (this.runState === 'running') {
-        nextState = 'paused';
-      } else if (this.runState === 'paused') {
-        nextState = 'running';
+      if (this.runState === "idle") {
+        nextState = "running";
+      } else if (this.runState === "running") {
+        nextState = "paused";
+      } else if (this.runState === "paused") {
+        nextState = "running";
       } else {
-        nextState = 'idle';
+        nextState = "idle";
       }
       this.setRunState(nextState);
       this.callbacks.onRunToggle(nextState);
     });
 
-    this.presetSelect.addEventListener('change', () => {
+    this.presetSelect.addEventListener("change", () => {
       this.callbacks.onPresetSelect(this.presetSelect.value);
     });
 
-    const exportBtn = this.container.querySelector('#btn-export-csv');
-    exportBtn?.addEventListener('click', () => this.callbacks.onExportCsv());
+    this.recordBtn.addEventListener("click", () => {
+      this.callbacks.onRecordToggle?.();
+    });
 
-    const shareBtn = this.container.querySelector('#btn-share');
-    shareBtn?.addEventListener('click', () => this.callbacks.onShare());
+    const exportBtn = this.container.querySelector("#btn-export-csv");
+    exportBtn?.addEventListener("click", () => this.callbacks.onExportCsv());
 
-    const validBtn = this.container.querySelector('#btn-validation');
-    validBtn?.addEventListener('click', () => this.callbacks.onValidationClick());
+    const shareBtn = this.container.querySelector("#btn-share");
+    shareBtn?.addEventListener("click", () => this.callbacks.onShare());
+
+    const validBtn = this.container.querySelector("#btn-validation");
+    validBtn?.addEventListener("click", () => this.callbacks.onValidationClick());
+  }
+
+  public isCurrentlyRecording(): boolean {
+    return this.isRecording;
+  }
+
+  public setRecordingState(recording: boolean): void {
+    this.isRecording = recording;
+    const label = this.recordBtn.querySelector("#record-label");
+    if (recording) {
+      this.recordBtn.classList.add("recording");
+      if (label) label.textContent = "STOP";
+    } else {
+      this.recordBtn.classList.remove("recording");
+      if (label) label.textContent = "REC";
+    }
   }
 
   public setRunState(state: RunState): void {
     this.runState = state;
     this.runBtn.className = `btn-run state-${state}`;
 
-    const iconEl = this.runBtn.querySelector('.run-icon') as HTMLElement;
-    const textEl = this.runBtn.querySelector('.run-text') as HTMLElement;
+    const iconEl = this.runBtn.querySelector(".run-icon") as HTMLElement;
+    const textEl = this.runBtn.querySelector(".run-text") as HTMLElement;
 
-    if (state === 'idle') {
-      iconEl.textContent = '▶';
-      textEl.textContent = 'RUN';
-    } else if (state === 'running') {
-      iconEl.textContent = '⏸';
-      textEl.textContent = 'PAUSE';
-    } else if (state === 'paused') {
-      iconEl.textContent = '▶';
-      textEl.textContent = 'RESUME';
+    if (state === "idle") {
+      iconEl.textContent = "▶";
+      textEl.textContent = "RUN";
+    } else if (state === "running") {
+      iconEl.textContent = "⏸";
+      textEl.textContent = "PAUSE";
+    } else if (state === "paused") {
+      iconEl.textContent = "▶";
+      textEl.textContent = "RESUME";
     } else {
-      iconEl.textContent = '⚠';
-      textEl.textContent = 'ERROR';
+      iconEl.textContent = "⚠";
+      textEl.textContent = "ERROR";
     }
   }
 
