@@ -45,6 +45,15 @@ export interface GpuCompareMetrics {
   rmsDiff: number;
 }
 
+export interface ReadbackSlot {
+  u: Float32Array;
+  v: Float32Array;
+  dye: Float32Array;
+  inFlight: boolean;
+  ready: boolean;
+  startTime: number;
+}
+
 export interface GpuFluidSolverOptions extends FluidSolverParams {
   renderer?: any;
   backend?: 'gpu' | 'cpu';
@@ -56,6 +65,18 @@ export class GpuFluidSolver {
   public isGpuAccelerated = false;
   public backend: 'gpu' | 'cpu' = 'gpu';
   public pressureMethod: 'jacobi' | 'multigrid' = 'jacobi';
+  public renderTier: "WebGPU" | "WebGL2" | "CPU" = "WebGPU";
+  public readbackLatencyMs = 0;
+  public deviceLossCount = 0;
+  public useAsyncReadback = true;
+  private readbackRing: ReadbackSlot[] = [];
+  private currentRingIndex = 0;
+  private syncReadbackResult: { u: Float32Array; v: Float32Array; dye: Float32Array } = {
+    u: new Float32Array(0),
+    v: new Float32Array(0),
+    dye: new Float32Array(0)
+  };
+
   public renderer: any = null;
 
   // Grid Dimensions
@@ -134,6 +155,8 @@ export class GpuFluidSolver {
     } else {
       this.isGpuAccelerated = false;
     }
+    this.renderTier = this.isGpuAccelerated ? "WebGPU" : "WebGL2";
+    this.backend = this.isGpuAccelerated ? "gpu" : "cpu";
   }
 
   private initBuffersAndComputeNodes(width: number, height: number): void {
@@ -148,7 +171,15 @@ export class GpuFluidSolver {
     this.curlAttr = new StorageBufferAttribute(new Float32Array(size), 1);
     this.divAttr = new StorageBufferAttribute(new Float32Array(size), 1);
     this.pAttr = new StorageBufferAttribute(new Float32Array(size), 1);
-    this.pPrevAttr = new StorageBufferAttribute(new Float32Array(size), 1);
+        this.pPrevAttr = new StorageBufferAttribute(new Float32Array(size), 1);
+    this.readbackRing = [0, 1, 2].map(() => ({
+      u: new Float32Array(size),
+      v: new Float32Array(size),
+      dye: new Float32Array(size),
+      inFlight: false,
+      ready: false,
+      startTime: 0
+    }));
 
     // Initialize individual compute passes
     this.sourcesNode = createSourcesComputeNode(width, height, {
@@ -361,8 +392,37 @@ export class GpuFluidSolver {
       this.renderer.compute(this.projectNode.node);
       this.passTimings.projectMs = performance.now() - tProj0;
 
-      // Mandatory readback: copy GPU storage buffers back into CPU grid
-      this.readbackSync(this.cpuFallback.grid);
+      const tRead0 = performance.now();
+      if (this.useAsyncReadback && this.renderer && typeof (this.renderer as any).getArrayBufferAsync === "function") {
+        const slot = this.readbackRing[this.currentRingIndex % 3];
+        this.currentRingIndex++;
+        if (slot.ready) {
+          this.cpuFallback.grid.u.set(slot.u);
+          this.cpuFallback.grid.v.set(slot.v);
+          this.cpuFallback.grid.dye.set(slot.dye);
+        }
+        if (!slot.inFlight) {
+          slot.inFlight = true;
+          slot.startTime = performance.now();
+          Promise.all([
+            (this.renderer as any).getArrayBufferAsync(this.uAttr),
+            (this.renderer as any).getArrayBufferAsync(this.vAttr),
+            (this.renderer as any).getArrayBufferAsync(this.dyeAttr)
+          ]).then(([uBuf, vBuf, dyeBuf]) => {
+            slot.u.set(new Float32Array(uBuf));
+            slot.v.set(new Float32Array(vBuf));
+            slot.dye.set(new Float32Array(dyeBuf));
+            slot.inFlight = false;
+            slot.ready = true;
+            this.readbackLatencyMs = performance.now() - slot.startTime;
+          }).catch(() => {
+            slot.inFlight = false;
+          });
+        }
+      } else {
+        this.readbackSync(this.cpuFallback.grid);
+        this.readbackLatencyMs = performance.now() - tRead0;
+      }
 
       const totalElapsed = performance.now() - t0;
       this.passTimings.submitMs = totalElapsed;
@@ -447,7 +507,10 @@ export class GpuFluidSolver {
         grid.dye.set(this.cpuFallback.grid.dye);
       }
     }
-    return { u: grid.u, v: grid.v, dye: grid.dye };
+    this.syncReadbackResult.u = grid.u;
+    this.syncReadbackResult.v = grid.v;
+    this.syncReadbackResult.dye = grid.dye;
+    return this.syncReadbackResult;
   }
 
   /**
@@ -629,6 +692,60 @@ export class GpuFluidSolver {
     this.compareCpuSolver = null;
     this.compareCpuGrid = null;
     this.diffGrid = null;
+  }
+
+  public setBackend(tier: "WebGPU" | "WebGL2" | "CPU"): void {
+    this.renderTier = tier;
+    if (tier === "WebGPU") {
+      this.backend = "gpu";
+      this.isGpuAccelerated = !!this.renderer && typeof this.renderer.compute === "function";
+      return;
+    }
+    this.backend = "cpu";
+    this.isGpuAccelerated = false;
+  }
+
+  public reinitGpuPipeline(): boolean {
+    try {
+      this.initBuffersAndComputeNodes(this.width, this.height);
+    } catch (err) {
+      console.warn("[GpuFluidSolver] GPU pipeline reinitialization failed:", err);
+      return false;
+    }
+
+    const canCompute =
+      !!this.renderer &&
+      typeof this.renderer.compute === "function" &&
+      typeof navigator !== "undefined" &&
+      "gpu" in navigator;
+    if (!canCompute) return false;
+
+    this.setBackend("WebGPU");
+    return this.isGpuAccelerated;
+  }
+
+  public async handleDeviceLoss(): Promise<"reinit" | "webgl2" | "cpu"> {
+    this.deviceLossCount++;
+    console.warn(`[GpuFluidSolver] Device loss event #${this.deviceLossCount}`);
+    if (this.deviceLossCount <= 2) {
+      if (this.reinitGpuPipeline()) return "reinit";
+      console.warn("[GpuFluidSolver] GPU pipeline reinit did not re-arm compute; stepping down a tier");
+    }
+    if (this.deviceLossCount > 3) {
+      this.setBackend("CPU");
+      return "cpu";
+    }
+    this.setBackend("WebGL2");
+    return "webgl2";
+  }
+
+  public simulateDeviceLoss(target: "webgpu" | "webgl2" | "cpu" = "webgpu"): Promise<"reinit" | "webgl2" | "cpu"> {
+    if (target === "cpu") {
+      this.deviceLossCount = 4;
+    } else if (target === "webgl2") {
+      this.deviceLossCount = 2;
+    }
+    return this.handleDeviceLoss();
   }
 
   public reset(): void {
