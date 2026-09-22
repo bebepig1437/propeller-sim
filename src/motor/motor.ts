@@ -66,6 +66,25 @@ export class DCMotorModel {
   public timeAboveWarnS = 0.0;
   public timeAboveCutoutS = 0.0;
   public thermalEnabled = true;
+  private scratchState: MotorOperatingState = {
+    rpm: 0,
+    omegaRadS: 0,
+    currentA: 0,
+    shaftTorqueNm: 0,
+    backEmfV: 0,
+    terminalVoltageV: 0,
+    powerElecW: 0,
+    powerMechW: 0,
+    efficiency: 0,
+    windingTempC: 20,
+    thermalState: "OK",
+    isThermalDerated: false,
+    isCutout: false,
+    burstDurationRemainingS: Infinity,
+    timeAboveWarnS: 0,
+    timeAboveCutoutS: 0
+  };
+
 
   constructor(specs: MotorConstants = MABUCHI_RC280RA_SPECS) {
     this.specs = specs;
@@ -104,17 +123,18 @@ export class DCMotorModel {
   public solveVoltageMode(
     terminalVoltage: number,
     throttle: number,
-    loadTorqueFn: (omegaRadS: number) => number
+    loadTorqueFn: (omegaRadS: number) => number,
+    out?: MotorOperatingState
   ): MotorOperatingState {
     const clampedThrottle = Math.max(-1.0, Math.min(1.0, throttle));
 
     // Handle thermal cutout state
     if (this.isCutout && this.thermalEnabled) {
-      return this.createCutoutState(terminalVoltage);
+      return this.createCutoutState(terminalVoltage, out);
     }
 
     if (Math.abs(clampedThrottle) < 0.01 || Math.abs(terminalVoltage) < 0.1) {
-      return this.createIdleState(terminalVoltage);
+      return this.createIdleState(terminalVoltage, out);
     }
 
     const omegaNoLoad = Math.abs(clampedThrottle * terminalVoltage) / this.specs.ke_Vs_per_rad;
@@ -159,24 +179,24 @@ export class DCMotorModel {
     const tempMargin = Math.max(0, this.specs.cutoutWindingTempC - this.windingTempC);
     const burstDurationRemainingS = pHeat > 1.0 ? (this.specs.thermalCapacitanceJPerK * tempMargin) / pHeat : Infinity;
 
-    return {
-      rpm,
-      omegaRadS: finalOmega,
-      currentA,
-      shaftTorqueNm,
-      backEmfV,
-      terminalVoltageV: terminalVoltage,
-      powerElecW: powerElec,
-      powerMechW: powerMech,
-      efficiency,
-      windingTempC: this.windingTempC,
-      thermalState,
-      isThermalDerated: thermalState !== 'OK',
-      isCutout: this.isCutout,
-      burstDurationRemainingS,
-      timeAboveWarnS: this.timeAboveWarnS,
-      timeAboveCutoutS: this.timeAboveCutoutS
-    };
+    const res = out ?? { ...this.scratchState };
+    res.rpm = rpm;
+    res.omegaRadS = finalOmega;
+    res.currentA = currentA;
+    res.shaftTorqueNm = shaftTorqueNm;
+    res.backEmfV = backEmfV;
+    res.terminalVoltageV = terminalVoltage;
+    res.powerElecW = powerElec;
+    res.powerMechW = powerMech;
+    res.efficiency = efficiency;
+    res.windingTempC = this.windingTempC;
+    res.thermalState = thermalState;
+    res.isThermalDerated = thermalState !== "OK";
+    res.isCutout = this.isCutout;
+    res.burstDurationRemainingS = burstDurationRemainingS;
+    res.timeAboveWarnS = this.timeAboveWarnS;
+    res.timeAboveCutoutS = this.timeAboveCutoutS;
+    return res;
   }
 
   /**
@@ -299,47 +319,47 @@ export class DCMotorModel {
     this.timeAboveCutoutS = 0;
   }
 
-  private createIdleState(terminalVoltage: number): MotorOperatingState {
+  public createIdleState(terminalVoltage: number, out?: MotorOperatingState): MotorOperatingState {
     const thermalState = this.getThermalState();
-    return {
-      rpm: 0,
-      omegaRadS: 0,
-      currentA: 0,
-      shaftTorqueNm: 0,
-      backEmfV: 0,
-      terminalVoltageV: terminalVoltage,
-      powerElecW: 0,
-      powerMechW: 0,
-      efficiency: 0,
-      windingTempC: this.windingTempC,
-      thermalState,
-      isThermalDerated: thermalState !== 'OK',
-      isCutout: this.isCutout,
-      burstDurationRemainingS: Infinity,
-      timeAboveWarnS: this.timeAboveWarnS,
-      timeAboveCutoutS: this.timeAboveCutoutS
-    };
+    const res = out ?? { ...this.scratchState };
+    res.rpm = 0;
+    res.omegaRadS = 0;
+    res.currentA = 0;
+    res.shaftTorqueNm = 0;
+    res.backEmfV = 0;
+    res.terminalVoltageV = terminalVoltage;
+    res.powerElecW = 0;
+    res.powerMechW = 0;
+    res.efficiency = 0;
+    res.windingTempC = this.windingTempC;
+    res.thermalState = thermalState;
+    res.isThermalDerated = thermalState !== "OK";
+    res.isCutout = this.isCutout;
+    res.burstDurationRemainingS = Infinity;
+    res.timeAboveWarnS = this.timeAboveWarnS;
+    res.timeAboveCutoutS = this.timeAboveCutoutS;
+    return res;
   }
 
-  private createCutoutState(terminalVoltage: number): MotorOperatingState {
-    return {
-      rpm: 0,
-      omegaRadS: 0,
-      currentA: 0,
-      shaftTorqueNm: 0,
-      backEmfV: 0,
-      terminalVoltageV: terminalVoltage,
-      powerElecW: 0,
-      powerMechW: 0,
-      efficiency: 0,
-      windingTempC: this.windingTempC,
-      thermalState: 'CUTOUT',
-      isThermalDerated: true,
-      isCutout: true,
-      burstDurationRemainingS: 0,
-      timeAboveWarnS: this.timeAboveWarnS,
-      timeAboveCutoutS: this.timeAboveCutoutS
-    };
+  public createCutoutState(terminalVoltage: number, out?: MotorOperatingState): MotorOperatingState {
+    const res = out ?? { ...this.scratchState };
+    res.rpm = 0;
+    res.omegaRadS = 0;
+    res.currentA = 0;
+    res.shaftTorqueNm = 0;
+    res.backEmfV = 0;
+    res.terminalVoltageV = terminalVoltage;
+    res.powerElecW = 0;
+    res.powerMechW = 0;
+    res.efficiency = 0;
+    res.windingTempC = this.windingTempC;
+    res.thermalState = "CUTOUT";
+    res.isThermalDerated = true;
+    res.isCutout = true;
+    res.burstDurationRemainingS = 0;
+    res.timeAboveWarnS = this.timeAboveWarnS;
+    res.timeAboveCutoutS = this.timeAboveCutoutS;
+    return res;
   }
 }
 

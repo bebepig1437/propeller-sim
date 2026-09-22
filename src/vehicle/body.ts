@@ -240,6 +240,8 @@ export class VehicleBody {
 
   private readonly scratchWorldVelocity = new THREE.Vector3();
   private readonly scratchInverseQuaternion = new THREE.Quaternion();
+  private readonly scratchEuler = new THREE.Euler();
+  private readonly scratchEulerDeg = { rollDeg: 0, pitchDeg: 0, yawDeg: 0 };
 
   constructor(config: SimConfig['vehicle'], propMassG = 1.8) {
     this.buoyancyForces = calculateBuoyancy(config, propMassG);
@@ -289,10 +291,14 @@ export class VehicleBody {
     return p.clone().applyQuaternion(this.quaternion).add(this.position);
   }
 
-  public getEulerDegrees(): { rollDeg: number; pitchDeg: number; yawDeg: number } {
-    const euler = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
+  public getEulerDegrees(out?: { rollDeg: number; pitchDeg: number; yawDeg: number }): { rollDeg: number; pitchDeg: number; yawDeg: number } {
+    this.scratchEuler.setFromQuaternion(this.quaternion, 'YXZ');
     const toDeg = 180 / Math.PI;
-    return { rollDeg: euler.z * toDeg, pitchDeg: euler.x * toDeg, yawDeg: euler.y * toDeg };
+    const res = out ?? this.scratchEulerDeg;
+    res.rollDeg = this.scratchEuler.z * toDeg;
+    res.pitchDeg = this.scratchEuler.x * toDeg;
+    res.yawDeg = this.scratchEuler.y * toDeg;
+    return res;
   }
 
   public get angularSpeedRadS(): number {
