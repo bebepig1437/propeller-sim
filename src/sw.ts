@@ -1,5 +1,6 @@
 const CACHE_NAME = "seaperch-sim-v1";
-const ASSETS_TO_CACHE = [
+
+const STATIC_ASSETS: readonly string[] = [
   "./",
   "./index.html",
   "./validation.html",
@@ -17,15 +18,22 @@ const ASSETS_TO_CACHE = [
   "./validation/j_sweep_validation.svg"
 ];
 
-self.addEventListener("install", (event) => {
+const swContext = self as unknown as {
+  addEventListener: (event: string, handler: (e: any) => void) => void;
+  skipWaiting: () => Promise<void>;
+  clients: { claim: () => Promise<void> };
+  location: { origin: string };
+};
+
+swContext.addEventListener("install", (event: any) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+      return cache.addAll(STATIC_ASSETS);
+    }).then(() => swContext.skipWaiting())
   );
 });
 
-self.addEventListener("activate", (event) => {
+swContext.addEventListener("activate", (event: any) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
@@ -35,14 +43,14 @@ self.addEventListener("activate", (event) => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => swContext.clients.claim())
   );
 });
 
-self.addEventListener("fetch", (event) => {
+swContext.addEventListener("fetch", (event: any) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
+  if (url.origin !== swContext.location.origin) return;
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
@@ -66,3 +74,5 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+export {};
