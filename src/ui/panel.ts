@@ -29,7 +29,29 @@ export interface TelemetryMetrics {
   compareRmsDiff: number;
 }
 
+/**
+ * Phase 6b editable vehicle state shown in the "Vehicle" group. The pose/anchor
+ * fields are MARINE-ordered (surge, sway, heave) and mapped to the world frame
+ * by the app using the upright remap in src/render/frameMap.ts.
+ */
+export interface VehiclePanelState {
+  surgeM: number;
+  swayM: number;
+  heaveM: number;
+  yawDeg: number;
+  tetherAnchorSurgeM: number;
+  tetherAnchorSwayM: number;
+  tetherAnchorHeaveM: number;
+}
+
 export interface PanelCallbacks {
+  /** Re-poses the vehicle to the edited initial pose. */
+  onVehicleInitPoseChange?: () => void;
+  onVehicleResetPose?: () => void;
+  /** Tether on/off, anchor or spring constants changed. */
+  onVehicleTetherChange?: () => void;
+  /** Drag or added-mass coefficient changed (re-derives the body properties). */
+  onVehicleTunablesChange?: () => void;
   onInjectBurst: () => void;
   onResetFluid: () => void;
   onRenderModeChange?: (mode: string) => void;
@@ -48,8 +70,16 @@ export class ControlPanel {
   private metrics: TelemetryMetrics;
   private overlayBindings: Map<keyof OverlayState, any> = new Map();
   private syncingOverlays = false;
+  private vehicleFolder: ReturnType<Pane['addFolder']> | null = null;
 
-  constructor(config: SimConfig, metrics: TelemetryMetrics, callbacks?: PanelCallbacks, overlayState?: OverlayState, overlayTunables?: OverlayTunables) {
+  constructor(
+    config: SimConfig,
+    metrics: TelemetryMetrics,
+    callbacks?: PanelCallbacks,
+    overlayState?: OverlayState,
+    overlayTunables?: OverlayTunables,
+    vehicleInit?: VehiclePanelState
+  ) {
     this.metrics = metrics;
 
     this.pane = new Pane({
@@ -205,6 +235,113 @@ export class ControlPanel {
       overlayFolder.addBinding(overlayTunables, 'particleCount', { min: 200, max: MAX_PARTICLES_TUNABLE, step: 200, label: 'Particles' });
       overlayFolder.addBinding(overlayTunables, 'rollIndicatorGain', { min: 0.2, max: 4.0, step: 0.1, label: 'Roll Gain' });
     }
+
+    // Vehicle rigid body (Phase 6b)
+    if (vehicleInit) {
+      this.buildVehicleGroup(config, vehicleInit, callbacks);
+    }
+  }
+
+  /**
+   * Phase 6b — "Vehicle" group: initial pose, tether, drag coefficients and
+   * added-mass coefficients (the last two behind "advanced" folds).
+   */
+  private buildVehicleGroup(
+    config: SimConfig,
+    vehicleInit: VehiclePanelState,
+    callbacks?: PanelCallbacks
+  ): void {
+    const folder = this.pane.addFolder({ title: 'Vehicle (Phase 6b)', expanded: false });
+    this.vehicleFolder = folder;
+
+    const pose = folder.addFolder({ title: 'Initial Pose', expanded: true });
+    const poseFields: [keyof VehiclePanelState, string, number, number, number][] = [
+      ['surgeM', 'Surge X_b (m)', -0.4, 0.4, 0.005],
+      ['swayM', 'Sway Y_b (m)', -0.4, 0.4, 0.005],
+      ['heaveM', 'Heave Z_b (m, up)', -0.25, 0.22, 0.005],
+      ['yawDeg', 'Yaw Z (\u00B0)', -180, 180, 1]
+    ];
+    for (const [key, label, min, max, step] of poseFields) {
+      pose.addBinding(vehicleInit, key, { min, max, step, label }).on('change', () => {
+        callbacks?.onVehicleInitPoseChange?.();
+      });
+    }
+    pose.addButton({ title: 'Reset Pose' }).on('click', () => {
+      callbacks?.onVehicleResetPose?.();
+    });
+
+    const tether = folder.addFolder({ title: 'Tether', expanded: false });
+    tether.addBinding(config.vehicle, 'tetherAttached', { label: 'Attached' }).on('change', () => {
+      callbacks?.onVehicleTetherChange?.();
+    });
+    const anchorFields: [keyof VehiclePanelState, string][] = [
+      ['tetherAnchorSurgeM', 'Anchor Surge X (m)'],
+      ['tetherAnchorSwayM', 'Anchor Sway Y (m)'],
+      ['tetherAnchorHeaveM', 'Anchor Heave Z (m)']
+    ];
+    for (const [key, label] of anchorFields) {
+      tether.addBinding(vehicleInit, key, { min: -1.2, max: 1.2, step: 0.01, label }).on('change', () => {
+        callbacks?.onVehicleTetherChange?.();
+      });
+    }
+    tether.addBinding(config.vehicle, 'tetherStiffnessNm', { min: 0.1, max: 10, step: 0.1, label: 'Stiffness k (N/m)' }).on('change', () => {
+      callbacks?.onVehicleTetherChange?.();
+    });
+    tether.addBinding(config.vehicle, 'tetherDamping', { min: 0, max: 4, step: 0.05, label: 'Damping c (N\u00B7s/m)' }).on('change', () => {
+      callbacks?.onVehicleTetherChange?.();
+    });
+
+    const drag = folder.addFolder({ title: 'Drag Coefficients (advanced)', expanded: false });
+    const dragFields: [keyof SimConfig['vehicle'], string, number, number, number][] = [
+      ['dragCdASurge', 'CdA Surge (m\u00B2)', 0.001, 0.05, 0.0005],
+      ['dragCdASway', 'CdA Sway (m\u00B2)', 0.001, 0.05, 0.0005],
+      ['dragCdAHeave', 'CdA Heave (m\u00B2)', 0.001, 0.08, 0.0005],
+      ['dragLinSurge', 'Linear Surge (N\u00B7s/m)', 0, 2, 0.01],
+      ['dragLinSway', 'Linear Sway (N\u00B7s/m)', 0, 2, 0.01],
+      ['dragLinHeave', 'Linear Heave (N\u00B7s/m)', 0, 2, 0.01],
+      ['rotDragLinRoll', 'Rot Linear Roll (N\u00B7m\u00B7s/rad)', 0.0005, 0.05, 0.0005],
+      ['rotDragLinPitch', 'Rot Linear Pitch', 0.0005, 0.05, 0.0005],
+      ['rotDragLinYaw', 'Rot Linear Yaw', 0.0005, 0.05, 0.0005]
+    ];
+    for (const [key, label, min, max, step] of dragFields) {
+      drag.addBinding(config.vehicle, key, { min, max, step, label }).on('change', () => {
+        callbacks?.onVehicleTunablesChange?.();
+      });
+    }
+
+    const addedMass = folder.addFolder({ title: 'Added Mass (advanced)', expanded: false });
+    const amFactors: [keyof SimConfig['vehicle'], string, number, number, number][] = [
+      ['addedMassSurgeFactor', 'Surge factor', 0, 3, 0.05],
+      ['addedMassSwayFactor', 'Sway factor', 0, 3, 0.05],
+      ['addedMassHeaveFactor', 'Heave factor', 0, 3, 0.05]
+    ];
+    for (const [key, label, min, max, step] of amFactors) {
+      addedMass.addBinding(config.vehicle, key, { min, max, step, label }).on('change', () => {
+        callbacks?.onVehicleTunablesChange?.();
+      });
+    }
+    const amRotational: [keyof SimConfig['vehicle'], string][] = [
+      ['addedMassRollFactor', 'Rot Roll (kg\u00B7m\u00B2)'],
+      ['addedMassPitchFactor', 'Rot Pitch (kg\u00B7m\u00B2)'],
+      ['addedMassYawFactor', 'Rot Yaw (kg\u00B7m\u00B2)']
+    ];
+    for (const [key, label] of amRotational) {
+      addedMass.addBinding(config.vehicle, key, { min: 0, max: 0.01, step: 0.0001, label }).on('change', () => {
+        callbacks?.onVehicleTunablesChange?.();
+      });
+    }
+
+    folder.addBinding(config.vehicle, 'vehicleSubstepDivider', { min: 1, max: 4, step: 1, label: 'Substep \u00D7 fluid' }).on('change', () => {
+      callbacks?.onVehicleTunablesChange?.();
+    });
+    folder.addBinding(config.vehicle, 'angularRateClampRadS', { min: 2, max: 40, step: 1, label: 'Rate Clamp (rad/s)' }).on('change', () => {
+      callbacks?.onVehicleTunablesChange?.();
+    });
+  }
+
+  /** Re-reads the vehicle bindings after an external pose change. */
+  public refreshVehicleGroup(): void {
+    this.vehicleFolder?.refresh();
   }
 
   private static OVERLAY_LABELS: Record<keyof OverlayState, string> = {
