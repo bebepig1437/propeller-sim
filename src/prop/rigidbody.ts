@@ -1,8 +1,3 @@
-/**
- * Propeller rotational inertia, shaft state, and angular dynamics.
- * Supports Candidate A materials: Rigid 10K, PA12-CF15, PETG.
- */
-
 export type PropellerMaterial = 'rigid10k' | 'pa12cf15' | 'petg';
 
 export interface MaterialSpec {
@@ -50,10 +45,6 @@ export interface InertiaBreakdown {
   spinUpTimeConstantMs: number;
 }
 
-/**
- * Calculates accurate polar moment of inertia (I_xx) about the rotation axis
- * for 42mm marine propeller with 8mm hub and 3 blades.
- */
 export function calculatePropellerInertia(
   material: PropellerMaterial,
   diameterMm = 42.0,
@@ -70,28 +61,22 @@ export function calculatePropellerInertia(
   const Rbore = (boreDiameterMm / 2.0) * 1e-3;
   const Lhub = hubLenMm * 1e-3;
 
-  // Hub geometric volume (cylinder with central bore)
   const hubVolumeM3 = Math.PI * (Rhub * Rhub - Rbore * Rbore) * Lhub;
   const hubMassKg = Math.min(totalMassKg * 0.45, hubVolumeM3 * spec.densityKgM3);
   const bladesMassKg = Math.max(0.0001, totalMassKg - hubMassKg);
 
-  // Hub polar moment of inertia (thick cylinder)
   const iHub = 0.5 * hubMassKg * (Rhub * Rhub + Rbore * Rbore);
 
-  // Blades polar moment of inertia (radius of gyration ~ 0.62 * R)
   const kBlade = 0.62 * R;
   const iBlades = bladesMassKg * (kBlade * kBlade);
 
   const iDry = iHub + iBlades;
 
-  // Hydrodynamic added mass moment of inertia for propeller rotating in water
   const rhoWater = 1000.0;
   const iAddedMass = 0.22 * rhoWater * Math.pow(R, 5);
 
   const iTotalEffective = iDry + iAddedMass;
 
-  // Estimated spin-up electrical-mechanical time constant:
-  // tau = I_total * omega_rated / Q_stall (at 0.026 Nm stall torque, 4140 RPM)
   const omegaRated = (4140 * 2 * Math.PI) / 60.0;
   const stallTorqueNm = 0.0260;
   const spinUpTimeConstantMs = (iTotalEffective * omegaRated / stallTorqueNm) * 1000.0;
@@ -110,10 +95,6 @@ export function calculatePropellerInertia(
   };
 }
 
-/**
- * Calculates angular acceleration given motor drive torque and hydrodynamic load:
- * alpha = (Q_motor - Q_hydro) / I_effective
- */
 export function calculateAngularAcceleration(
   qMotorNm: number,
   qHydroNm: number,
@@ -122,19 +103,14 @@ export function calculateAngularAcceleration(
   return (qMotorNm - qHydroNm) / Math.max(1e-9, iTotalKgM2);
 }
 
-/**
- * Propeller Shaft State & Dynamic Response.
- * Implements first-order lag on RPM (tau default 0.15s), servo lag on pitch angle
- * (tau default 0.05s), and continuous blade phase integration.
- */
 export class PropellerShaft {
   public commandedRpm = 0;
   public currentRpm = 0;
   public commandedPitchDeg = 18.0;
   public currentPitchDeg = 18.0;
   public bladePhaseRad = 0;
-  public tauRpm = 0.15;   // seconds
-  public tauPitch = 0.05; // seconds
+  public tauRpm = 0.15;
+  public tauPitch = 0.05;
 
   constructor(initialRpm = 0, initialPitchDeg = 18.0) {
     this.commandedRpm = initialRpm;
@@ -143,28 +119,19 @@ export class PropellerShaft {
     this.currentPitchDeg = initialPitchDeg;
   }
 
-  /**
-   * Advances shaft state by dt seconds.
-   */
   public update(dt: number): void {
     if (dt <= 0) return;
 
-    // 1. First-order lag on RPM: d(RPM)/dt = (RPM_cmd - RPM) / tau_rpm
     const alphaRpm = Math.min(1.0, dt / Math.max(1e-3, this.tauRpm));
     this.currentRpm += (this.commandedRpm - this.currentRpm) * alphaRpm;
 
-    // 2. Servo lag on pitch: d(pitch)/dt = (pitch_cmd - pitch) / tau_pitch
     const alphaPitch = Math.min(1.0, dt / Math.max(1e-3, this.tauPitch));
     this.currentPitchDeg += (this.commandedPitchDeg - this.currentPitchDeg) * alphaPitch;
 
-    // 3. Integrate blade phase at real RPM
     const omega = (this.currentRpm * 2.0 * Math.PI) / 60.0;
     this.bladePhaseRad = (this.bladePhaseRad + omega * dt) % (2.0 * Math.PI);
   }
 
-  /**
-   * Returns motion blur alpha in [0, 1] to prevent visual strobing above 500 RPM.
-   */
   public getBlurAlpha(): number {
     const absRpm = Math.abs(this.currentRpm);
     if (absRpm < 500) return 0.0;

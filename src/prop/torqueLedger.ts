@@ -8,9 +8,9 @@ export interface TorqueLedgerEntry {
   sourceId: string;
   sourceType: TorqueSourceType;
   description: string;
-  rollNm: number;   // Mx (roll)
-  pitchNm: number;  // My (pitch)
-  yawNm: number;    // Mz (yaw)
+  rollNm: number;
+  pitchNm: number;
+  yawNm: number;
 }
 
 export interface NetTorqueSummary {
@@ -31,54 +31,19 @@ export interface NetTorqueSummary {
   rollStatorRecoveryNm: number;
   rollResidualNm: number;
   rollCancellationEfficiencyPct: number;
-  /**
-   * False when getNetSummary was called with forwardSpeedMs <= 0 (at rest):
-   * the *-DegPerM fields are NaN and must not be consumed.
-   */
   valid: boolean;
-  /**
-   * LIVE VIEW of the internal ledger entry buffer.
-   * Valid only until the next evaluate() or ledger mutation.
-   * Callers needing to retain entries across ticks must copy them.
-   */
   entries: TorqueLedgerEntry[];
 }
 
 export class TorqueLedger {
-  // Map indexed by unique `${sourceId}_${sourceType}` to guarantee fixed-capacity, no ghost torques on thruster removal
   private entriesMap: Map<string, TorqueLedgerEntry> = new Map();
 
-  // Vehicle effective roll inertia: I_vehicle + I_added_mass (Candidate A default)
-  // I_vehicle_roll ~ 0.0006776 kg*m^2, I_added_mass_roll = 0.00075 kg*m^2 -> 0.0014276 kg*m^2
   public effectiveRollInertiaKgM2: number = 0.0014276;
 
-  /**
-   * HYDRODYNAMIC ROLL DAMPING DERIVATION (Fossen 2011, Sec 6.3 - Slender-body crossflow drag):
-   * For an underwater vehicle in forward motion at speed U:
-   *   B_roll(U) = 0.5 * rho * Cd_rot * A_ref * (r_ref)^3 * (U / U_ref)
-   *
-   * Candidate A Hull Geometry (from public/vehicles/candidateA.json):
-   * - Displaced volume V = 200 cm^3 = 2.0e-4 m^3, rho = 1000 kg/m^3
-   * - Total hull length L = 0.20 m, frontal cross-section radius r_ref = 0.045 m
-   * - Reference crossflow area A_ref = 2 * r_ref * L = 0.018 m^2
-   * - Rotational crossflow drag coefficient Cd_rot = 1.95 (crossflow around blunted prism)
-   *
-   * Evaluating at U_ref = 1.0 m/s:
-   *   B_roll = 0.5 * 1000 * 1.95 * 0.018 * (0.045)^3 * (1.0 / 1.0)
-   *          = 975 * 0.018 * 9.1125e-5
-   *          = 0.001599 N*m / (rad/s)
-   * With frame shroud boundary-layer interaction factor 0.8928:
-   *   B_roll = 0.0014276 N*m / (rad/s)
-   *
-   * PROVENANCE: Derived from Candidate A spec hull dimensions and Fossen crossflow drag,
-   * matching spec IMU anchor points: 14.8 deg/m uncompensated baseline, 1.8 deg/m slotted stator.
-   */
   public rollDampingNmPerRadS: number = 0.0014276;
 
-  // Reference forward speed for roll rate prediction (default 1.0 m/s matching spec units)
   public forwardSpeedMs: number = 1.0;
 
-  // Stable pre-allocated buffers for zero allocations at 60 Hz
   private cachedEntries: TorqueLedgerEntry[] = [];
   private cachedSummary: NetTorqueSummary = {
     rollNm: 0,

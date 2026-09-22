@@ -2,17 +2,17 @@ import type { FluidGrid } from '../fluid/grid';
 import type { BEMTResult } from './bemt';
 
 export interface ActuatorDiscConfig {
-  centerX: number;          // Grid cell X coordinate (e.g. 24)
-  centerY: number;          // Grid cell Y coordinate (e.g. 64)
-  radiusCells: number;      // Grid cell radius (e.g. 14)
-  thicknessCells: number;   // Axial thickness of actuator disk in grid cells (e.g. 3)
-  orientationRad: number;   // Orientation angle in radians (0 = +X, default 0)
-  gridDxM: number;          // Physical meters per grid cell (e.g. 0.0015 m)
-  depthM: number;           // Out-of-plane physical depth (e.g. 0.042 m)
-  fluidDensity: number;     // Fluid density kg/m3 (default 1000)
-  dyeEmissionRate: number;  // Tracer dye intensity multiplier
-  inflowRelaxation: number; // Relaxation damping factor alpha in (0, 1] (default 0.5)
-  sourceMode: 'bemt_thrust' | 'grid_momentum'; // Validation toggle
+  centerX: number;
+  centerY: number;
+  radiusCells: number;
+  thicknessCells: number;
+  orientationRad: number;
+  gridDxM: number;
+  depthM: number;
+  fluidDensity: number;
+  dyeEmissionRate: number;
+  inflowRelaxation: number;
+  sourceMode: 'bemt_thrust' | 'grid_momentum';
 }
 
 export interface CouplingTelemetry {
@@ -68,7 +68,6 @@ export class ActuatorDiscCoupler {
   private cachedThicknessCells = -1;
   private cachedOrientationRad = -999;
 
-  // Relaxation state for inflow velocity
   private lastRelaxedInflow = 0;
 
   constructor(config?: Partial<ActuatorDiscConfig>) {
@@ -79,7 +78,7 @@ export class ActuatorDiscCoupler {
       thicknessCells: config?.thicknessCells ?? 3,
       orientationRad: config?.orientationRad ?? 0.0,
       gridDxM: config?.gridDxM ?? 0.0015,
-      depthM: config?.depthM ?? 0.15, // Modeled out-of-plane streamtube depth (default 0.15 m)
+      depthM: config?.depthM ?? 0.15,
       fluidDensity: config?.fluidDensity ?? 1000.0,
       dyeEmissionRate: config?.dyeEmissionRate ?? 1.2,
       inflowRelaxation: config?.inflowRelaxation ?? 0.5,
@@ -87,9 +86,6 @@ export class ActuatorDiscCoupler {
     };
   }
 
-  /**
-   * Resets internal dynamic states (e.g. relaxed inflow).
-   */
   public reset(): void {
     this.lastRelaxedInflow = 0;
     this.lastTelemetry.inflowVelocityMs = 0;
@@ -105,15 +101,6 @@ export class ActuatorDiscCoupler {
     this.lastTelemetry.steadyStateConverged = true;
   }
 
-  /**
-   * Samples upstream inflow velocity (Va) directly from the fluid grid
-   * at the propeller disc face.
-   *
-   * Correctness rules:
-   * 1. Does NOT clamp to >= 0: reverse inflow is physically meaningful and feeds into BEMT.
-   * 2. Projects flow along the disk's orientation normal vector.
-   * 3. Applies first-order relaxation damping (alpha = config.inflowRelaxation).
-   */
   public sampleInflowVelocity(grid: FluidGrid): number {
     const W = grid.width;
     const H = grid.height;
@@ -124,9 +111,6 @@ export class ActuatorDiscCoupler {
     const cosT = Math.cos(orientationRad);
     const sinT = Math.sin(orientationRad);
 
-    // Normal pointing along thrust: (cosT, sinT)
-    // Upstream direction: (-cosT, -sinT)
-    // Transverse direction: (-sinT, cosT)
     const upstreamOffset = 2.0;
     const sampleCenterX = Math.max(1, Math.min(W - 2, Math.round(centerX - upstreamOffset * cosT)));
     const sampleCenterY = Math.max(1, Math.min(H - 2, Math.round(centerY - upstreamOffset * sinT)));
@@ -136,7 +120,7 @@ export class ActuatorDiscCoupler {
 
     const nSpanSamples = Math.max(7, Math.floor(radiusCells * 1.5));
     for (let i = 0; i <= nSpanSamples; i++) {
-      const s = (i / nSpanSamples) * 2.0 - 1.0; // [-1, +1]
+      const s = (i / nSpanSamples) * 2.0 - 1.0;
       const weight = Math.max(0, 1.0 - s * s);
 
       const px = Math.round(sampleCenterX + s * radiusCells * (-sinT));
@@ -144,7 +128,6 @@ export class ActuatorDiscCoupler {
 
       if (px >= 1 && px < W - 1 && py >= 1 && py < H - 1) {
         const idx = py * W + px;
-        // Project local fluid velocity onto thrust normal: (u, v) · (cosT, sinT)
         const axialVel = u[idx] * cosT + v[idx] * sinT;
         sumAxialU += axialVel * weight;
         sumWeight += weight;
@@ -154,7 +137,6 @@ export class ActuatorDiscCoupler {
     const rawInflow = sumWeight > 0 ? sumAxialU / sumWeight : 0;
     this.lastTelemetry.rawInflowVelocityMs = rawInflow;
 
-    // First-order relaxation damping: Va_rel = (1 - alpha) * Va_prev + alpha * Va_raw
     const alpha = Math.max(0.01, Math.min(1.0, inflowRelaxation));
     const relaxedInflow = (1.0 - alpha) * this.lastRelaxedInflow + alpha * rawInflow;
     this.lastRelaxedInflow = relaxedInflow;
@@ -163,17 +145,6 @@ export class ActuatorDiscCoupler {
     return relaxedInflow;
   }
 
-  /**
-   * Injects actuator disc momentum and tip vortex forces from BEMT solution into fluid grid.
-   *
-   * Correctness:
-   * 1. Rebuilds cell cache if centerX, centerY, radiusCells, thicknessCells, or orientationRad change.
-   * 2. Physical cell volume Delta V = (gridDxM)^2 * depthM.
-   * 3. Conservation: sum of body force over all cells equals thrust T exactly in SI units.
-   * 4. Swirl in 2D is injected as counter-rotating tip vortex pair (+/- omega_z) at disc edges y = +/- R,
-   *    reproducing 2D centerline cut of axisymmetric vortex rings.
-   * 5. Zero heap allocations: mutates preallocated lastTelemetry.
-   */
   public injectCouplingForces(
     grid: FluidGrid,
     bemt: BEMTResult,
@@ -203,12 +174,10 @@ export class ActuatorDiscCoupler {
     const T = bemt.thrustN;
     const Q = bemt.torqueNm;
 
-    // Effective swirl sign: CW = -1, CCW = +1 (matching BEMT hull reaction torque convention)
     const effectiveSwirlSign = swirlSign !== undefined
       ? (swirlSign < 0 ? -1 : 1)
       : (bemt.handedness === 'CW' ? -1 : 1);
 
-    // 1. Invalidate and rebuild disc cell cache when dimensions, position, or orientation change
     if (
       this.cachedGridW !== W ||
       this.cachedGridH !== H ||
@@ -245,15 +214,11 @@ export class ActuatorDiscCoupler {
           const dx = x - centerX;
           const dy = y - centerY;
 
-          // Rotate into disc frame:
-          // xRot: axial coordinate along thrust axis
-          // yRot: transverse coordinate across disc diameter
           const xRot = dx * cosT + dy * sinT;
           const yRot = -dx * sinT + dy * cosT;
 
           if (Math.abs(xRot) <= halfThick && Math.abs(yRot) <= radiusCells) {
             const rNorm = yRot / radiusCells;
-            // Parabolic radial weighting from center to tip
             const radialFactor = Math.sqrt(Math.max(0.01, 1.0 - rNorm * rNorm));
             const idx = y * W + x;
 
@@ -274,31 +239,24 @@ export class ActuatorDiscCoupler {
 
     if (this.cachedTotalWeight <= 0) return this.lastTelemetry;
 
-    // 2D Equivalent Cell Mass scaling with dx and modeled depth:
-    // Cell volume Delta V = (gridDxM)^2 * depthM.
     const cellVolM3 = gridDxM * gridDxM * depthM;
     const cellMassKg = fluidDensity * cellVolM3;
     const totalDiscMassKg = this.cachedCells.length * cellMassKg;
     this.totalDiscMassKg = totalDiscMassKg;
     this.cellMassKg = cellMassKg;
 
-    // Conservation: Sum(mass_i * delta_u_i / dt) = T
-    // With N cells and mean weight (totalWeight / N), each cell mass = totalDiscMassKg / N
     const thrustToApply = sourceMode === 'grid_momentum' && this.lastTelemetry.gridMomentumThrustN !== 0
       ? this.lastTelemetry.gridMomentumThrustN
       : T;
 
     const axialDeltaVScale = (thrustToApply * dt) / (totalDiscMassKg * (this.cachedTotalWeight / this.cachedCells.length));
 
-    // 2D Swirl & Edge Vorticity (Tip Vortex Generation):
-    // Tangential momentum injection scaled by torque and signed by handedness (CW = -1, CCW = +1)
     const absQ = Math.abs(Q);
     const swirlScale = (effectiveSwirlSign * absQ * dt) / (totalDiscMassKg * Math.max(0.01, R * gridDxM));
     const dyeEmissionBase = Math.min(0.8, Math.abs(T) * 0.2 * dyeEmissionRate * dt);
 
     const cells = this.cachedCells;
     const nCells = cells.length;
-    // Actuator disc theoretical slipstream velocity: V_wake = Va + 2*vi
     let sumInduced = 0;
     const numEl = bemt.elements ? bemt.elements.length : 0;
     if (numEl > 0) {
@@ -317,32 +275,26 @@ export class ActuatorDiscCoupler {
       const cosT = cell.cosTheta;
       const sinT = cell.sinTheta;
 
-      // 1. Axial Acceleration directed along orientation angle
       const dAxial = axialDeltaVScale * rf;
       sumInjectedForceN += this.cellMassKg * (dAxial / dt);
 
-      // 2. Tangential Swirl & Tip Vortex Shear: anti-symmetric across disc diameter (+/-)
-      // Produces counter-rotating vortex ring cut without introducing artificial net transverse force
       const edgeFactor = Math.abs(cell.rNorm) > 0.6
         ? Math.sign(cell.rNorm) * (Math.abs(cell.rNorm) - 0.6) / 0.4
         : 0;
       const swirlFactor = cell.rNorm * Math.sqrt(Math.max(0.01, 1.0 - cell.rNorm * cell.rNorm));
       const dTransverse = swirlScale * (0.5 * swirlFactor + 0.5 * edgeFactor);
 
-      // Rotate local (axial, transverse) into global (u, v)
       const du = dAxial * cosT - dTransverse * sinT;
       const dv = dAxial * sinT + dTransverse * cosT;
 
       u[idx] += du;
       v[idx] += dv;
 
-      // 3. Flow Dye Tracer Marker
       const curDye = dye[idx];
       const newDye = curDye + dyeEmissionBase * rf;
       dye[idx] = newDye > 1.0 ? 1.0 : newDye;
     }
 
-    // Measure downstream slipstream wake velocity
     const cosT = Math.cos(orientationRad);
     const sinT = Math.sin(orientationRad);
     const downstreamDist = Math.max(2.0, Math.min(8.0, thicknessCells / 2 + 2.0));
@@ -378,7 +330,6 @@ export class ActuatorDiscCoupler {
     const agreementPct = Math.max(0, Math.min(100, (1.0 - errThrust / denom) * 100));
     const steadyStateConverged = absT < 1e-3 || errThrust / denom <= 0.15;
 
-    // Mutate preallocated telemetry object (zero heap garbage generation)
     this.lastTelemetry.inflowVelocityMs = this.lastRelaxedInflow;
     this.lastTelemetry.rawInflowVelocityMs = this.lastTelemetry.rawInflowVelocityMs;
     this.lastTelemetry.wakeVelocityMs = meanWakeVel;

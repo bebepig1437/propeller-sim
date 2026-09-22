@@ -2,19 +2,6 @@ import { evaluateSectionPolarWithReAndRoughness, getHydrofoilProperties, Section
 import { PropDesign, CANDIDATE_A_DESIGN, getDesignBladeChordAt, getDesignBladePitchAngleAt } from './designs/index';
 import type { PropellerMaterial } from './rigidbody';
 
-/**
- * SIGN CONVENTIONS (documented per CONVENTIONS.md):
- * - Advance speed Va: positive along +X (forward boat motion, oncoming water from fore to aft).
- * - Forward thrust T: positive pushing vehicle forward (+X_b).
- * - Rotational RPM: positive n.
- * - Handedness:
- *   - 'CW': Clockwise from behind looking forward. Tangential swirl v_iTheta opposes rotation.
- *     Reaction torque on vehicle is negative (-X_b).
- *   - 'CCW': Counter-Clockwise. Flips blade pitch and tangential velocity sign.
- *     Reaction torque on vehicle is positive (+X_b).
- * - Reverse flow: When Va + vi <= 0, branches to locked-rotor / windmill drag mode.
- */
-
 export interface BEMTElemResult {
   radiusM: number;
   rOverR: number;
@@ -47,21 +34,18 @@ export interface BEMTResult {
 
 export interface PropellerBEMTParams {
   design?: PropDesign;
-  diameterMm?: number;      // default 42 mm
-  hubDiameterMm?: number;   // default 8 mm
-  blades?: number;          // default 3
-  pitchMm?: number;         // default ~33.2 mm
-  fluidDensity?: number;    // default 1000 kg/m3
-  kinematicViscosity?: number; // default 1e-6 m2/s
-  numElements?: number;     // default 20
-  material?: PropellerMaterial; // default 'rigid10k'
-  handedness?: 'CW' | 'CCW';    // default 'CW'
+  diameterMm?: number;
+  hubDiameterMm?: number;
+  blades?: number;
+  pitchMm?: number;
+  fluidDensity?: number;
+  kinematicViscosity?: number;
+  numElements?: number;
+  material?: PropellerMaterial;
+  handedness?: 'CW' | 'CCW';
   foilProps?: SectionalHydrofoilProperties;
 }
 
-/**
- * Standard chord distribution function (kept for backwards compatibility).
- */
 export function getBladeChordAt(rM: number, rHubM: number, rTipM: number): number {
   const span = rTipM - rHubM;
   const xi = Math.max(0, Math.min(1.0, (rM - rHubM) / span));
@@ -79,19 +63,10 @@ export function getBladeChordAt(rM: number, rHubM: number, rTipM: number): numbe
   }
 }
 
-/**
- * Computes blade pitch angle theta(r) in radians from pitch P (backwards compatible).
- */
 export function getBladePitchAngleAt(rM: number, pitchM: number): number {
   return Math.atan(pitchM / (2.0 * Math.PI * Math.max(1e-4, rM)));
 }
 
-/**
- * Documented reverse-flow transition band half-width in m/s (default 0.05 m/s).
- * Physical basis: 0.05 m/s matches the sub-cell Eulerian grid fluctuation threshold
- * (dx / dt * alpha_inflow = 0.0015 m / (1/60 s) * 0.5 ~= 0.045 m/s), ensuring discrete
- * fluid grid velocity perturbations do not trigger discontinuous regime transitions at Va + vi = 0.
- */
 export const REVERSE_FLOW_BLEND_BAND_M_PER_S = 0.05;
 export const REVERSE_FLOW_BLEND_BAND_MS = REVERSE_FLOW_BLEND_BAND_M_PER_S;
 
@@ -106,10 +81,6 @@ export interface InflowAeroResult {
   reynolds: number;
 }
 
-/**
- * Smooth Hermite smoothstep blend between forward and reverse section aerodynamics.
- * Guarantees C1 continuity across the Va + vi = 0 boundary.
- */
 export function evaluateBlendedSectionAero(
   vRaw: number,
   vTangential: number,
@@ -121,9 +92,8 @@ export function evaluateBlendedSectionAero(
   blendBand: number = REVERSE_FLOW_BLEND_BAND_M_PER_S
 ): InflowAeroResult {
   const t = Math.max(0, Math.min(1, (vRaw + blendBand) / (2.0 * blendBand)));
-  const s = t * t * (3.0 - 2.0 * t); // Smoothstep Hermite weight in [0, 1]
+  const s = t * t * (3.0 - 2.0 * t);
 
-  // Forward branch
   const vAxialFwd = Math.max(0.001, vRaw);
   const wFwd = Math.sqrt(vAxialFwd * vAxialFwd + vTangential * vTangential);
   const phiFwd = Math.atan2(vAxialFwd, vTangential);
@@ -148,7 +118,6 @@ export function evaluateBlendedSectionAero(
     };
   }
 
-  // Reverse branch
   const vAxialRev = Math.min(-0.001, vRaw);
   const wRev = Math.sqrt(vAxialRev * vAxialRev + vTangential * vTangential);
   const phiRev = Math.atan2(vAxialRev, vTangential);
@@ -173,7 +142,6 @@ export function evaluateBlendedSectionAero(
     };
   }
 
-  // Smooth Hermite blend across transition band
   return {
     W: (1.0 - s) * wRev + s * wFwd,
     phi: (1.0 - s) * phiRev + s * phiFwd,
@@ -186,19 +154,6 @@ export function evaluateBlendedSectionAero(
   };
 }
 
-/**
- * Solves Blade Element Momentum Theory (BEMT) for a marine propeller.
- *
- * Implements:
- * 1. Prandtl tip loss: fTip = (B/2) * (R - r) / (r * sin(phi)) with local radius r.
- * 2. Prandtl hub loss: fHub = (B/2) * (r - Rhub) / (Rhub * sin(phi)) normalized by hub radius (Glauert 1935, Drela XROTOR).
- * 3. Damped fixed-point induction iteration.
- * 4. Post-convergence aerodynamic recomputation before force integration.
- * 5. Continuous reverse-flow / windmill branch.
- * 6. Zero-RPM locked-rotor hydrodynamic drag calculation returning non-empty elements.
- * 7. Handedness (CW / CCW) with exact torque symmetry.
- * 8. Reynolds number scaling and material surface roughness.
- */
 const MAX_PREALLOC_ELEMENTS = 64;
 const BEMT_RING_SIZE = 8;
 let bemtRingIndex = 0;
@@ -271,8 +226,6 @@ export function solveBEMT(
   }
   targetElements.length = N;
 
-  // Zero-RPM handling: A stationary propeller in flow produces locked-rotor drag.
-  // Must return non-empty elements with vi = viTheta = 0.
   if (Math.abs(rpm) < 1.0) {
     let totalThrust = 0;
 
@@ -288,7 +241,6 @@ export function solveBEMT(
       const re = Math.max(100, (W * chord) / nu);
 
       const polar = evaluateSectionPolarWithReAndRoughness(alpha, re, material, foilProps);
-      // Axial force coefficient along thrust direction: -Cd * sign(Va)
       const qDyn = 0.5 * rho * W * W;
       const dT = -Math.sign(advanceSpeedMs || 1) * polar.cd * qDyn * chord * dr * B;
       totalThrust += dT;
@@ -324,8 +276,8 @@ export function solveBEMT(
 
   const signRpm = Math.sign(rpm);
   const absRpm = Math.abs(rpm);
-  const n = absRpm / 60.0; // rev/s
-  const omega = 2.0 * Math.PI * n; // rad/s
+  const n = absRpm / 60.0;
+  const omega = 2.0 * Math.PI * n;
 
   let totalThrust = 0;
   let totalTorque = 0;
@@ -337,7 +289,6 @@ export function solveBEMT(
     const theta = getDesignBladePitchAngleAt(r, design, pitchOverrideMm, params?.diameterMm);
     const solidity = (B * chord) / (2.0 * Math.PI * r);
 
-    // Initial induced velocity guesses
     let vi = Math.max(0.05, 0.12 * omega * r);
     let viTheta = 0.015 * omega * r;
 
@@ -362,30 +313,22 @@ export function solveBEMT(
       const Ct = aero.Ct;
       const sinPhi = Math.sin(phi);
 
-      // MANDATORY CORRECTNESS FIX: Prandtl tip loss denominator uses local radius r
       const sinPhiPos = Math.max(0.01, Math.abs(sinPhi));
       const fTip = Math.max(0.001, (B * (R - r)) / (2.0 * r * sinPhiPos));
       const Ftip = (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-fTip)));
 
-      // Hub loss factor: Prandtl root loss normalized by hub radius Rhub
-      // References:
-      // - Glauert, H. (1935), "Airplane Propellers", Division L in Aerodynamic Theory (W.F. Durand, ed.)
-      // - Drela, M., XROTOR Theory and User Guide (BEMT root circulation formulation)
       const fHub = Math.max(0.001, (B * (r - Rhub)) / (2.0 * Rhub * sinPhiPos));
       const Fhub = (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-fHub)));
 
       const F = Math.max(0.05, Ftip * Fhub);
 
-      // Momentum inflow solve with Glauert / high-thrust extension
       const K = Math.max(0, (solidity * Cn) / (4.0 * F));
       const discriminant = Math.pow(advanceSpeedMs / 2.0, 2) + K * W * W;
       const viNew = -advanceSpeedMs / 2.0 + Math.sqrt(Math.max(0, discriminant));
 
-      // Tangential induced velocity
       const denomTheta = 4.0 * F * Math.max(0.05, advanceSpeedMs + viNew);
       const viThetaNew = Math.max(0, (solidity * Ct * W * W) / denomTheta);
 
-      // Under-relaxation
       const viRelaxed = 0.65 * vi + 0.35 * viNew;
       const viThetaRelaxed = 0.65 * viTheta + 0.35 * viThetaNew;
 
@@ -398,7 +341,6 @@ export function solveBEMT(
       viTheta = viThetaRelaxed;
     }
 
-    // MANDATORY CORRECTNESS FIX: Recompute aerodynamic quantities from converged induced velocities
     const vTangentialConv = Math.max(0.01, omega * r - viTheta);
     const aeroConv = evaluateBlendedSectionAero(
       advanceSpeedMs + vi,
@@ -442,15 +384,11 @@ export function solveBEMT(
     el.tangentialInducedMs = viTheta;
   }
 
-  // Directional signs for reverse rotation
   if (signRpm < 0) {
-    totalThrust = -totalThrust * 0.72; // Reverse thrust camber penalty (~28%)
+    totalThrust = -totalThrust * 0.72;
     totalTorque = totalTorque * 0.88;
   }
 
-  // Handedness torque sign convention:
-  // CW propeller rotation exerts negative reaction torque on vehicle hull.
-  // CCW propeller rotation exerts positive reaction torque on vehicle hull.
   const directedTorque = handedness === 'CW' ? -totalTorque : totalTorque;
 
   const powerMech = Math.max(0, totalTorque * omega);
@@ -458,7 +396,6 @@ export function solveBEMT(
   const kt = totalThrust / (rho * Math.pow(n, 2) * Math.pow(D, 4));
   const kq = totalTorque / (rho * Math.pow(n, 2) * Math.pow(D, 5));
 
-  // MANDATORY CORRECTNESS FIX: Clamp efficiency to [0, 1]
   let efficiency = 0;
   if (powerMech > 1e-4 && advanceSpeedMs > 1e-4 && totalThrust > 0) {
     efficiency = Math.min(1.0, Math.max(0.0, (totalThrust * advanceSpeedMs) / powerMech));
