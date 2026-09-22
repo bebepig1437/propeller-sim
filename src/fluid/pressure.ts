@@ -1,5 +1,5 @@
-import type { FluidGrid } from './grid';
-import type { BoundaryHandler } from './boundary';
+import type { FluidGrid } from "./grid";
+import type { BoundaryHandler } from "./boundary";
 
 export interface PressureSolveResult {
   iterationsRun: number;
@@ -7,9 +7,38 @@ export interface PressureSolveResult {
   residuals: number[];
 }
 
-/**
- * Computes velocity divergence: div = du/dx + dv/dy using central differences.
- */
+const staticPressureResult: PressureSolveResult = {
+  iterationsRun: 0,
+  finalResidual: 0,
+  residuals: []
+};
+
+let cachedCoarseW = 0;
+let cachedCoarseH = 0;
+let coarseR = new Float32Array(0);
+let coarseE = new Float32Array(0);
+let coarseENext = new Float32Array(0);
+let fineResidual = new Float32Array(0);
+
+function ensureCoarseBuffers(fineW: number, fineH: number): { cW: number; cH: number } {
+  const cW = Math.floor(fineW / 2);
+  const cH = Math.floor(fineH / 2);
+  const fineSize = fineW * fineH;
+  const coarseSize = cW * cH;
+
+  if (fineResidual.length !== fineSize) {
+    fineResidual = new Float32Array(fineSize);
+  }
+  if (cachedCoarseW !== cW || cachedCoarseH !== cH) {
+    cachedCoarseW = cW;
+    cachedCoarseH = cH;
+    coarseR = new Float32Array(coarseSize);
+    coarseE = new Float32Array(coarseSize);
+    coarseENext = new Float32Array(coarseSize);
+  }
+  return { cW, cH };
+}
+
 export function computeDivergence(grid: FluidGrid, boundary?: BoundaryHandler): void {
   const W = grid.width;
   const H = grid.height;
@@ -31,9 +60,6 @@ export function computeDivergence(grid: FluidGrid, boundary?: BoundaryHandler): 
   }
 }
 
-/**
- * Computes maximum absolute divergence on the interior grid.
- */
 export function getMaxDivergence(grid: FluidGrid, margin = 2): number {
   const W = grid.width;
   const H = grid.height;
@@ -50,10 +76,6 @@ export function getMaxDivergence(grid: FluidGrid, margin = 2): number {
   return maxVal;
 }
 
-/**
- * Solves the pressure Poisson equation:
- * L_2(p) = div(u) via Jacobi relaxation with monotonic residual monitoring.
- */
 export function solvePressurePoisson(
   grid: FluidGrid,
   iterations = 40,
@@ -70,7 +92,8 @@ export function solvePressurePoisson(
   p.fill(0);
   pNext.fill(0);
 
-  const residuals: number[] = [];
+  staticPressureResult.residuals.length = 0;
+  const residuals = staticPressureResult.residuals;
 
   for (let iter = 0; iter < iterations; iter++) {
     let maxDelta = 0;
@@ -89,7 +112,6 @@ export function solvePressurePoisson(
       }
     }
 
-    // Ping-pong buffer swap
     const tmp = p;
     p = pNext;
     pNext = tmp;
@@ -104,25 +126,129 @@ export function solvePressurePoisson(
   grid.pressure = p;
   grid.pressurePrev = pNext;
 
-  return {
-    iterationsRun: iterations,
-    finalResidual: residuals[residuals.length - 1] ?? 0,
-    residuals
-  };
+  staticPressureResult.iterationsRun = iterations;
+  staticPressureResult.finalResidual = residuals.length > 0 ? residuals[residuals.length - 1] : 0;
+  return staticPressureResult;
 }
 
-/**
- * Full pressure projection step:
- * Uses defect correction when high iteration counts are requested.
- */
+export function solvePressureMultigrid(
+  grid: FluidGrid,
+  vCycles = 1,
+  boundary?: BoundaryHandler
+): PressureSolveResult {
+  const W = grid.width;
+  const H = grid.height;
+  const div = grid.div;
+  const dx2 = grid.dx * grid.dx;
+  const coarseDx2 = 4.0 * dx2;
+  const invDx2 = 1.0 / dx2;
+
+  const { cW, cH } = ensureCoarseBuffers(W, H);
+
+  let p = grid.pressure;
+  let pNext = grid.pressurePrev;
+
+  staticPressureResult.residuals.length = 0;
+  let finalResidual = 0;
+  let totalItersRun = 0;
+
+  for (let cycle = 0; cycle < vCycles; cycle++) {
+    for (let y = 1; y < H - 1; y++) {
+      const row = y * W;
+      for (let x = 1; x < W - 1; x++) {
+        const idx = row + x;
+        pNext[idx] = 0.25 * (p[idx - 1] + p[idx + 1] + p[idx - W] + p[idx + W] - dx2 * div[idx]);
+      }
+    }
+    let tmp = p; p = pNext; pNext = tmp;
+    grid.pressure = p;
+    grid.pressurePrev = pNext;
+    if (boundary) boundary.applyPressureBoundary(grid);
+    totalItersRun++;
+
+    for (let y = 1; y < H - 1; y++) {
+      const row = y * W;
+      for (let x = 1; x < W - 1; x++) {
+        const idx = row + x;
+        fineResidual[idx] = div[idx] - (p[idx - 1] + p[idx + 1] + p[idx - W] + p[idx + W] - 4.0 * p[idx]) * invDx2;
+      }
+    }
+
+    for (let cy = 0; cy < cH; cy++) {
+      const fRow0 = (cy * 2) * W;
+      const fRow1 = Math.min(H - 1, cy * 2 + 1) * W;
+      const cRow = cy * cW;
+      for (let cx = 0; cx < cW; cx++) {
+        const fx0 = cx * 2;
+        const fx1 = Math.min(W - 1, fx0 + 1);
+        coarseR[cRow + cx] = 0.25 * (fineResidual[fRow0 + fx0] + fineResidual[fRow0 + fx1] + fineResidual[fRow1 + fx0] + fineResidual[fRow1 + fx1]);
+        coarseE[cRow + cx] = 0.0;
+      }
+    }
+
+    let cE: Float32Array = coarseE;
+    let cENext: Float32Array = coarseENext;
+    let tmpSwap: Float32Array;
+    for (let iter = 0; iter < 2; iter++) {
+      for (let cy = 1; cy < cH - 1; cy++) {
+        const cRow = cy * cW;
+        for (let cx = 1; cx < cW - 1; cx++) {
+          const cIdx = cRow + cx;
+          cENext[cIdx] = 0.25 * (cE[cIdx - 1] + cE[cIdx + 1] + cE[cIdx - cW] + cE[cIdx + cW] - coarseDx2 * coarseR[cIdx]);
+        }
+      }
+      tmpSwap = cE; cE = cENext; cENext = tmpSwap;
+      totalItersRun++;
+    }
+
+    for (let fy = 1; fy < H - 1; fy++) {
+      const cy = fy >> 1;
+      const cRow = cy * cW;
+      const fRow = fy * W;
+      for (let fx = 1; fx < W - 1; fx++) {
+        p[fRow + fx] += cE[cRow + (fx >> 1)];
+      }
+    }
+
+    let maxDelta = 0;
+    for (let y = 1; y < H - 1; y++) {
+      const row = y * W;
+      for (let x = 1; x < W - 1; x++) {
+        const idx = row + x;
+        const sumN = p[idx - 1] + p[idx + 1] + p[idx - W] + p[idx + W];
+        const target = 0.25 * (sumN - dx2 * div[idx]);
+        pNext[idx] = target;
+        const delta = Math.abs(target - p[idx]);
+        if (delta > maxDelta) maxDelta = delta;
+      }
+    }
+    tmp = p; p = pNext; pNext = tmp;
+    grid.pressure = p;
+    grid.pressurePrev = pNext;
+    if (boundary) boundary.applyPressureBoundary(grid);
+    finalResidual = maxDelta;
+    totalItersRun++;
+
+    staticPressureResult.residuals.push(finalResidual);
+  }
+
+  grid.pressure = p;
+  grid.pressurePrev = pNext;
+
+  staticPressureResult.iterationsRun = totalItersRun;
+  staticPressureResult.finalResidual = finalResidual;
+  return staticPressureResult;
+}
+
 export function projectVelocity(
   grid: FluidGrid,
   iterations = 40,
-  boundary?: BoundaryHandler
+  boundary?: BoundaryHandler,
+  method: "jacobi" | "multigrid" = "jacobi"
 ): PressureSolveResult {
   const passes = iterations >= 80 ? 2 : 1;
   const itersPerPass = Math.floor(iterations / passes);
-  let lastResult: PressureSolveResult = { iterationsRun: 0, finalResidual: 0, residuals: [] };
+  let lastResult: PressureSolveResult = staticPressureResult;
 
   const W = grid.width;
   const H = grid.height;
@@ -132,7 +258,12 @@ export function projectVelocity(
 
   for (let pass = 0; pass < passes; pass++) {
     computeDivergence(grid, boundary);
-    lastResult = solvePressurePoisson(grid, itersPerPass, boundary);
+    if (method === "multigrid") {
+      const cycles = Math.max(1, Math.floor(itersPerPass / 20));
+      lastResult = solvePressureMultigrid(grid, cycles, boundary);
+    } else {
+      lastResult = solvePressurePoisson(grid, itersPerPass, boundary);
+    }
 
     const p = grid.pressure;
     for (let y = 1; y < H - 1; y++) {
