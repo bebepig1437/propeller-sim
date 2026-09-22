@@ -1,16 +1,41 @@
 import * as THREE from 'three';
 import type { SimConfig } from '../core/config';
-import { calculateBuoyancy, type BuoyancyForces, type Marine3 } from './buoyancy';
+import { calculateBuoyancy, type BuoyancyForces } from './buoyancy';
 import {
   CANDIDATE_A_ADDED_MASS,
   CANDIDATE_A_DRAG,
   type AddedMass6DOF,
   type DragCoefficients6DOF
 } from './drag';
+import {
+  marineToThree,
+  threeToMarine,
+  marineToThreeVector,
+  marineAngularToThree,
+  threeAngularToMarine,
+  worldToBodyMarine,
+  bodyToWorldMarine,
+  coriolisBodyForce,
+  coriolisPower,
+  type Marine3,
+  type Marine6,
+  type MarineAxis
+} from '../math/vectors';
 
-export type { Marine3 } from './buoyancy';
-export type Marine6 = [number, number, number, number, number, number];
-export type MarineAxis = 0 | 1 | 2;
+export {
+  marineToThree,
+  threeToMarine,
+  marineToThreeVector,
+  marineAngularToThree,
+  threeAngularToMarine,
+  worldToBodyMarine,
+  bodyToWorldMarine,
+  coriolisBodyForce,
+  coriolisPower,
+  type Marine3,
+  type Marine6,
+  type MarineAxis
+};
 
 export interface PointMass {
   surge: number;
@@ -41,34 +66,6 @@ export interface VehiclePoseSnapshot {
   position: Marine3;
   quaternion: [number, number, number, number];
   spatialVelocityBody: Marine6;
-}
-
-export function marineToThree(surge: number, sway: number, heave: number, out: THREE.Vector3): THREE.Vector3 {
-  out.set(sway, heave, surge);
-  return out;
-}
-
-export function threeToMarine(v: THREE.Vector3, out: Marine3): Marine3 {
-  out[0] = v.z;
-  out[1] = v.x;
-  out[2] = v.y;
-  return out;
-}
-
-export function marineToThreeVector(v: Marine3, out: THREE.Vector3): THREE.Vector3 {
-  return marineToThree(v[0], v[1], v[2], out);
-}
-
-export function marineAngularToThree(p: number, q: number, r: number, out: THREE.Vector3): THREE.Vector3 {
-  out.set(q, r, p);
-  return out;
-}
-
-export function threeAngularToMarine(w: THREE.Vector3, out: Marine3): Marine3 {
-  out[0] = w.z;
-  out[1] = w.x;
-  out[2] = w.y;
-  return out;
 }
 
 const SPIN_AXIS_INDEX: Record<string, MarineAxis> = { surge: 0, sway: 1, heave: 2 };
@@ -195,34 +192,6 @@ export function compileSpatialMassBody(
   };
 }
 
-export function coriolisBodyForce(spatial: SpatialMassBody, nu: Marine6, out: Marine6): Marine6 {
-  const [u, v, w, p, q, r] = nu;
-  const [m1, m2, m3] = spatial.translationalKg;
-  const [i1, i2, i3] = spatial.rigidRotationalKgM2;
-  const [a1, a2, a3] = spatial.addedTranslationalKg;
-  const [ap, aq, ar] = spatial.addedRotationalKgM2;
-
-  out[0] = q * (m3 * w) - r * (m2 * v);
-  out[1] = r * (m1 * u) - p * (m3 * w);
-  out[2] = p * (m2 * v) - q * (m1 * u);
-
-  out[3] = q * (i3 * r) - r * (i2 * q) + (v * (a3 * w) - w * (a2 * v)) + (q * (ar * r) - r * (aq * q));
-  out[4] = r * (i1 * p) - p * (i3 * r) + (w * (a1 * u) - u * (a3 * w)) + (r * (ap * p) - p * (ar * r));
-  out[5] = p * (i2 * q) - q * (i1 * p) + (u * (a2 * v) - v * (a1 * u)) + (p * (aq * q) - q * (ap * p));
-
-  return out;
-}
-
-export function coriolisPower(spatial: SpatialMassBody, nu: Marine6): number {
-  const force: Marine6 = [0, 0, 0, 0, 0, 0];
-  coriolisBodyForce(spatial, nu, force);
-  let power = 0;
-  for (let i = 0; i < 6; i++) {
-    power += force[i] * nu[i];
-  }
-  return power;
-}
-
 export class VehicleBody {
   public position: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
   public quaternion: THREE.Quaternion = new THREE.Quaternion(0, 0, 0, 1);
@@ -238,7 +207,6 @@ export class VehicleBody {
   public dragCoefficients: DragCoefficients6DOF;
   public angularRateClampRadS: number;
 
-  private readonly scratchWorldVelocity = new THREE.Vector3();
   private readonly scratchInverseQuaternion = new THREE.Quaternion();
   private readonly scratchEuler = new THREE.Euler();
   private readonly scratchEulerDeg = { rollDeg: 0, pitchDeg: 0, yawDeg: 0 };
@@ -273,9 +241,7 @@ export class VehicleBody {
   }
 
   public setBodyVelocityFromWorld(worldVelocity: THREE.Vector3): void {
-    this.scratchInverseQuaternion.copy(this.quaternion).invert();
-    this.scratchWorldVelocity.copy(worldVelocity).applyQuaternion(this.scratchInverseQuaternion);
-    threeToMarine(this.scratchWorldVelocity, this.velocityBodyMs);
+    worldToBodyMarine(worldVelocity, this.quaternion, this.velocityBodyMs);
   }
 
   public localToWorldVector(v: THREE.Vector3): THREE.Vector3 {

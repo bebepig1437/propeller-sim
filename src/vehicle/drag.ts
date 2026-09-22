@@ -1,4 +1,4 @@
-import type { Marine3 } from './buoyancy';
+import type { Marine3 } from '../math/vectors';
 
 export interface DragCoefficients6DOF {
   quadraticTranslationalM2: Marine3;

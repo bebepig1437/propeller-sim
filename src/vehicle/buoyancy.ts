@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { SimConfig } from '../core/config';
+import { type Marine3 } from '../math/vectors';
 
-export type Marine3 = [number, number, number];
+export type { Marine3 };
 
 export interface BuoyancyForces {
   dryMassKg: number;
