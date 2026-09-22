@@ -10,6 +10,43 @@ export type InspectorSelection =
   | { type: 'vehicle' }
   | { type: 'fluid' };
 
+/**
+ * Live Phase 6b vehicle telemetry for the inspector panel.
+ * MARINE ORDER everywhere in the tuples (surge, sway, heave / roll, pitch, yaw)
+ * — see CONVENTIONS.md §1.2. World tuples are the 3D stage frame.
+ */
+export interface VehicleTelemetryView {
+  positionWorldM: [number, number, number];
+  velocityWorldMs: [number, number, number];
+  /** [u surge, v sway, w heave] m/s */
+  velocityBodyMs: [number, number, number];
+  eulerDeg: { rollDeg: number; pitchDeg: number; yawDeg: number };
+  /** [p roll, q pitch, r yaw] rad/s */
+  ratesRadS: [number, number, number];
+  /** Net buoyancy (+0.197 N for Candidate A). */
+  buoyancyForceN: number;
+  /** Total applied body force along the heave axis (thrust + drag + hydrostatics). */
+  netVerticalForceN: number;
+  dragForceN: [number, number, number];
+  restoringTorqueNm: [number, number, number];
+  thrustForceMarineN: [number, number, number];
+  thrustMomentMarineNm: [number, number, number];
+  /** CoB−CoG lever (mm) — the passive static stability margin. */
+  staticStabilityMm: number;
+  dryMassG: number;
+  displacedVolumeCm3: number;
+  /** Solid-body inertia tensor (marine order) kg·m². */
+  inertiaBody: [number, number, number];
+  /** Translational added mass (marine order) kg. */
+  addedMassBody: [number, number, number];
+  /** Roll deviation per meter of forward travel (deg/m), live forward speed. */
+  rollDeviationDegPerM: number;
+  tetherAttached: boolean;
+  grounded: boolean;
+  broaching: boolean;
+  angularRateClamped: boolean;
+}
+
 export interface InspectorCallbacks {
   onSupplyVoltageChange?: (volts: number) => void;
   onTetherLengthChange?: (feet: number) => void;
@@ -68,6 +105,9 @@ export class SimInspector {
   public statorIncidenceDeg = -5.2;
   public statorSlotted = true;
   public statorSlotChordPct = 40.0;
+
+  // Phase 6b vehicle telemetry (pushed from main.ts every frame)
+  private vehicleView: VehicleTelemetryView | null = null;
 
   // Fluid state
   public viscosity = 1e-6;
@@ -475,7 +515,58 @@ export class SimInspector {
     });
   }
 
+  /**
+   * Live Phase 6b vehicle telemetry. Called every frame from the app; a no-op
+   * unless the vehicle panel is the active selection and the DOM is mounted.
+   * Position / velocity / attitude / buoyancy live HERE (not in the HUD strip),
+   * which stays focused on the at-a-glance propulsion numbers.
+   */
+  public setVehicleTelemetry(view: VehicleTelemetryView | null): void {
+    this.vehicleView = view;
+    if (!view || this.currentSelection.type !== 'vehicle') return;
+    if (!this.container.querySelector('#veh-pos')) return;
+
+    const f = (n: number, d = 3) => (Number.isFinite(n) ? n.toFixed(d) : '—');
+    const tup = (t: [number, number, number], d = 3) => `[${t.map((x) => f(x, d)).join(', ')}]`;
+
+    this.setText('veh-pos', tup(view.positionWorldM, 3));
+    this.setText('veh-vel-w', tup(view.velocityWorldMs, 3));
+    this.setText('veh-vel-b', `u ${f(view.velocityBodyMs[0], 3)}  v ${f(view.velocityBodyMs[1], 3)}  w ${f(view.velocityBodyMs[2], 3)}`);
+    this.setText('veh-euler', `R ${f(view.eulerDeg.rollDeg, 1)}°  P ${f(view.eulerDeg.pitchDeg, 1)}°  Y ${f(view.eulerDeg.yawDeg, 1)}°`);
+    this.setText('veh-rates', `p ${f(view.ratesRadS[0], 3)}  q ${f(view.ratesRadS[1], 3)}  r ${f(view.ratesRadS[2], 3)} rad/s`);
+    this.setText('veh-speed', `${f(Math.hypot(...view.velocityWorldMs), 3)} m/s`);
+
+    this.setText('veh-buoy', `${f(view.buoyancyForceN, 4)} N`);
+    this.setText('veh-net-vert', `${f(view.netVerticalForceN, 4)} N`);
+    this.setText('veh-drag', tup(view.dragForceN, 3));
+    this.setText('veh-righting', tup(view.restoringTorqueNm, 5));
+    this.setText('veh-margin', `${f(view.staticStabilityMm, 2)} mm`);
+    this.setText('veh-mass', `${f(view.dryMassG, 1)} g`);
+    this.setText('veh-volume', `${f(view.displacedVolumeCm3, 1)} cm³`);
+
+    this.setText('veh-thrust', tup(view.thrustForceMarineN, 3));
+    this.setText('veh-torque', tup(view.thrustMomentMarineNm, 6));
+    this.setText('veh-roll-dev', Number.isFinite(view.rollDeviationDegPerM)
+      ? `${f(view.rollDeviationDegPerM, 2)} °/m`
+      : '— (at rest)');
+
+    this.setText('veh-inertia', tup(view.inertiaBody, 7));
+    this.setText('veh-added-mass', tup(view.addedMassBody, 4));
+    this.setText('veh-tether', view.tetherAttached ? 'Attached' : 'Free swimming');
+    this.setText('veh-contact', view.grounded ? 'Floor contact' : view.broaching ? 'At surface' : 'Free');
+    this.setText('veh-clamp', view.angularRateClamped ? 'ENGAGED (rate clamp)' : 'Not engaged');
+  }
+
+  private setText(id: string, text: string): void {
+    const el = this.container.querySelector(`#${id}`);
+    if (el) el.textContent = text;
+  }
+
   private renderVehicleSettings(): void {
+    const v = this.vehicleView;
+    const f = (n: number, d = 3) => (Number.isFinite(n) ? n.toFixed(d) : '—');
+    const tup = (t: [number, number, number], d = 3) => `[${t.map((x) => f(x, d)).join(', ')}]`;
+
     this.container.innerHTML = `
       <div class="inspector-header">
         <span class="inspector-title">Vehicle Properties</span>
@@ -484,22 +575,75 @@ export class SimInspector {
 
       <div class="inspector-field">
         <div class="inspector-field-header">
-          <span>Dry Mass</span>
-          <span class="inspector-field-value">178.5 g</span>
+          <span>Position (world, m)</span>
+          <span class="inspector-field-value" id="veh-pos">${v ? tup(v.positionWorldM) : '—'}</span>
         </div>
       </div>
 
       <div class="inspector-field">
         <div class="inspector-field-header">
-          <span>Buoyancy Volume</span>
-          <span class="inspector-field-value">200.0 cm³</span>
+          <span>Velocity (world / body, m/s)</span>
+          <span class="inspector-field-value" id="veh-vel-w">${v ? tup(v.velocityWorldMs) : '—'}</span>
+        </div>
+        <div class="inspector-field-header">
+          <span style="font-size:9px; color:var(--text-muted);">\u03BC surge \u2192 +X_b, v sway \u2192 +Y_b, w heave \u2192 +Z_b</span>
+          <span class="inspector-field-value" id="veh-vel-b">${v ? `u ${f(v.velocityBodyMs[0])}  v ${f(v.velocityBodyMs[1])}  w ${f(v.velocityBodyMs[2])}` : '—'}</span>
         </div>
       </div>
 
       <div class="inspector-field">
         <div class="inspector-field-header">
-          <span>Metacentric Height (COB-COG)</span>
-          <span class="inspector-field-value">12.5 mm</span>
+          <span>Attitude (roll / pitch / yaw)</span>
+          <span class="inspector-field-value" id="veh-euler">${v ? `R ${f(v.eulerDeg.rollDeg, 1)}\u00B0  P ${f(v.eulerDeg.pitchDeg, 1)}\u00B0  Y ${f(v.eulerDeg.yawDeg, 1)}\u00B0` : '—'}</span>
+        </div>
+        <div class="inspector-field-header">
+          <span style="font-size:9px; color:var(--text-muted);">Rates p / q / r (rad/s)</span>
+          <span class="inspector-field-value" id="veh-rates">${v ? `p ${f(v.ratesRadS[0])}  q ${f(v.ratesRadS[1])}  r ${f(v.ratesRadS[2])}` : '—'}</span>
+        </div>
+      </div>
+
+      <div class="inspector-field">
+        <div class="inspector-field-header">
+          <span>Speed</span>
+          <span class="inspector-field-value" id="veh-speed">${v ? `${f(Math.hypot(...v.velocityWorldMs))} m/s` : '—'}</span>
+        </div>
+      </div>
+
+      <div class="inspector-field">
+        <div class="inspector-field-header">
+          <span>Net Buoyancy</span>
+          <span class="inspector-field-value" id="veh-buoy">${v ? `${f(v.buoyancyForceN, 4)} N` : '—'}</span>
+        </div>
+      </div>
+
+      <div class="inspector-field">
+        <div class="inspector-field-header">
+          <span>Net Vertical Force</span>
+          <span class="inspector-field-value" id="veh-net-vert">${v ? `${f(v.netVerticalForceN, 4)} N` : '—'}</span>
+        </div>
+      </div>
+
+      <div class="inspector-field">
+        <div class="inspector-field-header">
+          <span>Static Stability Margin (CoB\u2212CoG)</span>
+          <span class="inspector-field-value" id="veh-margin">${v ? `${f(v.staticStabilityMm, 2)} mm` : '—'}</span>
+        </div>
+      </div>
+
+      <div class="inspector-field">
+        <div class="inspector-field-header">
+          <span>Roll Deviation per Meter</span>
+          <span class="inspector-field-value" id="veh-roll-dev">${v && Number.isFinite(v.rollDeviationDegPerM) ? `${f(v.rollDeviationDegPerM, 2)}\u00B0/m` : '—'}</span>
+        </div>
+      </div>
+
+      <div class="inspector-field">
+        <div class="inspector-field-header">
+          <span>Dry Mass / Displaced Volume</span>
+          <span class="inspector-field-value">
+            <span id="veh-mass">${v ? `${f(v.dryMassG, 1)} g` : '—'}</span> /
+            <span id="veh-volume">${v ? `${f(v.displacedVolumeCm3, 1)} cm\u00B3` : '—'}</span>
+          </span>
         </div>
       </div>
 
@@ -507,16 +651,58 @@ export class SimInspector {
         <summary>Advanced Hydrodynamics</summary>
         <div class="advanced-content">
           <div class="inspector-field">
-            <span class="inspector-field-header">Surge Drag X_uu: 0.12 kg/m</span>
+            <div class="inspector-field-header">
+              <span>Thrust (marine surge/sway/heave, N)</span>
+              <span class="inspector-field-value" id="veh-thrust">${v ? tup(v.thrustForceMarineN) : '—'}</span>
+            </div>
           </div>
           <div class="inspector-field">
-            <span class="inspector-field-header">Sway Drag Y_vv: 0.38 kg/m</span>
+            <div class="inspector-field-header">
+              <span>Applied Moment (roll/pitch/yaw, N\u00B7m)</span>
+              <span class="inspector-field-value" id="veh-torque">${v ? tup(v.thrustMomentMarineNm, 6) : '—'}</span>
+            </div>
           </div>
           <div class="inspector-field">
-            <span class="inspector-field-header">Heave Drag Z_ww: 0.45 kg/m</span>
+            <div class="inspector-field-header">
+              <span>Drag (marine, N)</span>
+              <span class="inspector-field-value" id="veh-drag">${v ? tup(v.dragForceN) : '—'}</span>
+            </div>
           </div>
           <div class="inspector-field">
-            <span class="inspector-field-header">Added Mass Diagonal: [0.08, 0.22, 0.28] kg</span>
+            <div class="inspector-field-header">
+              <span>Righting Moment (roll/pitch/yaw, N\u00B7m)</span>
+              <span class="inspector-field-value" id="veh-righting">${v ? tup(v.restoringTorqueNm, 5) : '—'}</span>
+            </div>
+          </div>
+          <div class="inspector-field">
+            <div class="inspector-field-header">
+              <span>Inertia Tensor (roll/pitch/yaw, kg\u00B7m\u00B2)</span>
+              <span class="inspector-field-value" id="veh-inertia">${v ? tup(v.inertiaBody, 7) : '—'}</span>
+            </div>
+          </div>
+          <div class="inspector-field">
+            <div class="inspector-field-header">
+              <span>Added Mass Diagonal (kg)</span>
+              <span class="inspector-field-value" id="veh-added-mass">${v ? tup(v.addedMassBody, 4) : '—'}</span>
+            </div>
+          </div>
+          <div class="inspector-field">
+            <div class="inspector-field-header">
+              <span>Tether</span>
+              <span class="inspector-field-value" id="veh-tether">${v ? (v.tetherAttached ? 'Attached' : 'Free swimming') : '—'}</span>
+            </div>
+          </div>
+          <div class="inspector-field">
+            <div class="inspector-field-header">
+              <span>Tank Contact</span>
+              <span class="inspector-field-value" id="veh-contact">${v ? (v.grounded ? 'Floor contact' : v.broaching ? 'At surface' : 'Free') : '—'}</span>
+            </div>
+          </div>
+          <div class="inspector-field">
+            <div class="inspector-field-header">
+              <span>Angular-Rate Clamp</span>
+              <span class="inspector-field-value" id="veh-clamp">${v ? (v.angularRateClamped ? 'ENGAGED (rate clamp)' : 'Not engaged') : '—'}</span>
+            </div>
           </div>
         </div>
       </details>

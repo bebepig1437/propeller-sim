@@ -1,7 +1,7 @@
 import './index.css';
 import * as THREE from 'three';
 import { defaultConfig } from './core/config';
-import { SimClock } from './core/clock';
+import { SimClock } from './sim/clock';
 import { GpuFluidSolver } from './fluid/gpu/gpuFluidSolver';
 import { FluidRenderer2D } from './fluid/FluidRenderer2D';
 import { AppRenderer } from './render/renderer';
@@ -11,7 +11,7 @@ import { buildSimLayout } from './ui/layout';
 import { SimHeader, DEFAULT_PRESETS, type RunState } from './ui/header';
 import { SimPalette } from './ui/palette';
 import { StageOverlays } from './ui/stageOverlays';
-import { SimInspector } from './ui/inspector';
+import { SimInspector, type VehicleTelemetryView } from './ui/inspector';
 import { SimHudStrip, type HudMetricsData } from './ui/hud';
 import { PropellerShaft, type PropellerMaterial } from './prop/rigidbody';
 import { solveBEMT } from './prop/bemt';
@@ -23,6 +23,15 @@ import { HullObstacle } from './fluid/hull';
 import { PropellerArray, type VehiclePropulsionSummary } from './prop/array';
 import { OverlaySystem, DEFAULT_OVERLAY_STATE, type OverlayState, type OverlayUpdateContext, type ThrustCurvePoint } from './render/overlays';
 import { ControlPanel } from './ui/panel';
+import { VehicleBody } from './vehicle/body';
+import {
+  stepVehicleSubstepped,
+  DEFAULT_TANK_BOUNDARIES,
+  type IntegratorTelemetry,
+  type TetherParams
+} from './vehicle/integrator';
+import { computeInterpolatedPose, type InterpolatedPose } from './sim/interpolation';
+import { VehicleFluidCoupler } from './vehicle/coupling';
 
 export class App {
   private clock!: SimClock;
@@ -33,6 +42,45 @@ export class App {
 
   // Phase 5b Propeller Array & Torque Ledger
   public propArray = new PropellerArray();
+
+  // Phase 6b Vehicle Rigid Body + Buoyancy + two-way fluid coupling
+  public vehicle = new VehicleBody(defaultConfig.vehicle);
+  public vehicleCoupler = new VehicleFluidCoupler({
+    gridCenter: new THREE.Vector3(0, 0, 0),
+    gridDxM: 0.0015,
+    depthM: 0.042,
+    fluidDensity: defaultConfig.vehicle.fluidDensityKgM3,
+    inflowRelaxation: 0.5,
+    injectionRadiusCells: 14,
+    // Plume is laid down one rotor radius (≈21 mm ≈ 14 cells) downstream so a
+    // rotor never samples its own exhaust back as a tailwind.
+    injectionOffsetCells: 14,
+    enabled: true
+  });
+  public vehicleTelemetry: IntegratorTelemetry | null = null;
+  public vehicleRenderPose: InterpolatedPose | null = null;
+  public vehicleTether: TetherParams = {
+    attached: defaultConfig.vehicle.tetherAttached,
+    anchorWorld: [...defaultConfig.vehicle.tetherAnchorWorld] as [number, number, number],
+    stiffnessNm: defaultConfig.vehicle.tetherStiffnessNm,
+    dampingNPerMs: defaultConfig.vehicle.tetherDamping
+  };
+  /** Ambient in-plane flow at the vehicle CoG (world frame), sampled each step. */
+  private vehicleAmbientFlowWorld = new THREE.Vector3();
+  private scratchVehicleWorldVelocity = new THREE.Vector3();
+  /** Live marine-ordered thruster input, mirrored into the overlays/inspector. */
+  public vehicleForceMarineN: [number, number, number] = [0, 0, 0];
+  public vehicleMomentMarineNm: [number, number, number] = [0, 0, 0];
+  /** Phase 6b Tweakpane editable initial pose / tether anchor (marine order). */
+  public vehicleInit = {
+    surgeM: 0.0,
+    swayM: 0.0,
+    heaveM: -0.1,
+    yawDeg: 0.0,
+    tetherAnchorSurgeM: defaultConfig.vehicle.tetherAnchorWorld[0],
+    tetherAnchorSwayM: defaultConfig.vehicle.tetherAnchorWorld[1],
+    tetherAnchorHeaveM: defaultConfig.vehicle.tetherAnchorWorld[2]
+  };
 
   // Phase 6 Overlay System & Tweakpane
   public overlaySystem!: OverlaySystem;
@@ -63,6 +111,9 @@ export class App {
   private frameCount = 0;
   private lastFpsUpdateTime = performance.now();
   private lastRenderTime = performance.now();
+  private vehiclePosePrevious: InterpolatedPose = { position: [0, 0, 0], yawRad: 0, scale: 1 };
+  private vehiclePoseCurrent: InterpolatedPose = { position: [0, 0, 0], yawRad: 0, scale: 1 };
+  private vehicleInterpolatedPose: InterpolatedPose = { position: [0, 0, 0], yawRad: 0, scale: 1 };
 
   // Active Operating State
   private activePresetKey = 'breakout';
@@ -171,7 +222,7 @@ export class App {
     // 4. Measure reference benchmark ms at 256x128 CPU
     this.measureCpuReferenceBenchmark();
 
-    // 5. Initialize Fixed-Timestep Simulation Clock (60 Hz, max 5 substeps)
+    // 5. Initialize Fixed-Timestep Simulation Clock (60 Hz, max 4 substeps)
     this.clock = new SimClock(defaultConfig.clock.fixedDeltaTime, defaultConfig.clock.maxSubsteps);
 
     // 6. Initialize GPU Timer
@@ -250,6 +301,25 @@ export class App {
       const valEl = document.querySelector('#val-th-stator-inc');
       if (valEl) valEl.textContent = `${incDeg.toFixed(1)}°`;
     };
+    // Phase 6b — mount the vehicle body with direct-manipulation handles
+    const vehicle3D = this.renderer.attachVehicle3D(defaultConfig.vehicle);
+    this.renderer.onVehicleSelected = () => {
+      this.inspector.setSelection({ type: 'vehicle' });
+      this.renderer.prop3D?.setSelected(false);
+    };
+    this.renderer.onVehiclePoseChanged = (position, yawRad) => {
+      // Direct manipulation writes position + yaw only: pitch and roll are owned
+      // by the buoyancy model and are never user-set.
+      this.vehicle.reset([position.x, position.y, position.z], yawRad);
+      this.vehicleTelemetry = null;
+    };
+    this.renderer.onVehiclePoseCommit = () => {
+      this.syncVehicleInitFromBody();
+      this.controlPanel?.refreshVehicleGroup();
+    };
+    this.applyVehicleInitPose();
+    vehicle3D.setSelected(true);
+
     this.renderer.onRemoveThruster = () => {
       const selIdx = this.palette.selectedThruster;
       if (this.propArray.thrusters.length > 1) {
@@ -271,6 +341,10 @@ export class App {
         this.renderer.resetOrbitView();
       },
       onResetPose: () => {
+        // Phase 6b: Reset Pose is a palette action — return the vehicle to its
+        // configured initial pose and reframe the camera on it.
+        this.applyVehicleInitPose();
+        this.renderer.vehicle3D?.commitPose();
         this.renderer.resetOrbitView();
       },
       onSelectThruster: (idx) => {
@@ -482,6 +556,25 @@ export class App {
       {
         onInjectBurst: () => this.fluidSolver.jet.triggerBurst(this.fluidSolver.grid, 3.2),
         onResetFluid: () => this.fluidSolver.grid.resetAll(),
+        onVehicleInitPoseChange: () => {
+          this.applyVehicleInitPose();
+          this.renderer.vehicle3D?.commitPose();
+        },
+        onVehicleResetPose: () => {
+          this.applyVehicleInitPose();
+          this.renderer.vehicle3D?.commitPose();
+          this.renderer.resetOrbitView();
+        },
+        onVehicleTetherChange: () => {
+          this.vehicleTether.attached = defaultConfig.vehicle.tetherAttached;
+          this.vehicleTether.stiffnessNm = defaultConfig.vehicle.tetherStiffnessNm;
+          this.vehicleTether.dampingNPerMs = defaultConfig.vehicle.tetherDamping;
+        },
+        onVehicleTunablesChange: () => {
+          // Drag / added-mass / clamp edits re-derive the body's effective
+          // inertia and damping without touching its solved state.
+          this.vehicle.applyTunables(defaultConfig.vehicle);
+        },
         onOverlayToggle: (key, active) => {
           this.overlayState[key] = active;
           this.overlaySystem.setVisible(key, active);
@@ -491,7 +584,8 @@ export class App {
         }
       },
       this.overlayState,
-      this.overlaySystem.tunables
+      this.overlaySystem.tunables,
+      this.vehicleInit
     );
     const inspectorHost = document.createElement('div');
     inspectorHost.className = 'tweakpane-host';
@@ -629,13 +723,22 @@ export class App {
         this.motorTemp_C = motor0.windingTempC;
 
         // 4. Propeller -> Fluid Coupling: inject momentum & tip vortex body forces
-        const couplingTelemetry = this.coupler.injectCouplingForces(this.fluidSolver.grid, bemt, dt);
-
-        // 5. Downstream Hull Obstacle Drag
+        const couplingTelemetry = this.coupler.injectCouplingForces(this.fluidSolver.grid, bemt, dt);        // 5. Downstream Hull Obstacle Drag
         this.hull.applyDrag(this.fluidSolver.grid, dt);
 
-        // 6. Step Fluid Solver
-        this.fluidSolver.step(dt);
+        // 6. Vehicle → fluid coupling FIRST: sample the advance speed at every
+        //    rotor disk and the ambient in-plane flow at the vehicle CoG, so the
+        //    BEMT solve below sees the field the body is actually sitting in.
+        const vehicleAdvances = this.vehicleCoupler.update(
+          this.fluidSolver.grid,
+          this.vehicle,
+          this.propArray.thrusters,
+          this.vehicleAmbientFlowWorld
+        );
+
+        // 7. Advance the vehicle rigid body (2× substep) against the pre-step field.
+        // 8. Advance the fluid solver (1×) last, so the wake evolves after the
+        //    body and thruster sources have been applied this substep.
 
         // 7. Evaluate Multi-Propeller Array & Torque Ledger (Phase 5b)
         if (this.propArray.thrusters.length > 0) {
@@ -648,10 +751,66 @@ export class App {
         // is the sampled inflow over the disc; when it is ~0 (bollard) the
         // ledger returns valid=false / NaN roll rates instead of pretending U=1.
         const arraySummary = this.propArray.evaluate(
-          undefined, undefined, undefined,
+          undefined,
+          vehicleAdvances,
+          [
+            this.vehicle.angularVelocityBodyRadS[0],
+            this.vehicle.angularVelocityBodyRadS[1],
+            this.vehicle.angularVelocityBodyRadS[2]
+          ],
           advanceSpeed > 1e-6 ? advanceSpeed : 0.0
         );
         this.lastAdvanceSpeedMs = advanceSpeed;
+
+        // 7. Vehicle rigid body: gravity, buoyancy, thrust, drag, tether.
+        //    Substepped at vehicleSubstepDivider × the fluid rate (2×, i.e.
+        //    1/120 s) with thrust held constant across substeps, which damps the
+        //    fluid ↔ vehicle ↔ BEMT feedback loop (see integrator.ts header).
+        this.vehicleForceMarineN = [
+          arraySummary.totalForceN[0],
+          arraySummary.totalForceN[1],
+          arraySummary.totalForceN[2]
+        ];
+        this.vehicleMomentMarineNm = [
+          arraySummary.totalMomentNm[0],
+          arraySummary.totalMomentNm[1],
+          arraySummary.totalMomentNm[2]
+        ];
+        this.vehicleTether.attached = defaultConfig.vehicle.tetherAttached;
+        this.vehicleTether.stiffnessNm = defaultConfig.vehicle.tetherStiffnessNm;
+        this.vehicleTether.dampingNPerMs = defaultConfig.vehicle.tetherDamping;
+        // Tweakpane anchor is marine-ordered; the tether acts in the world frame.
+        this.vehicleTether.anchorWorld = [
+          this.vehicleInit.tetherAnchorSwayM,
+          this.vehicleInit.tetherAnchorHeaveM,
+          this.vehicleInit.tetherAnchorSurgeM
+        ];
+        this.vehiclePosePrevious = this.vehiclePoseCurrent;
+        this.vehicleTelemetry = stepVehicleSubstepped(
+          this.vehicle,
+          dt,
+          defaultConfig.vehicle.vehicleSubstepDivider,
+          { forceBodyMarine: this.vehicleForceMarineN, momentBodyMarine: this.vehicleMomentMarineNm },
+          undefined,
+          DEFAULT_TANK_BOUNDARIES,
+          this.vehicleTether,
+          [this.vehicleAmbientFlowWorld.x, this.vehicleAmbientFlowWorld.y, this.vehicleAmbientFlowWorld.z]
+        );
+        this.vehiclePoseCurrent = {
+          position: [this.vehicle.position.x, this.vehicle.position.y, this.vehicle.position.z],
+          yawRad: this.vehicle.getEulerDegrees().yawDeg * (Math.PI / 180),
+          scale: 1
+        };
+
+        // 8. Re-inject the vehicle's thrust as a slipstream in the grid. This
+        //    must run before the fluid step below, so the wake carries the
+        //    impulse within the same physics substep.
+        this.vehicleCoupler.injectSlipstream(this.fluidSolver.grid, this.vehicle, arraySummary, dt);
+
+        // 7b. Advance the fluid solver (advection + pressure projection) LAST,
+        //    completing the directive step order: sample → BEMT → apply →
+        //    inject → vehicle 2× → fluid 1×.
+        this.fluidSolver.step(dt);
 
         // Update Live Physical Metrics
         this.metricsData.thrust_N = arraySummary.totalForceN[0];
@@ -699,7 +858,7 @@ export class App {
     this.overlayCtx.grid = grid;
     this.overlayCtx.gridDxM = this.coupler.config.gridDxM;
     this.overlayCtx.gridCenter.set(0, 0, 0);
-    this.overlayCtx.vehicle = null;
+    this.overlayCtx.vehicle = this.vehicle;
     // Directive 1: overlays consume the LIVE forward speed; at rest (0) the
     // ledger returns valid=false with NaN roll rates, which the roll needle
     // treats as "no prediction" rather than a silently speed-anchored value.
@@ -729,6 +888,19 @@ export class App {
 
     // 2. Render 2D Eulerian Cutaway Canvas
     this.fluidRenderer.render(this.fluidSolver.grid);
+
+    // 2b. Mirror the interpolated vehicle pose into the stage: alpha blends the
+    //     previous and current physics states without mutating either (Directive
+    //     3, State Interpolation). While paused the current pose is used verbatim
+    //     so direct-manipulation handles keep tracking the body.
+    const clockAlpha = this.runState === 'running' ? this.clock.getAlpha() : 0;
+    this.vehicleInterpolatedPose = computeInterpolatedPose(
+      this.vehiclePosePrevious,
+      this.vehiclePoseCurrent,
+      clockAlpha
+    );
+    this.vehicleRenderPose = this.vehicleInterpolatedPose;
+    this.renderer.vehicle3D?.setInterpolatedPose(this.vehicleInterpolatedPose);
 
     // 3. Render 3D Water Surface & Propeller Scene
     this.gpuTimer.begin();
@@ -769,6 +941,71 @@ export class App {
       this.metricsData.netTorqueVector_Nm = staticSummary.totalMomentNm;
     }
     this.hudStrip.update(this.metricsData, currentTimeMs);
+
+    // 6. Context-sensitive inspector telemetry. Position/velocity live in the
+    //    inspector, NOT the HUD strip (which already carries the at-a-glance
+    //    numbers and is deliberately left unchanged by Phase 6b).
+    this.inspector.setVehicleTelemetry(this.buildVehicleTelemetryView());
+  }
+
+  /** Marine (surge, sway, heave) → world (x = sway, y = heave, z = surge). */
+  private static marineToWorld(surge: number, sway: number, heave: number): [number, number, number] {
+    return [sway, heave, surge];
+  }
+
+  private applyVehicleInitPose(): void {
+    const { surgeM, swayM, heaveM, yawDeg } = this.vehicleInit;
+    const [wx, wy, wz] = App.marineToWorld(surgeM, swayM, heaveM);
+    this.vehicle.reset([wx, wy, wz], (yawDeg * Math.PI) / 180);
+    this.vehicleTelemetry = null;
+    this.renderer.vehicle3D?.setPose(this.vehicle.position, this.vehicle.quaternion);
+  }
+
+  private syncVehicleInitFromBody(): void {
+    const p = this.vehicle.position;
+    this.vehicleInit.swayM = p.x;
+    this.vehicleInit.heaveM = p.y;
+    this.vehicleInit.surgeM = p.z;
+    this.vehicleInit.yawDeg = this.vehicle.getEulerDegrees().yawDeg;
+  }
+
+  private buildVehicleTelemetryView(): VehicleTelemetryView {
+    const v = this.vehicle;
+    const euler = v.getEulerDegrees();
+    const t = this.vehicleTelemetry;
+    const c = defaultConfig.vehicle;
+    const worldVelocity = v.worldVelocity(this.scratchVehicleWorldVelocity);
+    return {
+      positionWorldM: [v.position.x, v.position.y, v.position.z],
+      velocityWorldMs: [worldVelocity.x, worldVelocity.y, worldVelocity.z],
+      velocityBodyMs: [v.velocityBodyMs[0], v.velocityBodyMs[1], v.velocityBodyMs[2]],
+      eulerDeg: euler,
+      ratesRadS: [
+        v.angularVelocityBodyRadS[0],
+        v.angularVelocityBodyRadS[1],
+        v.angularVelocityBodyRadS[2]
+      ],
+      buoyancyForceN: v.buoyancyForces.netBuoyancyForceN,
+      netVerticalForceN: t ? t.appliedForceBodyN[2] : 0,
+      dragForceN: t ? t.dragForceBodyN : [0, 0, 0],
+      restoringTorqueNm: t ? t.restoringTorqueBodyNm : [0, 0, 0],
+      thrustForceMarineN: this.vehicleForceMarineN,
+      thrustMomentMarineNm: this.vehicleMomentMarineNm,
+      staticStabilityMm: c.cobAboveCogMm,
+      dryMassG: v.dryMassKg * 1e3,
+      displacedVolumeCm3: c.displacedVolumeCm3,
+      inertiaBody: v.rigidBodyInertiaKgM2,
+      addedMassBody: [
+        v.spatialMass.addedTranslationalKg[0],
+        v.spatialMass.addedTranslationalKg[1],
+        v.spatialMass.addedTranslationalKg[2]
+      ],
+      rollDeviationDegPerM: this.metricsData.rollRatePrediction_deg_m ?? NaN,
+      tetherAttached: defaultConfig.vehicle.tetherAttached,
+      grounded: t?.isGrounded ?? false,
+      broaching: t?.isBroaching ?? false,
+      angularRateClamped: t?.angularRateClamped ?? false
+    };
   }
 
   private exportTelemetryCsv(): void {
