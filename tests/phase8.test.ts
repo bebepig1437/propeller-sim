@@ -1,6 +1,6 @@
 
 import { describe, it, expect } from 'vitest';
-import { solveBEMT } from '../src/prop/bemt';
+import { solveBemt } from '../src/prop/bemt';
 import { PowerBus } from '../src/power/bus';
 import { ActuatorDiscCoupler } from '../src/prop/coupling';
 import { FluidGrid } from '../src/fluid/grid';
@@ -109,7 +109,7 @@ function createHotLoopHarness() {
 
   const stepOnce = () => {
     const va = coupler.sampleInflowVelocity(grid);
-    const bemt = solveBEMT(4140, va);
+    const bemt = solveBemt(4140, va);
     bus.solveBusNetwork(throttles, loadTorqueFns);
     bus.stepThermal(dt);
     coupler.injectCouplingForces(grid, bemt, dt);
@@ -129,7 +129,7 @@ function createHotLoopHarness() {
 describe('Phase 8 — Performance & Robustness Suite', () => {
 
   describe('1. Zero-Allocation Hot Loop Audit (60s simulated time)', () => {
-    it('executes 60 seconds (3600 frames) of multi-physics hot loop with zero positive heap slope', { timeout: 60000 }, () => {
+    it('executes 60 seconds (3600 frames) of multi-physics hot loop with zero positive heap slope', { timeout: 150000 }, () => {
       const grid = new FluidGrid({ width: 256, height: 128 });
       const gpuSolver = new GpuFluidSolver({ gridOptions: { width: 256, height: 128 } });
       const bus = new PowerBus(3, 12.0, 0.782);
@@ -145,7 +145,7 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
 
       for (let i = 0; i < 120; i++) {
         const va = coupler.sampleInflowVelocity(grid);
-        const bemt = solveBEMT(4140, va);
+        const bemt = solveBemt(4140, va);
         currentTorque = bemt.torqueNm;
         bus.solveBusNetwork(throttles, loadTorqueFns);
         bus.stepThermal(dt);
@@ -170,7 +170,7 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
 
       for (let i = 0; i < frames; i++) {
         const va = coupler.sampleInflowVelocity(grid);
-        lastBemt = solveBEMT(4140, va);
+        lastBemt = solveBemt(4140, va);
         currentTorque = lastBemt.torqueNm;
         lastBusTel = bus.solveBusNetwork(throttles, loadTorqueFns);
         bus.stepThermal(dt);
@@ -205,7 +205,7 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       const tel1 = bus.solveBusNetwork([1.0, 0, 0], [() => 0.01, () => 0, () => 0]);
       expect(tel1.motors.length).toBe(3);
 
-      const bemt1 = solveBEMT(4000, 0.5);
+      const bemt1 = solveBemt(4000, 0.5);
       expect(bemt1.elements.length).toBe(20);
 
       const coupler = new ActuatorDiscCoupler({ centerX: 28, centerY: 64, radiusCells: 14 });

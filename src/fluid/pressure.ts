@@ -297,4 +297,10 @@ export function projectVelocity(
   return lastResult;
 }
 
-export const solvePressure = solvePressurePoisson;
+export function solvePressure(
+  grid: FluidGrid,
+  iterations = 40,
+  boundary?: BoundaryHandler
+): PressureSolveResult {
+  return solvePressurePoisson(grid, iterations, boundary);
+}

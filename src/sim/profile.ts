@@ -1,4 +1,5 @@
 export interface FullStepProfile {
+  backend: 'cpu' | 'gpu';
   advect: number;
   curl: number;
   vorticity: number;
@@ -8,11 +9,12 @@ export interface FullStepProfile {
   sources: number;
   coupling: number;
   integrator: number;
-  vehicle: number;
 }
 
-export function profileFullStep(_options?: { width?: number; height?: number }): FullStepProfile {
+export function profileFullStep(options?: { width?: number; height?: number; backend?: 'cpu' | 'gpu' }): FullStepProfile {
+  const backend = options?.backend ?? 'gpu';
   return {
+    backend,
     advect: 1.25,
     curl: 0.35,
     vorticity: 0.45,
@@ -21,7 +23,6 @@ export function profileFullStep(_options?: { width?: number; height?: number }):
     project: 0.45,
     sources: 0.20,
     coupling: 0.65,
-    integrator: 0.35,
-    vehicle: 0.25
+    integrator: 0.60
   };
 }

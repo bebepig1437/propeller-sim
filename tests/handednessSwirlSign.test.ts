@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FluidSolver } from '../src/fluid/FluidSolver';
 import { ActuatorDiscCoupler } from '../src/prop/coupling';
-import { solveBEMT } from '../src/prop/bemt';
+import { solveBemt } from '../src/prop/bemt';
 import { PropellerArray } from '../src/prop/array';
 
 describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
@@ -20,7 +20,7 @@ describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
       radiusCells,
       orientationRad: 0.0 
     });
-    const bemtCW = solveBEMT(4140, 0, { handedness: 'CW' });
+    const bemtCW = solveBemt(4140, 0, { handedness: 'CW' });
     couplerCW.injectCouplingForces(solverCW.grid, bemtCW, dt, -1);
 
     const solverCCW = new FluidSolver({ gridOptions: { width: W, height: H } });
@@ -30,7 +30,7 @@ describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
       radiusCells,
       orientationRad: 0.0
     });
-    const bemtCCW = solveBEMT(4140, 0, { handedness: 'CCW' });
+    const bemtCCW = solveBemt(4140, 0, { handedness: 'CCW' });
     couplerCCW.injectCouplingForces(solverCCW.grid, bemtCCW, dt, +1);
 
     const sampleY = centerY + Math.round(radiusCells * 0.7);

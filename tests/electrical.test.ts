@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DCMotorModel, MABUCHI_RC280RA_SPECS, solveMotorOperatingPoint } from '../src/motor/motor';
+import { DCMotorModel, MABUCHI_RC280RA_SPECS, solveMotorOperatingPoint } from '../src/prop/motor';
 import { calculateTetherResistance, calculateTetherResistanceFromMeters, calculateTetherState, AWG_RESISTANCE_OHM_PER_FT } from '../src/power/tether';
 import { PowerBus } from '../src/power/bus';
 

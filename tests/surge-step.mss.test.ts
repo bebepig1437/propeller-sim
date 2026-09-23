@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { stepSurgeManeuver } from '../src/vehicle/integrator';
 import { MSS_REFERENCE } from './fixtures/mss-step-surge';
 
-describe('Coriolis enabled: step-surge matches MSS reference', () => {
+describe('Step-surge maneuver matches MSS 1-DOF reference', () => {
   it('final velocity within 5%', () => {
     const sim = stepSurgeManeuver({ durationS: 10, dt: 1 / 60, forceN: 1.0 });
     const err = Math.abs(sim.finalVelocityMs - MSS_REFERENCE.finalVelocityMs) / MSS_REFERENCE.finalVelocityMs;

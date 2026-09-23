@@ -6,7 +6,7 @@ import { parseSimStateFromUrl, serializeSimStateToUrl } from "./core/urlState";
 import './index.css';
 import * as THREE from 'three';
 import { defaultConfig, DEBUG as debug } from './core/config';
-import { SimClock } from './sim/clock';
+import { SimClock } from './core/clock';
 import { GpuFluidSolver } from './fluid/gpu/gpuFluidSolver';
 import { FluidRenderer2D } from './fluid/FluidRenderer2D';
 import { AppRenderer } from './render/renderer';
@@ -22,7 +22,7 @@ import { TelemetryRecorder } from './telemetry/recorder';
 import { type SpecStatus } from './types/telemetry';
 import { applyPresetToState, createDefaultPresetState, tickThermalBurst, type PresetRuntimeState } from './core/presetState';
 import { PropellerShaft, type PropellerMaterial } from './prop/rigidbody';
-import { solveBEMT } from './prop/bemt';
+import { solveBemt } from './prop/bemt';
 import { getPropDesign } from './prop/designs/index';
 import { PowerBus } from './power/bus';
 import { calculateTetherResistanceFromMeters } from './power/tether';
@@ -965,7 +965,7 @@ export class App {
         curve.push({ J, thrustN: 0 });
         continue;
       }
-      const bemt = solveBEMT(Math.min(8000, rpm), va, {
+      const bemt = solveBemt(Math.min(8000, rpm), va, {
         design,
         material: this.activeMaterial,
         handedness: this.activeHandedness
@@ -994,7 +994,7 @@ export class App {
 
 
         const design = getPropDesign(this.activeDesignId);
-        const bemt = solveBEMT(this.shaft.currentRpm, advanceSpeed, {
+        const bemt = solveBemt(this.shaft.currentRpm, advanceSpeed, {
           design,
           material: this.activeMaterial,
           handedness: this.activeHandedness,

@@ -32,14 +32,15 @@ export interface GpuCompareMetrics {
   rmsDiff: number;
 }
 
+export type SlotState = 'idle' | 'inflight' | 'ready' | 'consumed';
+
 export interface ReadbackSlot {
   u: Float32Array;
   v: Float32Array;
   dye: Float32Array;
-  inFlight: boolean;
-  ready: boolean;
-  pending: boolean;
+  state: SlotState;
   startTime: number;
+  dispatchIndex: number;
 }
 
 export interface GpuFluidSolverOptions extends FluidSolverParams {
@@ -57,8 +58,9 @@ export class GpuFluidSolver {
   public readbackLatencyMs = 0;
   public deviceLossCount = 0;
   public useAsyncReadback = true;
+  public readonly readbackRingSize = 3;
   private readbackRing: ReadbackSlot[] = [];
-  private currentRingIndex = 0;
+  private dispatchCount = 0;
   private syncReadbackResult: { u: Float32Array; v: Float32Array; dye: Float32Array } = {
     u: new Float32Array(0),
     v: new Float32Array(0),
@@ -153,14 +155,13 @@ export class GpuFluidSolver {
     this.divAttr = new StorageBufferAttribute(new Float32Array(size), 1);
     this.pAttr = new StorageBufferAttribute(new Float32Array(size), 1);
         this.pPrevAttr = new StorageBufferAttribute(new Float32Array(size), 1);
-    this.readbackRing = [0, 1, 2].map(() => ({
+    this.readbackRing = Array.from({ length: this.readbackRingSize }, () => ({
       u: new Float32Array(size),
       v: new Float32Array(size),
       dye: new Float32Array(size),
-      inFlight: false,
-      ready: false,
-      pending: false,
-      startTime: 0
+      state: 'idle',
+      startTime: 0,
+      dispatchIndex: 0
     }));
 
     this.sourcesNode = createSourcesComputeNode(width, height, {
@@ -364,16 +365,20 @@ export class GpuFluidSolver {
 
       const tRead0 = performance.now();
       if (this.useAsyncReadback && this.renderer && typeof (this.renderer as any).getArrayBufferAsync === "function") {
-        const slot = this.readbackRing[this.currentRingIndex % 3];
-        this.currentRingIndex++;
-        if (slot.ready) {
+        this.dispatchCount++;
+        for (const s of this.readbackRing) {
+          if (s.state === 'consumed') s.state = 'idle';
+        }
+        const slot = this.readbackRing[(this.dispatchCount - 1) % this.readbackRingSize];
+        slot.dispatchIndex = this.dispatchCount;
+        slot.startTime = performance.now();
+        if (slot.state === 'ready') {
           this.cpuFallback.grid.u.set(slot.u);
           this.cpuFallback.grid.v.set(slot.v);
           this.cpuFallback.grid.dye.set(slot.dye);
         }
-        if (!slot.inFlight) {
-          slot.inFlight = true;
-          slot.startTime = performance.now();
+        if (slot.state !== 'inflight') {
+          slot.state = 'inflight';
           Promise.all([
             (this.renderer as any).getArrayBufferAsync(this.uAttr),
             (this.renderer as any).getArrayBufferAsync(this.vAttr),
@@ -382,11 +387,10 @@ export class GpuFluidSolver {
             slot.u.set(new Float32Array(uBuf));
             slot.v.set(new Float32Array(vBuf));
             slot.dye.set(new Float32Array(dyeBuf));
-            slot.inFlight = false;
-            slot.ready = true;
+            slot.state = 'ready';
             this.readbackLatencyMs = performance.now() - slot.startTime;
           }).catch(() => {
-            slot.inFlight = false;
+            slot.state = 'idle';
           });
         }
       } else {
@@ -413,6 +417,20 @@ export class GpuFluidSolver {
     const t0 = performance.now();
     const metrics = this.cpuFallback.step(dt);
     this.readbackSync();
+
+    this.dispatchCount++;
+    for (const s of this.readbackRing) {
+      if (s.state === 'consumed') s.state = 'idle';
+    }
+    const slot = this.readbackRing[(this.dispatchCount - 1) % this.readbackRingSize];
+    slot.dispatchIndex = this.dispatchCount;
+    slot.startTime = performance.now();
+    slot.u.set(this.cpuFallback.grid.u);
+    slot.v.set(this.cpuFallback.grid.v);
+    slot.dye.set(this.cpuFallback.grid.dye);
+    slot.state = 'ready';
+    this.readbackLatencyMs = performance.now() - slot.startTime;
+
     const total = performance.now() - t0;
 
     this.passTimings.submitMs = 0;
@@ -694,11 +712,23 @@ export class GpuFluidSolver {
     return this.step(dt);
   }
 
-  public consumeReadback(): { u: Float32Array; v: Float32Array; dye: Float32Array; pending: boolean } | null {
-    const slot = this.readbackRing[(this.currentRingIndex + 2) % 3];
-    if (slot && slot.ready && !slot.pending && !slot.inFlight) {
-      return { u: slot.u, v: slot.v, dye: slot.dye, pending: false };
+  public consumeReadback(): { u: Float32Array; v: Float32Array; dye: Float32Array; dispatchIndex: number; state?: SlotState } | null {
+    let bestSlot: ReadbackSlot | null = null;
+    for (const slot of this.readbackRing) {
+      if (slot.state === 'ready') {
+        if (!bestSlot || slot.dispatchIndex < bestSlot.dispatchIndex) {
+          bestSlot = slot;
+        }
+      }
     }
-    return null;
+    if (!bestSlot) return null;
+    bestSlot.state = 'consumed';
+    return {
+      u: bestSlot.u,
+      v: bestSlot.v,
+      dye: bestSlot.dye,
+      dispatchIndex: bestSlot.dispatchIndex,
+      state: 'ready'
+    };
   }
 }

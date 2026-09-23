@@ -489,11 +489,25 @@ export class SimHudStrip {
   }
 }
 
-export function getDebugHudChannels(): string[] {
+export type DebugHudChannelId = 'ledger.qNet' | 'integrator.appliedTorque';
+
+export interface DebugHudChannel {
+  id: DebugHudChannelId;
+  read: () => number;
+}
+
+const debugChannelValues: Record<DebugHudChannelId, number> = {
+  'ledger.qNet': 0.0,
+  'integrator.appliedTorque': 0.0
+};
+
+export function updateDebugHudValues(values: Partial<Record<DebugHudChannelId, number>>): void {
+  Object.assign(debugChannelValues, values);
+}
+
+export function getDebugHudChannels(): Array<DebugHudChannel> {
   return [
-    "ledger.qNet",
-    "integrator.appliedTorque",
-    "motor.current",
-    "fluid.maxVelocity"
+    { id: 'ledger.qNet', read: () => debugChannelValues['ledger.qNet'] },
+    { id: 'integrator.appliedTorque', read: () => debugChannelValues['integrator.appliedTorque'] }
   ];
 }

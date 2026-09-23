@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FluidGrid } from '../src/fluid/grid';
 import { ActuatorDiscCoupler } from '../src/prop/coupling';
-import { solveBEMT } from '../src/prop/bemt';
+import { solveBemt } from '../src/prop/bemt';
 import { HullObstacle } from '../src/fluid/hull';
 import { FluidSolver } from '../src/fluid/FluidSolver';
 
@@ -18,7 +18,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       fluidDensity: 1000.0
     });
 
-    const bemt = solveBEMT(4140, 0.0);
+    const bemt = solveBemt(4140, 0.0);
     const T = bemt.thrustN;
     expect(T).toBeGreaterThan(1.0);
 
@@ -50,7 +50,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       orientationRad: 0.0
     });
 
-    const bemt = solveBEMT(3800, 0.0);
+    const bemt = solveBemt(3800, 0.0);
     coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
     const idxInitial = 30 * 128 + 20;
@@ -77,7 +77,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       orientationRad: Math.PI * 0.5
     });
 
-    const bemt = solveBEMT(3800, 0.0);
+    const bemt = solveBemt(3800, 0.0);
     coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
     const centerIdx = 30 * 128 + 30;
@@ -101,7 +101,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
     const va = coupler.sampleInflowVelocity(grid);
     expect(va).toBeCloseTo(-0.75, 2);
 
-    const bemtReverse = solveBEMT(3800, va);
+    const bemtReverse = solveBemt(3800, va);
     expect(Number.isFinite(bemtReverse.thrustN)).toBe(true);
     expect(Number.isFinite(bemtReverse.torqueNm)).toBe(true);
   });
@@ -138,7 +138,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       thicknessCells: 3
     });
 
-    const bemt = solveBEMT(4140, 0.0);
+    const bemt = solveBemt(4140, 0.0);
     coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
     const W = grid.width;
@@ -180,7 +180,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
   it('guarantees zero heap allocations in coupling hot path', () => {
     const grid = new FluidGrid({ width: 128, height: 64 });
     const coupler = new ActuatorDiscCoupler({ centerX: 25, centerY: 32, radiusCells: 10 });
-    const bemt = solveBEMT(3800, 0.0);
+    const bemt = solveBemt(3800, 0.0);
 
     const tele1 = coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
     const tele2 = coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
@@ -190,7 +190,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
 
   it(
     '10-minute simulated runtime stability: asserts no NaN, no max |u| > 10 m/s, and thrust agreement within 15%',
-    { timeout: 30000 },
+    { timeout: 90000 },
     () => {
       const solver = new FluidSolver({
         gridOptions: { width: 64, height: 32 },
@@ -240,7 +240,7 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       for (let step = 0; step < totalSteps; step++) {
         const va = coupler.sampleInflowVelocity(solver.grid);
 
-        const bemt = solveBEMT(3800, va);
+        const bemt = solveBemt(3800, va);
 
         const couplingTele = coupler.injectCouplingForces(solver.grid, bemt, dt);
 

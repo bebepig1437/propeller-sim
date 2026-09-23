@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { defaultConfig } from "../src/core/config";
 import { FluidSolver } from "../src/fluid/FluidSolver";
-import { solveBEMT } from "../src/prop/bemt";
+import { solveBemt } from "../src/prop/bemt";
 import { PowerBus } from "../src/power/bus";
 import { ActuatorDiscCoupler } from "../src/prop/coupling";
 import { PropellerArray } from "../src/prop/array";
@@ -34,7 +34,7 @@ export function runPhysicsTickProfiler(steps = 60, warmup = 10): StageTiming[] {
   for (let i = 0; i < warmup; i++) {
     fluidSolver.step(dt);
     const va = coupler.sampleInflowVelocity(grid);
-    const bemt = solveBEMT(4140, va);
+    const bemt = solveBemt(4140, va);
     bus.solveBusNetwork([1.0, 0.75, 0.75], [() => bemt.torqueNm, () => bemt.torqueNm, () => bemt.torqueNm]);
     coupler.injectCouplingForces(grid, bemt, dt);
     const summary = array.evaluate([1.0, 1.0, 0.0], [va, va, 0]);
@@ -53,7 +53,7 @@ export function runPhysicsTickProfiler(steps = 60, warmup = 10): StageTiming[] {
     times.B += performance.now() - t0;
 
     t0 = performance.now();
-    const bemt = solveBEMT(4140, va);
+    const bemt = solveBemt(4140, va);
     times.C += performance.now() - t0;
 
     t0 = performance.now();

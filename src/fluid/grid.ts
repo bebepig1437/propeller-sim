@@ -24,6 +24,7 @@ export class FluidGrid {
   public dyePrev: Float32Array;
 
   public curl: Float32Array;
+  public solid: Uint8Array;
 
   constructor(options?: GridOptions) {
     this.width = options?.width ?? 256;
@@ -45,6 +46,7 @@ export class FluidGrid {
     this.dyePrev = new Float32Array(this.size);
 
     this.curl = new Float32Array(this.size);
+    this.solid = new Uint8Array(this.size);
   }
 
   public reset(): void {
@@ -58,6 +60,7 @@ export class FluidGrid {
     this.dye.fill(0);
     this.dyePrev.fill(0);
     this.curl.fill(0);
+    this.solid.fill(0);
   }
 
   public idx(x: number, y: number): number {
@@ -172,11 +175,10 @@ export class FluidGrid {
     this.pressure.set(source.pressure);
     this.div.set(source.div);
     this.curl.set(source.curl);
+    if (source.solid) this.solid.set(source.solid);
   }
 }
 
-export function makeGrid(width = 256, height = 128, dx = 1.0): FluidGrid & { solid: Uint8Array } {
-  const g = new FluidGrid({ width, height, dx }) as FluidGrid & { solid: Uint8Array };
-  g.solid = new Uint8Array(width * height);
-  return g;
+export function makeGrid(width = 256, height = 128, dx = 1.0): FluidGrid {
+  return new FluidGrid({ width, height, dx });
 }

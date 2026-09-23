@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { solveBEMT } from '../src/prop/bemt';
+import { solveBemt } from '../src/prop/bemt';
 import { PropellerArray } from '../src/prop/array';
-import { DCMotorModel, MABUCHI_RC280RA_SPECS } from '../src/motor/motor';
+import { DCMotorModel, MABUCHI_RC280RA_SPECS } from '../src/prop/motor';
 import { PowerBus } from '../src/power/bus';
 import { calculateTetherState, calculateTetherResistanceFromMeters } from '../src/power/tether';
 import { defaultConfig } from '../src/core/config';
@@ -17,7 +17,7 @@ const SPEC_QUIESCENT_CURRENT_A = 0.0;
 
 function bollardThrustAtThrottle(throttle: number): number {
   const rpm = throttle * 4140;
-  return solveBEMT(rpm, 0, CANDIDATE_A_BEMT).thrustN;
+  return solveBemt(rpm, 0, CANDIDATE_A_BEMT).thrustN;
 }
 
 describe('bemt_thrust_curve', () => {
@@ -26,7 +26,7 @@ describe('bemt_thrust_curve', () => {
     const d = 0.042;
     const referenceTorqueNm = 0.024 * 1000 * n * n * d * d * d * d * d;
 
-    const result = solveBEMT(3800, 0, { ...CANDIDATE_A_BEMT, pitchMm: 28.0 });
+    const result = solveBemt(3800, 0, { ...CANDIDATE_A_BEMT, pitchMm: 28.0 });
     const bemtTorqueNm = Math.abs(result.torqueNm);
     const errorPct = (Math.abs(bemtTorqueNm - referenceTorqueNm) / referenceTorqueNm) * 100;
 
@@ -49,7 +49,7 @@ describe('bemt_thrust_curve', () => {
 
   it('keeps K_T in the small shrouded bollard band and K_Q anchored to the spec across the sweep', () => {
     for (const throttle of [0.3, 0.5, 0.75, 1.0]) {
-      const result = solveBEMT(throttle * 4140, 0, CANDIDATE_A_BEMT);
+      const result = solveBemt(throttle * 4140, 0, CANDIDATE_A_BEMT);
       expect(result.kt).toBeGreaterThan(0.08);
       expect(result.kt).toBeLessThan(0.25);
       expect(result.kq).toBeGreaterThan(0.018);
@@ -68,7 +68,7 @@ describe('bemt_thrust_curve', () => {
   it('degrades thrust monotonically toward the windmill branch as advance speed rises', () => {
     let previousThrustN = Infinity;
     for (const advanceSpeed of [0, 0.2, 0.4, 0.6, 0.9]) {
-      const result = solveBEMT(4140, advanceSpeed, CANDIDATE_A_BEMT);
+      const result = solveBemt(4140, advanceSpeed, CANDIDATE_A_BEMT);
       expect(result.thrustN).toBeLessThan(previousThrustN);
       expect(Number.isFinite(result.thrustN)).toBe(true);
       previousThrustN = result.thrustN;
@@ -99,8 +99,8 @@ describe('torque_balance', () => {
   });
 
   it('preserves exact CW/CCW torque symmetry in the single-prop solver', () => {
-    const cw = solveBEMT(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CW' });
-    const ccw = solveBEMT(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CCW' });
+    const cw = solveBemt(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CW' });
+    const ccw = solveBemt(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CCW' });
 
     expect(cw.torqueNm).toBeLessThan(0);
     expect(ccw.torqueNm).toBeGreaterThan(0);

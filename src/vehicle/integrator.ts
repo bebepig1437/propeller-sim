@@ -154,7 +154,8 @@ export function stepVehicleRigidBody(
   thrusterMoments?: Marine3,
   bounds: TankBoundaries = DEFAULT_TANK_BOUNDARIES,
   tether: TetherParams = DETACHED_TETHER,
-  ambientFlowWorld?: Marine3
+  ambientFlowWorld?: Marine3,
+  useCoriolis: boolean = true
 ): IntegratorTelemetry {
   const thrust = thrusterInputToMarine(thrusterInput, thrusterMoments);
   const spatial = vehicle.spatialMass;
@@ -191,7 +192,11 @@ export function stepVehicleRigidBody(
     worldToBodyMarine(scratchBodyVector, vehicle.quaternion, tetherForceBody);
   }
 
-  coriolisBodyForce(spatial, nu, coriolisForce);
+  if (useCoriolis) {
+    coriolisBodyForce(spatial, nu, coriolisForce);
+  } else {
+    for (let axis = 0; axis < 6; axis++) coriolisForce[axis] = 0;
+  }
 
   for (let axis = 0; axis < 3; axis++) {
     forceBody[axis] = thrust.forceMarine[axis] + damping.forceBodyN[axis] + buoyancyForceBody[axis] + tetherForceBody[axis];
@@ -326,11 +331,12 @@ export const FREE_SPACE: TankBoundaries = {
   radiusM: 1000
 };
 
+// Max surge distance at default 1 N force over 3 s is ~1.45 m, well within 1000 m FREE_SPACE radius
 export function stepSurgeManeuver(params?: { durationS?: number; dt?: number; forceN?: number }): {
   finalVelocityMs: number;
   riseTimeS: number;
 } {
-  const durationS = params?.durationS ?? 10;
+  const durationS = params?.durationS ?? 3;
   const dt = params?.dt ?? (1 / 60);
   const forceN = params?.forceN ?? 1.0;
 
@@ -361,4 +367,40 @@ export function stepSurgeManeuver(params?: { durationS?: number; dt?: number; fo
 
   const riseTimeS = crossingTime(simulated, 0.9 * finalVelocityMs) - crossingTime(simulated, 0.1 * finalVelocityMs);
   return { finalVelocityMs, riseTimeS };
+}
+
+export function runCoupledManeuver(params?: {
+  durationS?: number;
+  dt?: number;
+  surgeN?: number;
+  yawNm?: number;
+  useCoriolis?: boolean;
+}): { headingRad: number } {
+  const durationS = params?.durationS ?? 5;
+  const dt = params?.dt ?? (1 / 60);
+  const surgeN = params?.surgeN ?? 1;
+  const yawNm = params?.yawNm ?? 0.02;
+  const useCoriolis = params?.useCoriolis ?? true;
+
+  const vehicle = new VehicleBody(defaultConfig.vehicle);
+  vehicle.reset([0, 0, 0]);
+
+  const steps = Math.round(durationS / dt);
+  const scratchEuler = new THREE.Euler();
+
+  for (let s = 0; s < steps; s++) {
+    stepVehicleRigidBody(
+      vehicle,
+      dt,
+      { surgeN, yawNm },
+      undefined,
+      FREE_SPACE,
+      undefined,
+      undefined,
+      useCoriolis
+    );
+  }
+
+  scratchEuler.setFromQuaternion(vehicle.quaternion, 'YXZ');
+  return { headingRad: scratchEuler.y };
 }

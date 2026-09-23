@@ -198,23 +198,23 @@ export function cloneBEMTResult(res: BEMTResult): BEMTResult {
   };
 }
 
-export function solveBEMT(
+export function solveBemt(
   rpm: number,
   advanceSpeedMs: number,
-  params?: PropellerBEMTParams,
+  localParams?: PropellerBEMTParams,
   out?: BEMTResult
 ): BEMTResult {
-  const design = params?.design ?? CANDIDATE_A_DESIGN;
-  const D = (params?.diameterMm ?? design.diameterMm) * 1e-3;
-  const Dhub = (params?.hubDiameterMm ?? design.hubDiameterMm) * 1e-3;
-  const B = params?.blades ?? design.blades;
-  const pitchOverrideMm = params?.pitchMm;
-  const rho = params?.fluidDensity ?? 1000.0;
-  const nu = params?.kinematicViscosity ?? 1e-6;
-  const N = params?.numElements ?? 20;
-  const material = params?.material ?? 'rigid10k';
-  const handedness = params?.handedness ?? 'CW';
-  const foilProps = params?.foilProps ?? getHydrofoilProperties(design.sectionAirfoil);
+  const design = localParams?.design ?? CANDIDATE_A_DESIGN;
+  const D = (localParams?.diameterMm ?? design.diameterMm) * 1e-3;
+  const Dhub = (localParams?.hubDiameterMm ?? design.hubDiameterMm) * 1e-3;
+  const B = localParams?.blades ?? design.blades;
+  const pitchOverrideMm = localParams?.pitchMm;
+  const rho = localParams?.fluidDensity ?? 1000.0;
+  const nu = localParams?.kinematicViscosity ?? 1e-6;
+  const N = localParams?.numElements ?? 20;
+  const material = localParams?.material ?? 'rigid10k';
+  const handedness = localParams?.handedness ?? 'CW';
+  const foilProps = localParams?.foilProps ?? getHydrofoilProperties(design.sectionAirfoil);
 
   const R = D / 2.0;
   const Rhub = Dhub / 2.0;
@@ -233,8 +233,8 @@ export function solveBEMT(
     for (let i = 0; i < N; i++) {
       const r = Rhub + (i + 0.5) * dr;
       const rOverR = r / R;
-      const chord = getDesignBladeChordAt(r, design, params?.diameterMm);
-      const theta = getDesignBladePitchAngleAt(r, design, pitchOverrideMm, params?.diameterMm);
+      const chord = getDesignBladeChordAt(r, design, localParams?.diameterMm);
+      const theta = getDesignBladePitchAngleAt(r, design, pitchOverrideMm, localParams?.diameterMm);
 
       const W = Math.abs(advanceSpeedMs);
       const phi = advanceSpeedMs >= 0 ? Math.PI / 2.0 : -Math.PI / 2.0;
@@ -243,7 +243,8 @@ export function solveBEMT(
 
       const polar = evaluateSectionPolarWithReAndRoughness(alpha, re, material, foilProps);
       const qDyn = 0.5 * rho * W * W;
-      const dT = -Math.sign(advanceSpeedMs || 1) * polar.cd * qDyn * chord * dr * B;
+      const cdFinite = Number.isFinite(polar.cd) ? Math.max(0.01, polar.cd) : 0.1;
+      const dT = -Math.sign(advanceSpeedMs || 1) * cdFinite * qDyn * chord * dr * B;
       totalThrust += dT;
 
       const el = targetElements[i];
@@ -253,10 +254,10 @@ export function solveBEMT(
       el.twistDeg = (theta * 180.0) / Math.PI;
       el.inflowAngleDeg = (phi * 180.0) / Math.PI;
       el.alphaDeg = (alpha * 180.0) / Math.PI;
-      el.cl = polar.cl;
-      el.cd = polar.cd;
-      el.reynolds = re;
-      el.dT = dT;
+      el.cl = Number.isFinite(polar.cl) ? polar.cl : 0;
+      el.cd = cdFinite;
+      el.reynolds = Number.isFinite(re) ? re : 0;
+      el.dT = Number.isFinite(dT) ? dT : 0;
       el.dQ = 0;
       el.axialInducedMs = 0;
       el.tangentialInducedMs = 0;
@@ -286,8 +287,8 @@ export function solveBEMT(
   for (let i = 0; i < N; i++) {
     const r = Rhub + (i + 0.5) * dr;
     const rOverR = r / R;
-    const chord = getDesignBladeChordAt(r, design, params?.diameterMm);
-    const theta = getDesignBladePitchAngleAt(r, design, pitchOverrideMm, params?.diameterMm);
+    const chord = getDesignBladeChordAt(r, design, localParams?.diameterMm);
+    const theta = getDesignBladePitchAngleAt(r, design, pitchOverrideMm, localParams?.diameterMm);
     const solidity = (B * chord) / (2.0 * Math.PI * r);
 
     let vi = Math.max(0.05, 0.12 * omega * r);
@@ -404,15 +405,15 @@ export function solveBEMT(
     el.rOverR = rOverR;
     el.chordM = chord;
     el.twistDeg = (theta * 180.0) / Math.PI;
-    el.inflowAngleDeg = (phiConv * 180.0) / Math.PI;
-    el.alphaDeg = (alphaConv * 180.0) / Math.PI;
-    el.cl = clConv;
-    el.cd = cdConv;
-    el.reynolds = reConv;
-    el.dT = dT;
-    el.dQ = dQ;
-    el.axialInducedMs = vi;
-    el.tangentialInducedMs = viTheta;
+    el.inflowAngleDeg = Number.isFinite(phiConv) ? (phiConv * 180.0) / Math.PI : 0;
+    el.alphaDeg = Number.isFinite(alphaConv) ? (alphaConv * 180.0) / Math.PI : 0;
+    el.cl = Number.isFinite(clConv) ? clConv : 0;
+    el.cd = Number.isFinite(cdConv) ? cdConv : 0.1;
+    el.reynolds = Number.isFinite(reConv) ? reConv : 0;
+    el.dT = Number.isFinite(dT) ? dT : 0;
+    el.dQ = Number.isFinite(dQ) ? dQ : 0;
+    el.axialInducedMs = Number.isFinite(vi) ? vi : 0;
+    el.tangentialInducedMs = Number.isFinite(viTheta) ? viTheta : 0;
   }
 
   if (signRpm < 0) {
@@ -445,4 +446,3 @@ export function solveBEMT(
   return targetResult;
 }
 
-export const solveBemt = solveBEMT;
