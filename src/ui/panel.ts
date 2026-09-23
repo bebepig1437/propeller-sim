@@ -89,7 +89,6 @@ export class ControlPanel {
   private metrics: TelemetryMetrics;
   private overlayBindings: Map<keyof OverlayState, any> = new Map();
   private syncingOverlays = false;
-  private vehicleFolder: ReturnType<Pane['addFolder']> | null = null;
 
   public propState: PropellerPanelState = {
     design: 'candidateA',
@@ -125,7 +124,7 @@ export class ControlPanel {
     callbacks?: PanelCallbacks,
     overlayState?: OverlayState,
     overlayTunables?: OverlayTunables,
-    vehicleInit?: VehiclePanelState
+    _vehicleInit?: VehiclePanelState
   ) {
     this.metrics = Object.assign({ submitMs: 0, sourcesMs: 0, curlMs: 0, vorticityMs: 0, advectMs: 0, divergenceMs: 0, pressureMs: 0, projectMs: 0 }, metrics);
 
@@ -137,7 +136,7 @@ export class ControlPanel {
     const fluidFolder = this.pane.addFolder({ title: 'Fluid', expanded: true });
     fluidFolder.addBinding(config.fluid, 'viscosity', { min: 0.0, max: 0.005, step: 0.0001, label: 'Viscosity' });
     fluidFolder.addBinding(config.fluid, 'vorticityStrength', { min: 0.0, max: 8.0, step: 0.2, label: 'Vorticity' });
-    fluidFolder.addBinding(config.fluid, 'pressureIterations', { min: 5, max: 100, step: 1, label: 'Pressure Iters' });
+    fluidFolder.addBinding(config.fluid, 'pressureIterations', { min: 5, max: 100, step: 1, label: 'Pressure Iters (solve budget)' });
     fluidFolder.addBinding(config.fluid, 'inflowVelocity', { min: 0.1, max: 6.0, step: 0.1, label: 'Inflow Velocity' });
     fluidFolder.addBinding(config.fluid, 'inflowActive', { label: 'Inflow Jet Active' });
 
@@ -218,10 +217,6 @@ export class ControlPanel {
     statorFolder.addBinding(this.arrayState, 'statorIncidenceDeg', { min: -15.0, max: 15.0, step: 0.2, label: 'Incidence (°)' })
       .on('change', () => callbacks?.onArrayChange?.());
 
-    if (vehicleInit) {
-      this.buildVehicleGroup(config, vehicleInit, callbacks);
-    }
-
     if (overlayState && overlayTunables) {
       const overlayFolder = this.pane.addFolder({ title: 'Overlays', expanded: false });
 
@@ -284,89 +279,11 @@ export class ControlPanel {
     diagFolder.addBinding(this.metrics, 'projectMs', { readonly: true, label: 'Project ms', format: (v: number) => (v ?? 0).toFixed(3) });
   }
 
-  private buildVehicleGroup(
-    config: SimConfig,
-    vehicleInit: VehiclePanelState,
-    callbacks?: PanelCallbacks
-  ): void {
-    const folder = this.pane.addFolder({ title: 'Vehicle', expanded: false });
-    this.vehicleFolder = folder;
-
-    const pose = folder.addFolder({ title: 'Initial Pose', expanded: true });
-    const poseFields: [keyof VehiclePanelState, string, number, number, number][] = [
-      ['surgeM', 'Surge X_b (m)', -0.4, 0.4, 0.005],
-      ['swayM', 'Sway Y_b (m)', -0.4, 0.4, 0.005],
-      ['heaveM', 'Heave Z_b (m, up)', -0.25, 0.22, 0.005],
-      ['yawDeg', 'Yaw Z (°)', -180, 180, 1]
-    ];
-    for (const [key, label, min, max, step] of poseFields) {
-      pose.addBinding(vehicleInit, key, { min, max, step, label }).on('change', () => {
-        callbacks?.onVehicleInitPoseChange?.();
-      });
-    }
-    pose.addButton({ title: 'Reset Pose' }).on('click', () => {
-      callbacks?.onVehicleResetPose?.();
-    });
-
-    const tether = folder.addFolder({ title: 'Tether', expanded: false });
-    tether.addBinding(config.vehicle, 'tetherAttached', { label: 'Attached' }).on('change', () => {
-      callbacks?.onVehicleTetherChange?.();
-    });
-    const anchorFields: [keyof VehiclePanelState, string][] = [
-      ['tetherAnchorSurgeM', 'Anchor Surge X (m)'],
-      ['tetherAnchorSwayM', 'Anchor Sway Y (m)'],
-      ['tetherAnchorHeaveM', 'Anchor Heave Z (m)']
-    ];
-    for (const [key, label] of anchorFields) {
-      tether.addBinding(vehicleInit, key, { min: -1.2, max: 1.2, step: 0.01, label }).on('change', () => {
-        callbacks?.onVehicleTetherChange?.();
-      });
-    }
-    tether.addBinding(config.vehicle, 'tetherStiffnessNm', { min: 0.1, max: 10, step: 0.1, label: 'Stiffness k (N/m)' }).on('change', () => {
-      callbacks?.onVehicleTetherChange?.();
-    });
-    tether.addBinding(config.vehicle, 'tetherDamping', { min: 0, max: 4, step: 0.05, label: 'Damping c (N·s/m)' }).on('change', () => {
-      callbacks?.onVehicleTetherChange?.();
-    });
-
-    const drag = folder.addFolder({ title: 'Drag', expanded: false });
-    const dragFields: [keyof SimConfig['vehicle'], string, number, number, number][] = [
-      ['dragCdASurge', 'CdA Surge (m²)', 0.001, 0.05, 0.0005],
-      ['dragCdASway', 'CdA Sway (m²)', 0.001, 0.05, 0.0005],
-      ['dragCdAHeave', 'CdA Heave (m²)', 0.001, 0.08, 0.0005],
-      ['dragLinSurge', 'Linear Surge (N·s/m)', 0, 2, 0.01],
-      ['dragLinSway', 'Linear Sway (N·s/m)', 0, 2, 0.01],
-      ['dragLinHeave', 'Linear Heave (N·s/m)', 0, 2, 0.01],
-      ['rotDragLinRoll', 'Rot Linear Roll (N·m·s/rad)', 0.0005, 0.05, 0.0005],
-      ['rotDragLinPitch', 'Rot Linear Pitch', 0.0005, 0.05, 0.0005],
-      ['rotDragLinYaw', 'Rot Linear Yaw', 0.0005, 0.05, 0.0005]
-    ];
-    for (const [key, label, min, max, step] of dragFields) {
-      drag.addBinding(config.vehicle, key, { min, max, step, label }).on('change', () => {
-        callbacks?.onVehicleTunablesChange?.();
-      });
-    }
-
-    const addedMass = folder.addFolder({ title: 'Added-Mass', expanded: false });
-    const amFactors: [keyof SimConfig['vehicle'], string, number, number, number][] = [
-      ['addedMassSurgeFactor', 'Surge factor', 0, 3, 0.05],
-      ['addedMassSwayFactor', 'Sway factor', 0, 3, 0.05],
-      ['addedMassHeaveFactor', 'Heave factor', 0, 3, 0.05]
-    ];
-    for (const [key, label, min, max, step] of amFactors) {
-      addedMass.addBinding(config.vehicle, key, { min, max, step, label }).on('change', () => {
-        callbacks?.onVehicleTunablesChange?.();
-      });
-    }
-  }
-
-  public refreshVehicleGroup(): void {
-    this.vehicleFolder?.refresh();
-  }
 
   private static OVERLAY_LABELS: Record<keyof OverlayState, string> = {
     velocityVectors: 'Velocity Vectors',
     streamlines: 'Streamlines',
+    dye: 'Dye / Smoke',
     pressureHeatmap: 'Pressure Heatmap',
     vorticity: 'Vorticity',
     particles: 'Particles',

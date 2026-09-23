@@ -438,7 +438,7 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
       expect(layout.hudEl.querySelector('#hud-spec-status')?.textContent).toBe('WITHIN SPEC');
     });
 
-    it('supports pinning multiple stripchart popovers in stage corner without always-on panel', () => {
+    it('supports single-popover stripchart display closing previous popover', () => {
       const layout = buildSimLayout(root);
       const hud = new SimHudStrip(layout.hudEl, layout.stagePopoversEl);
 
@@ -448,16 +448,12 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
       expect(layout.stagePopoversEl.children.length).toBe(1);
 
       hud.togglePopover('torque');
-      expect(layout.stagePopoversEl.children.length).toBe(2);
-
-      hud.togglePopover('efficiency');
-      expect(layout.stagePopoversEl.children.length).toBe(3);
-
-      const popover = layout.stagePopoversEl.children[0] as HTMLElement;
-      const pinBtn = popover.querySelector('.stripchart-pin') as HTMLButtonElement;
-      expect(pinBtn).not.toBeNull();
-      pinBtn.click();
-      expect(pinBtn.classList.contains('is-pinned')).toBe(true);
+      expect(layout.stagePopoversEl.children.length).toBe(1);
+      const title = layout.stagePopoversEl.querySelector('.stripchart-title')?.textContent;
+      expect(title).toContain('Torque');
+      const popoverText = layout.stagePopoversEl.textContent ?? '';
+      expect(popoverText).not.toContain('4.73 N');
+      expect(popoverText).not.toContain('Thrust');
     });
   });
 
@@ -529,8 +525,8 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
     });
   });
 
-  describe('5. Tweakpane Control Panel 8-Group Structure', () => {
-    it('creates exactly the 8 grouped folders requested', () => {
+  describe('5. Tweakpane Control Panel Group Structure', () => {
+    it('creates exactly the 6 grouped folders requested', () => {
       const panel = new ControlPanel(
         defaultConfig,
         { fps: 60, frameMs: 16.6, gpuMs: 1.8 },
@@ -541,11 +537,11 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
       );
 
       const folders = panel.pane.children.filter((c: any) => c.title !== undefined).map((c: any) => c.title);
+      expect(folders.length).toBe(6);
       expect(folders).toContain('Fluid');
       expect(folders).toContain('Propeller');
       expect(folders).toContain('Electrical');
       expect(folders).toContain('Array');
-      expect(folders).toContain('Vehicle');
       expect(folders).toContain('Rendering');
       expect(folders).toContain('Diagnostics');
 

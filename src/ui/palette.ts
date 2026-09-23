@@ -39,51 +39,7 @@ export class SimPalette {
 
   public render(): void {
     this.container.innerHTML = `
-      <!-- 1. Vehicle -->
-      <div class="palette-section">
-        <span class="palette-section-title">Vehicle</span>
-        <div class="palette-btn-group">
-          <button class="palette-btn active" id="btn-load-candidate-a">
-            <span>Candidate A</span>
-            <span class="badge">3-Motor</span>
-          </button>
-          <button class="palette-btn" id="btn-reset-pose">
-            <span>Reset Pose</span>
-            <span>↺</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- 2. Thrusters Array & Presets -->
-      <div class="palette-section">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span class="palette-section-title">Thrusters</span>
-          <span style="font-family:var(--font-mono); font-size:10px; color:var(--text-secondary);">${this.thrusterCount} Active</span>
-        </div>
-        <div class="palette-segmented" id="thruster-selector-group">
-          ${Array.from({ length: this.thrusterCount }).map((_, i) => `
-            <button class="palette-segment ${i === this.selectedThruster ? 'active' : ''}" data-idx="${i}">T${i + 1}</button>
-          `).join('')}
-        </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;">
-          <button class="palette-btn" id="btn-add-thruster" style="justify-content:center;">+ Add</button>
-          <button class="palette-btn" id="btn-remove-thruster" style="justify-content:center;" ${this.thrusterCount <= 1 ? 'disabled' : ''}>− Del</button>
-        </div>
-
-        <!-- Handedness Layout Preset Dropdown -->
-        <div style="margin-top: 6px;">
-          <span style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 2px;">Handedness Preset</span>
-          <select class="palette-select" id="select-handedness-preset" style="width: 100%;">
-            <option value="alternating" ${this.handednessPreset === 'alternating' ? 'selected' : ''}>Alternating (CW, CCW, CW)</option>
-            <option value="all_cw" ${this.handednessPreset === 'all_cw' ? 'selected' : ''}>All CW (Single-Shaft)</option>
-            <option value="all_ccw" ${this.handednessPreset === 'all_ccw' ? 'selected' : ''}>All CCW</option>
-            <option value="contra_rotating_coaxial" ${this.handednessPreset === 'contra_rotating_coaxial' ? 'selected' : ''}>Contra-Rotating Coaxial (CRP)</option>
-            <option value="tandem" ${this.handednessPreset === 'tandem' ? 'selected' : ''}>Tandem Series (Additive)</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- 3. Stator Vane Recovery -->
+      <!-- 1. Stator Vane Recovery -->
       <div class="palette-section">
         <span class="palette-section-title">Torque Stator</span>
         <div class="palette-btn-group">
@@ -123,54 +79,6 @@ export class SimPalette {
   }
 
   private bindEvents(): void {
-    this.container.querySelector('#btn-load-candidate-a')?.addEventListener('click', () => {
-      this.callbacks.onLoadVehicle('candidateA');
-    });
-    this.container.querySelector('#btn-reset-pose')?.addEventListener('click', () => {
-      this.callbacks.onResetPose();
-    });
-
-    const segButtons = this.container.querySelectorAll('#thruster-selector-group button');
-    segButtons.forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const idx = parseInt((e.currentTarget as HTMLElement).dataset.idx || '0', 10);
-        this.selectedThruster = idx;
-        this.render();
-        this.callbacks.onSelectThruster(idx);
-      });
-    });
-
-    this.container.querySelector('#btn-add-thruster')?.addEventListener('click', () => {
-      if (this.thrusterCount < 6) {
-        this.thrusterCount++;
-        this.selectedThruster = this.thrusterCount - 1;
-        this.render();
-        this.callbacks.onAddThruster();
-      }
-    });
-
-    this.container.querySelector('#btn-remove-thruster')?.addEventListener('click', () => {
-      if (this.thrusterCount > 1) {
-        const idxToRemove = this.selectedThruster;
-        this.thrusterCount--;
-        this.selectedThruster = Math.max(0, this.thrusterCount - 1);
-        this.render();
-        this.callbacks.onRemoveThruster(idxToRemove);
-      }
-    });
-
-    const presetSelect = this.container.querySelector('#select-handedness-preset') as HTMLSelectElement;
-    presetSelect?.addEventListener('change', () => {
-      const p = presetSelect.value as HandednessPresetType;
-      this.handednessPreset = p;
-      if (p === 'contra_rotating_coaxial' || p === 'tandem') {
-        this.thrusterCount = 2;
-        this.selectedThruster = 0;
-        this.render();
-      }
-      this.callbacks.onHandednessPresetChange?.(p);
-    });
-
     this.container.querySelector('#btn-toggle-stator')?.addEventListener('click', () => {
       this.statorAttached = !this.statorAttached;
       this.render();
