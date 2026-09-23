@@ -54,17 +54,11 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
           </div>
         </div>
 
-        <!-- 2D Cutaway Surface (Hidden unless Cutaway View is active) -->
         <div id="fluid-cutaway-container" class="fluid-cutaway-container hidden">
-          <div class="cutaway-header">
-            <span class="cutaway-title">2D EULERIAN CUTAWAY</span>
-            <span class="cutaway-dim" id="cutaway-dim">256×128</span>
-          </div>
           <canvas id="fluid-debug-canvas" width="256" height="128"></canvas>
-          <div class="cutaway-scale">
-            <span>0.0 m/s</span>
-            <span>U/V Scalar Field</span>
-            <span>Max</span>
+          <div class="cutaway-axes-overlay" id="cutaway-axes-overlay">
+            <span class="cutaway-axis cutaway-axis-x" id="cutaway-axis-x">X: 2.40 m</span>
+            <span class="cutaway-axis cutaway-axis-y" id="cutaway-axis-y">Y: 0.50 m</span>
           </div>
         </div>
       </main>
