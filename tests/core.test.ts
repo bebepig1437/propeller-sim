@@ -12,7 +12,6 @@ describe('SimClock Fixed-Timestep Accumulator', () => {
     let substeps = 0;
     let accumulatedTime = 0;
 
-    // Advance 50 ms (~3 steps of 16.66ms)
     clock.tick(50, (dt) => {
       substeps++;
       accumulatedTime += dt;
@@ -28,13 +27,11 @@ describe('SimClock Fixed-Timestep Accumulator', () => {
     clock.start(0);
 
     let substeps = 0;
-    // Simulate a massive 500ms lag spike
     clock.tick(500, () => {
       substeps++;
     });
 
     expect(substeps).toBe(maxSubsteps);
-    // Excess time is discarded so accumulator does not blow up
     expect(clock.getSubstepsExecuted()).toBe(maxSubsteps);
   });
 
@@ -42,7 +39,6 @@ describe('SimClock Fixed-Timestep Accumulator', () => {
     const clock = new SimClock(1.0 / 60.0, 5);
     clock.start(0);
 
-    // 25ms advance -> 1 full step (16.66ms) + ~8.33ms remaining (alpha ~ 0.5)
     const alpha = clock.tick(25, () => {});
     expect(alpha).toBeGreaterThanOrEqual(0);
     expect(alpha).toBeLessThan(1);
@@ -66,9 +62,7 @@ describe('Electrical Tether Model', () => {
     const tether = calculateTetherVoltageDrop(currentA, defaultConfig.electrical);
 
     expect(tether.supplyV).toBe(12.0);
-    // V_drop = 1.41 * 0.782 = 1.10262 V
     expect(tether.voltageDropV).toBeCloseTo(1.10, 2);
-    // V_terminal = 12 - 1.10262 = 10.897 V
     expect(tether.terminalV).toBeCloseTo(10.90, 2);
   });
 });
@@ -79,7 +73,6 @@ describe('GpuTimer', () => {
     expect(timer.getBackend()).toBe('cpu-fallback');
 
     timer.begin();
-    // Short busy wait
     const start = performance.now();
     while (performance.now() - start < 2) {}
     timer.end();

@@ -33,10 +33,8 @@ describe('Phase 7 — Telemetry Instruments & Real-time Plots (plots.ts)', () =>
       });
     }
 
-    // Pushing samples should gracefully operate even without 2D context in Node
     expect(() => plots.render()).not.toThrow();
 
-    // Clear reset
     plots.clear();
     expect(() => plots.render()).not.toThrow();
   });

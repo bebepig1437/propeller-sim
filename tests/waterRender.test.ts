@@ -26,13 +26,11 @@ describe('Phase 3 — Water Rendering', () => {
       expect(water.geometry).toBeInstanceOf(THREE.PlaneGeometry);
       expect(water.material).toBeInstanceOf(THREE.MeshPhysicalMaterial);
 
-      // Verify physical material settings (water IOR = 1.333)
       expect(water.material.ior).toBeCloseTo(1.333, 3);
       expect(water.material.transparent).toBe(true);
       expect(water.elevation).toBeCloseTo(0.22, 3);
       expect(water.amplitude).toBeCloseTo(0.005, 4);
 
-      // Verify vertex count for 32x32 segments = 33x33 = 1089 vertices
       const posAttr = water.geometry.attributes.position;
       expect(posAttr.count).toBe((32 + 1) * (32 + 1));
 
@@ -42,7 +40,7 @@ describe('Phase 3 — Water Rendering', () => {
     it('creates 512x512 vertices by default (262,144 vertices)', () => {
       const defaultWater = new WaterSurface();
       const posAttr = defaultWater.geometry.attributes.position;
-      expect(posAttr.count).toBe(512 * 512); // 262,144
+      expect(posAttr.count).toBe(512 * 512); 
       defaultWater.dispose();
     });
 
@@ -55,7 +53,6 @@ describe('Phase 3 — Water Rendering', () => {
         speed: 1.0
       });
 
-      // Check elevation across spatial and temporal domain
       const coords = [
         [0, 0, 0],
         [0.5, 0.5, 1.2],
@@ -65,7 +62,6 @@ describe('Phase 3 — Water Rendering', () => {
 
       for (const [x, z, t] of coords) {
         const h = water.getElevationAt(x, z, t);
-        // Elevation must stay strictly within [elevation - amplitude, elevation + amplitude]
         expect(h).toBeGreaterThanOrEqual(elevation - amplitude * 1.01);
         expect(h).toBeLessThanOrEqual(elevation + amplitude * 1.01);
       }
@@ -77,16 +73,13 @@ describe('Phase 3 — Water Rendering', () => {
       const water = new WaterSurface({ size: 2.4, segments: 16, amplitude: 0.0 });
       const grid = new FluidGrid({ width: 32, height: 16 });
 
-      // Inject upward vertical velocity at the surface row (row = 14 * 32)
       const surfRow = 14 * 32;
       for (let x = 0; x < 32; x++) {
-        grid.v[surfRow + x] = 2.0; // 2.0 m/s upward jet
+        grid.v[surfRow + x] = 2.0; 
       }
 
-      // Step surface update
       water.update(0.1, 0.05, grid);
 
-      // Verify positive surface elevation profile integration
       let elevatedCount = 0;
       for (let x = 0; x < water.fluidSurfaceElevation.length; x++) {
         if (water.fluidSurfaceElevation[x] > 0.001) elevatedCount++;
@@ -100,17 +93,15 @@ describe('Phase 3 — Water Rendering', () => {
       const water = new WaterSurface({ size: 2.4, segments: 16, amplitude: 0.0, foamThreshold: 1.0 });
       const grid = new FluidGrid({ width: 32, height: 16 });
 
-      // Inject high vorticity curl and velocity at the surface
       const surfRow = 14 * 32;
       for (let x = 0; x < 32; x++) {
-        grid.curl[surfRow + x] = 8.0; // High shear vorticity
+        grid.curl[surfRow + x] = 8.0; 
         grid.u[surfRow + x] = 2.5;
         grid.v[surfRow + x] = 1.5;
       }
 
       water.update(0.1, 0.05, grid);
 
-      // Vertex color attribute should have foam white (R > 0.5) instead of baseline azure (R ~ 0.05)
       const colorAttr = water.geometry.attributes.color as THREE.BufferAttribute;
       expect(colorAttr).toBeDefined();
 
@@ -131,15 +122,12 @@ describe('Phase 3 — Water Rendering', () => {
       const water = new WaterSurface({ size: 1.0, segments: 8 });
       const posAttr = water.geometry.attributes.position;
 
-      // Update at t = 1.5s
       water.update(1.5);
 
-      // Normal attribute must be present and updated
       const normalAttr = water.geometry.attributes.normal;
       expect(normalAttr).toBeDefined();
       expect(normalAttr.count).toBe(posAttr.count);
 
-      // Dynamic toggle
       water.setVisible(false);
       expect(water.mesh.visible).toBe(false);
       water.setVisible(true);
@@ -156,7 +144,6 @@ describe('Phase 3 — Water Rendering', () => {
       expect(normGen.texture.wrapS).toBe(THREE.RepeatWrapping);
       expect(normGen.texture.wrapT).toBe(THREE.RepeatWrapping);
 
-      // Update across time steps
       normGen.update(1.0);
       expect(normGen.texture.version).toBeGreaterThan(0);
 
@@ -173,16 +160,13 @@ describe('Phase 3 — Water Rendering', () => {
     });
 
     it('exhibits differential absorption: Red attenuates much faster than Green and Blue', () => {
-      const depth = 2.0; // 2 meters underwater
+      const depth = 2.0; 
       const t = calculateBeerLambertExtinction(depth);
 
-      // Red (0.35/m) attenuates faster than Green (0.06/m) and Blue (0.018/m)
       expect(t.redTransmittance).toBeLessThan(t.greenTransmittance);
       expect(t.greenTransmittance).toBeLessThan(t.blueTransmittance);
 
-      // Red at 2m: exp(-0.35 * 2) = exp(-0.7) ~ 0.496
       expect(t.redTransmittance).toBeCloseTo(Math.exp(-0.7), 3);
-      // Blue at 2m: exp(-0.018 * 2) = exp(-0.036) ~ 0.965
       expect(t.blueTransmittance).toBeCloseTo(Math.exp(-0.036), 3);
     });
 
@@ -207,7 +191,6 @@ describe('Phase 3 — Water Rendering', () => {
       expect(caustics.texture.wrapS).toBe(THREE.RepeatWrapping);
       expect(caustics.texture.wrapT).toBe(THREE.RepeatWrapping);
 
-      // Runs update loop with multi-wave interference
       expect(() => caustics.update(0.5, 1.2)).not.toThrow();
       expect(caustics.texture.version).toBeGreaterThan(0);
 
@@ -233,22 +216,18 @@ describe('Phase 3 — Water Rendering', () => {
 
       const renderer = new AppRenderer(mockContainer);
 
-      // Verify procedural sky and environment
       expect(renderer.skyDome).toBeDefined();
       expect(renderer.scene.environment).toBe(renderer.skyTexture);
 
-      // Verify tunable sun light
       expect(renderer.sunLight).toBeDefined();
       renderer.setSunDirection(30, 90);
       expect(renderer.sunLight.position.y).toBeGreaterThan(0);
 
-      // Verify side cutaway view preset
       renderer.setSideCutawayView();
       expect(renderer.camera.position.z).toBeCloseTo(1.85, 2);
       expect(renderer.controls.target.x).toBeCloseTo(0.0, 2);
       expect(renderer.controls.target.z).toBeCloseTo(0.0, 2);
 
-      // Verify orbit view reset
       renderer.resetOrbitView();
       expect(renderer.camera.position.x).toBeCloseTo(0.65, 2);
       expect(renderer.camera.position.y).toBeCloseTo(0.42, 2);
@@ -262,18 +241,15 @@ describe('Phase 3 — Water Rendering', () => {
       const renderer = new AppRenderer(mockContainer);
       const grid = new FluidGrid({ width: 32, height: 32 });
 
-      // Seed grid velocity
       grid.u[grid.idx(10, 10)] = 1.234;
       grid.v[grid.idx(10, 10)] = -0.567;
       const uBefore = new Float32Array(grid.u);
       const vBefore = new Float32Array(grid.v);
 
-      // Toggle views
       renderer.setSideCutawayView();
       renderer.setSunDirection(45, 120);
       renderer.resetOrbitView();
 
-      // Verify grid state was not modified
       for (let i = 0; i < grid.size; i++) {
         expect(grid.u[i]).toBe(uBefore[i]);
         expect(grid.v[i]).toBe(vBefore[i]);
@@ -286,22 +262,18 @@ describe('Phase 3 — Water Rendering', () => {
   describe('Phase 3 Revised Validation Gates', () => {
     it('Still-water test: inflow off, vehicle at rest for 10s maintains flat heightfield energy without phantom energy injection', () => {
       const water = new WaterSurface({ size: 2.4, segments: 16, amplitude: 0.0 });
-      const grid = new FluidGrid({ width: 32, height: 16 }); // Still water, all velocities zero
+      const grid = new FluidGrid({ width: 32, height: 16 }); 
 
-      // Initial energy in still water
       const initialEnergy = water.getHeightfieldEnergy();
       expect(initialEnergy).toBe(0);
 
-      // Advance for 10s (600 steps of dt = 1/60s)
       for (let step = 0; step < 600; step++) {
         water.update(step * (1.0 / 60.0), 1.0 / 60.0, grid);
       }
 
       const finalEnergy = water.getHeightfieldEnergy();
-      // Must remain strictly flat (0 energy injected)
       expect(finalEnergy).toBeCloseTo(0, 5);
 
-      // If initial disturbance is present, verify restoring term dampens energy monotonically
       water.fluidSurfaceElevation[16] = 0.04;
       const disturbedEnergy = water.getHeightfieldEnergy();
       for (let step = 0; step < 60; step++) {
@@ -317,18 +289,15 @@ describe('Phase 3 — Water Rendering', () => {
       const water = new WaterSurface({ size: 2.4, segments: 16, amplitude: 0.0 });
       const grid = new FluidGrid({ width: 32, height: 16 });
 
-      // Inflow source jet active: upward vertical velocity at column 4
       const surfRow = 14 * 32;
       grid.v[surfRow + 4] = 0.4;
 
       const elevations: number[] = [];
-      // Advance for 1 second (60 steps)
       for (let step = 0; step < 60; step++) {
         water.update(step * (1.0 / 60.0), 1.0 / 60.0, grid);
         elevations.push(water.fluidSurfaceElevation[4]);
       }
 
-      // Height must rise monotonically for the initial onset
       expect(elevations[10]).toBeGreaterThan(elevations[0]);
       expect(elevations[30]).toBeGreaterThan(elevations[10]);
       expect(elevations[59]).toBeGreaterThan(elevations[30]);
@@ -340,7 +309,6 @@ describe('Phase 3 — Water Rendering', () => {
       const water = new WaterSurface({ size: 2.4, segments: 16, amplitude: 0.0, foamThreshold: 0.5, foamLifetime: 2.0 });
       const grid = new FluidGrid({ width: 32, height: 16 });
 
-      // 1. Inject high shear to generate foam
       const surfRow = 14 * 32;
       for (let x = 0; x < 32; x++) {
         grid.curl[surfRow + x] = 10.0;
@@ -348,7 +316,6 @@ describe('Phase 3 — Water Rendering', () => {
       }
       water.update(0.1, 0.05, grid);
 
-      // Verify foam was generated
       const colorAttr = water.geometry.attributes.color as THREE.BufferAttribute;
       let hasFoam = false;
       for (let i = 0; i < colorAttr.count; i++) {
@@ -359,17 +326,14 @@ describe('Phase 3 — Water Rendering', () => {
       }
       expect(hasFoam).toBe(true);
 
-      // 2. Turn inflow/shear off (still water)
       grid.curl.fill(0);
       grid.u.fill(0);
       grid.v.fill(0);
 
-      // Step for 2.5s (exceeding 2.0s lifetime)
       for (let step = 0; step < 150; step++) {
         water.update(0.1 + step * (1.0 / 60.0), 1.0 / 60.0, grid);
       }
 
-      // Verify foam cleared back to base water color (R ~ 0.05)
       let residualFoamCount = 0;
       for (let i = 0; i < colorAttr.count; i++) {
         if (colorAttr.getX(i) > 0.15) {
@@ -390,7 +354,6 @@ describe('Phase 3 — Water Rendering', () => {
         grid.curl[i] = grid.u[i] - grid.v[i];
       }
 
-      // Mock canvas for FluidRenderer2D
       const mockCanvas = {
         width: 32,
         height: 32,
@@ -412,7 +375,6 @@ describe('Phase 3 — Water Rendering', () => {
 
       const renderer2D = new FluidRenderer2D(mockCanvas, 32, 32);
 
-      // Sample 10 random cells
       const sampleCoords = [
         [2, 3], [5, 12], [8, 8], [15, 20], [22, 5],
         [30, 30], [1, 1], [16, 16], [10, 25], [28, 14]
@@ -433,11 +395,9 @@ describe('Phase 3 — Water Rendering', () => {
       const water = new WaterSurface({ size: 2.4, segments: 64 });
       expect(water.geometry.attributes.position.count).toBe(65 * 65);
 
-      // Scale up to 128
       water.setMeshResolution(128);
       expect(water.geometry.attributes.position.count).toBe(129 * 129);
 
-      // Scale down to 32
       water.setMeshResolution(32);
       expect(water.geometry.attributes.position.count).toBe(33 * 33);
 

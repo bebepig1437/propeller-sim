@@ -1,26 +1,3 @@
-/**
- * Phase 8 — SimulationWorkerBridge fallback contract
- *
- * `SimulationWorkerBridge.init()` is the single gate between "run the sim on a
- * worker via OffscreenCanvas" and "run it in-thread on the main thread". Before
- * this suite the module had no callers and no coverage, so its failure mode —
- * the one every non-OffscreenCanvas browser takes — was the least-tested surface
- * of Phase 8.
- *
- * These tests pin the contract:
- *   - no OffscreenCanvas transfer support      -> false, no Worker constructed
- *   - no Worker constructor                    -> false, no throw
- *   - transferControlToOffscreen() throws      -> false, no throw, no leak
- *   - success                                  -> true, one init message with
- *                                                 the offscreen canvas transferred
- *   - telemetry/status routing                 -> forwarded to the callbacks
- *   - sendInput/sendResize/sendVisibility      -> silent no-ops while inactive
- *   - dispose()                                -> terminates and clears the flag
- *
- * The unit project runs in a Node environment, so every browser global the
- * bridge touches is stubbed explicitly (matching the MockElement pattern used
- * elsewhere in this suite).
- */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SimulationWorkerBridge } from '../src/workers/workerBridge';
@@ -53,7 +30,6 @@ class FakeWorker {
   }
 }
 
-/** Install the minimal browser globals the bridge feature-detects. */
 function installFakeWindow(options: { worker?: unknown; devicePixelRatio?: number; withWindow?: boolean } = {}): () => void {
   const g = globalThis as any;
   const hadWindow = 'window' in g;
@@ -128,7 +104,7 @@ describe('Phase 8 — SimulationWorkerBridge fallback contract', () => {
 
   it('runs in-thread when the canvas cannot transfer control to an OffscreenCanvas', () => {
     restoreGlobals = installFakeWindow({ worker: FakeWorker });
-    const { canvas } = makeCanvas(undefined); // no transferControlToOffscreen
+    const { canvas } = makeCanvas(undefined); 
     const bridge = new SimulationWorkerBridge({ canvas });
 
     expect(bridge.init()).toBe(false);
@@ -166,9 +142,7 @@ describe('Phase 8 — SimulationWorkerBridge fallback contract', () => {
     expect(message.canvas).toBe(OFFSET);
     expect(message.width).toBe(1920);
     expect(message.height).toBe(1080);
-    // devicePixelRatio is clamped to 2 to protect the frame budget.
     expect(message.dpr).toBe(2);
-    // The OffscreenCanvas must move to the worker, not be copied.
     expect(transfer).toEqual([OFFSET]);
   });
 
@@ -198,7 +172,6 @@ describe('Phase 8 — SimulationWorkerBridge fallback contract', () => {
     const { canvas } = makeCanvas(() => OFFSET);
     const bridge = new SimulationWorkerBridge({ canvas });
 
-    // Inactive: nothing posted, nothing thrown.
     expect(() => {
       bridge.sendInput('throttle', 0.5);
       bridge.sendResize(640, 480, 1);
@@ -226,7 +199,6 @@ describe('Phase 8 — SimulationWorkerBridge fallback contract', () => {
     expect(worker.terminated).toBe(true);
     expect(bridge.isWorkerActive).toBe(false);
 
-    // Post-dispose sends must not reach the dead worker.
     const before = worker.posted.length;
     bridge.sendInput('run');
     expect(worker.posted.length).toBe(before);

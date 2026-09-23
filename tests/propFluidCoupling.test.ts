@@ -25,10 +25,8 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
     const dt = 1.0 / 60.0;
     const initialU = new Float32Array(grid.u);
 
-    // Inject actuator disk body forces
     coupler.injectCouplingForces(grid, bemt, dt);
 
-    // Calculate sum of applied momentum rate: sum(m_cell * delta_u / dt)
     const cellMassKg = coupler.cellMassKg;
 
     let totalForceSumX = 0;
@@ -38,7 +36,6 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       totalForceSumX += cellMassKg * (deltaU / dt);
     }
 
-    // Injected force must equal BEMT thrust within 0.1%
     const relativeError = Math.abs(totalForceSumX - T) / T;
     expect(relativeError).toBeLessThan(0.001);
   });
@@ -56,27 +53,22 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
     const bemt = solveBEMT(3800, 0.0);
     coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
-    // Initially, cell (20, 30) has positive u
     const idxInitial = 30 * 128 + 20;
     expect(grid.u[idxInitial]).toBeGreaterThan(0);
 
-    // Now translate thruster in UI: move centerX to 50, centerY to 45
     grid.reset();
     coupler.config.centerX = 50;
     coupler.config.centerY = 45;
 
     coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
-    // Old location must remain zero
     expect(grid.u[idxInitial]).toBe(0);
-    // New location must have received injected thrust
     const idxNew = 45 * 128 + 50;
     expect(grid.u[idxNew]).toBeGreaterThan(0);
   });
 
   it('rotates force into disc local frame when orientation angle is non-zero', () => {
     const grid = new FluidGrid({ width: 128, height: 64 });
-    // Disk oriented at 90 degrees (+Y direction, pointing Up)
     const coupler = new ActuatorDiscCoupler({
       centerX: 30,
       centerY: 30,
@@ -89,7 +81,6 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
     coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
     const centerIdx = 30 * 128 + 30;
-    // Thrust must be directed along +Y (v velocity), not along +X
     expect(grid.v[centerIdx]).toBeGreaterThan(0.05);
     expect(Math.abs(grid.u[centerIdx])).toBeLessThan(1e-4);
   });
@@ -100,19 +91,16 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       centerX: 25,
       centerY: 32,
       radiusCells: 8,
-      inflowRelaxation: 1.0 // instantaneous for test
+      inflowRelaxation: 1.0 
     });
 
-    // Impose uniform reverse flow
     for (let y = 0; y < 64; y++) {
-      grid.u[y * 128 + 23] = -0.75; // 2 cells upstream
+      grid.u[y * 128 + 23] = -0.75; 
     }
 
     const va = coupler.sampleInflowVelocity(grid);
-    // Reverse inflow must be preserved
     expect(va).toBeCloseTo(-0.75, 2);
 
-    // BEMT solver should receive negative inflow and compute valid reverse forces
     const bemtReverse = solveBEMT(3800, va);
     expect(Number.isFinite(bemtReverse.thrustN)).toBe(true);
     expect(Number.isFinite(bemtReverse.torqueNm)).toBe(true);
@@ -127,22 +115,17 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       inflowRelaxation: 0.5
     });
 
-    // Step 1: Quiescent fluid
     const va0 = coupler.sampleInflowVelocity(grid);
     expect(va0).toBe(0);
 
-    // Step 2: Sudden velocity spike to 2.0 m/s
     for (let y = 0; y < 64; y++) {
       grid.u[y * 128 + 23] = 2.0;
     }
 
     const va1 = coupler.sampleInflowVelocity(grid);
-    // With 0.5 relaxation: (1 - 0.5)*0 + 0.5*2.0 = 1.0 m/s
     expect(va1).toBeCloseTo(1.0, 3);
 
-    // Step 3: Continued 2.0 m/s
     const va2 = coupler.sampleInflowVelocity(grid);
-    // (1 - 0.5)*1.0 + 0.5*2.0 = 1.5 m/s
     expect(va2).toBeCloseTo(1.5, 3);
   });
 
@@ -159,12 +142,9 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
     coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
     const W = grid.width;
-    // Top tip: y = 41 (rNorm ~ +0.9)
-    // Bottom tip: y = 23 (rNorm ~ -0.9)
     const topIdx = 41 * W + 30;
     const botIdx = 23 * W + 30;
 
-    // Must generate counter-rotating transverse shear
     expect(grid.v[topIdx]).not.toBe(0);
     expect(grid.v[botIdx]).not.toBe(0);
     expect(grid.v[topIdx] * grid.v[botIdx]).toBeLessThan(0);
@@ -180,7 +160,6 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       cd: 1.2
     });
 
-    // Simulate oncoming wake jet
     for (let y = 20; y <= 44; y++) {
       for (let x = 35; x <= 65; x++) {
         grid.u[y * 128 + x] = 2.5;
@@ -203,11 +182,9 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
     const coupler = new ActuatorDiscCoupler({ centerX: 25, centerY: 32, radiusCells: 10 });
     const bemt = solveBEMT(3800, 0.0);
 
-    // First call populates cache and initial telemetry
     const tele1 = coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
     const tele2 = coupler.injectCouplingForces(grid, bemt, 1.0 / 60.0);
 
-    // Must return the exact same mutated instance reference
     expect(tele1).toBe(tele2);
   });
 
@@ -229,7 +206,6 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
         advectionScheme: 'SEMI_LAGRANGIAN'
       });
 
-      // Turn off boundary inflow jet to test pure propeller actuator disk driving the flow
       solver.jet.config.enabled = false;
 
       const coupler = new ActuatorDiscCoupler({
@@ -252,7 +228,6 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
         cd: 1.2
       });
 
-      // 10 minutes of simulated time: 600s total (36,000 steps at dt = 1/60s)
       const dt = 1.0 / 60.0;
       const totalSimTimeSec = 600.0;
       const totalSteps = Math.round(totalSimTimeSec / dt);
@@ -263,19 +238,14 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
       let finalGridThrust = 0;
 
       for (let step = 0; step < totalSteps; step++) {
-        // 1. Fluid -> Propeller inflow
         const va = coupler.sampleInflowVelocity(solver.grid);
 
-        // 2. BEMT hydrodynamic solve at 3800 RPM
         const bemt = solveBEMT(3800, va);
 
-        // 3. Propeller -> Fluid actuator disk injection
         const couplingTele = coupler.injectCouplingForces(solver.grid, bemt, dt);
 
-        // 4. Downstream hull drag
         hull.applyDrag(solver.grid, dt);
 
-        // 5. Fluid Navier-Stokes solver step
         solver.step(dt);
 
         if (step === totalSteps - 1) {
@@ -284,7 +254,6 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
           finalGridThrust = couplingTele.gridMomentumThrustN;
         }
 
-        // Sample max velocity periodically
         if (step % 1000 === 0 || step === totalSteps - 1) {
           const u = solver.grid.u;
           const v = solver.grid.v;

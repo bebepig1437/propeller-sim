@@ -9,7 +9,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
   describe('Hydrofoil Polar & Viterna Model (polar.ts)', () => {
     it('evaluates attached flow with positive camber lift at zero alpha', () => {
       const { cl, cd } = evaluateSectionPolar(0);
-      // Zero-lift alpha is -2 deg, so at alpha = 0, Cl must be positive
       expect(cl).toBeGreaterThan(0.1);
       expect(cl).toBeLessThan(0.4);
       expect(cd).toBeGreaterThan(0.01);
@@ -30,7 +29,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
 
     it('models post-stall flat-plate drag peak around 90 degrees', () => {
       const p90 = evaluateSectionPolar((90.0 * Math.PI) / 180.0);
-      // At 90 degrees, Cl drops towards 0 and Cd reaches maximum (~1.1 - 1.2)
       expect(Math.abs(p90.cl)).toBeLessThan(0.15);
       expect(p90.cd).toBeGreaterThan(1.0);
       expect(p90.cd).toBeLessThan(1.3);
@@ -60,36 +58,30 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
         pitchMm: 32.0
       });
 
-      // Per-propeller thrust at 4140 RPM in bollard pull
       expect(res.thrustN).toBeGreaterThan(1.2);
       expect(res.thrustN).toBeLessThan(3.5);
 
-      // Torque magnitude should match ~0.010 to 0.020 Nm (well within Mabuchi motor peak envelope)
       expect(Math.abs(res.torqueNm)).toBeGreaterThan(0.010);
       expect(Math.abs(res.torqueNm)).toBeLessThan(0.020);
-      expect(res.torqueNm).toBeLessThan(0); // CW reaction torque is negative
+      expect(res.torqueNm).toBeLessThan(0); 
 
-      // Non-dimensional coefficients:
-      // KQ should closely match Candidate A specification (KQ ~ 0.024)
       expect(res.kq).toBeGreaterThan(0.018);
       expect(res.kq).toBeLessThan(0.030);
 
-      // KT should be in standard marine prop bollard range (0.08 to 0.25)
       expect(res.kt).toBeGreaterThan(0.08);
       expect(res.kt).toBeLessThan(0.25);
 
-      // Radial element discretization check
       expect(res.elements.length).toBe(20);
       expect(res.elements[0].radiusM).toBeCloseTo(0.004 + (0.021 - 0.004) / 40, 4);
     });
 
     it('validates Candidate A KQ anchor point at 3800 RPM produces Q = 12.58 mNm within 2%', () => {
-      const n = 63.3333; // rev/s
-      const rpm = n * 60; // 3800 RPM
+      const n = 63.3333; 
+      const rpm = n * 60; 
       const D = 0.042;
       const rho = 1000.0;
       const KQ_spec = 0.024;
-      const Q_spec = KQ_spec * rho * Math.pow(n, 2) * Math.pow(D, 5); // 0.012582 Nm = 12.58 mNm
+      const Q_spec = KQ_spec * rho * Math.pow(n, 2) * Math.pow(D, 5); 
 
       const res = solveBEMT(rpm, 0, {
         diameterMm: 42.0,

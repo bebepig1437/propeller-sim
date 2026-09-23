@@ -10,20 +10,16 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       const iStall = motor.computeCurrent(12.0, 0, 1.0);
       const qStall = motor.computeTorque(12.0, 0, 1.0);
 
-      // I_stall = 12V / 4.50 Ohm = 2.67 A
       expect(iStall).toBeCloseTo(12.0 / 4.50, 2);
 
-      // Q_stall = Kt * (I_stall - Io) = 0.01171 * (2.67 - 0.18) ~ 0.029 Nm
       expect(qStall).toBeGreaterThan(0.025);
       expect(qStall).toBeLessThan(0.032);
     });
 
     it('matches no-load rated RPM ~9800 at 10.8V', () => {
       const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-      // No-load condition: load torque = 0
       const state = motor.solveVoltageMode(10.8, 1.0, () => 0);
 
-      // No-load RPM at 10.8V should match Candidate A specification (9800 RPM +/- 5%)
       expect(state.rpm).toBeGreaterThan(9300);
       expect(state.rpm).toBeLessThan(10500);
       expect(state.currentA).toBeCloseTo(MABUCHI_RC280RA_SPECS.Io_A, 1);
@@ -32,18 +28,16 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
     it('supports dual-mode driving: Voltage Mode and RPM Mode', () => {
       const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
       const targetRpm = 3500;
-      const loadFn = (w: number) => 0.010; // Constant 10 mNm load
+      const loadFn = (w: number) => 0.010; 
 
-      // 1. RPM Mode: Given commanded RPM, solve required V_term and current
       const rpmState = motor.solveRpmMode(targetRpm, loadFn);
       expect(rpmState.rpm).toBe(targetRpm);
       expect(rpmState.currentA).toBeGreaterThan(0.9);
       expect(rpmState.currentA).toBeLessThan(1.2);
       expect(rpmState.terminalVoltageV).toBeGreaterThan(7.0);
 
-      // 2. Voltage Mode: Given required V_term, solve operating point
       const voltState = motor.solveVoltageMode(rpmState.terminalVoltageV, 1.0, loadFn);
-      expect(voltState.rpm).toBeCloseTo(targetRpm, -1); // Within 10 RPM
+      expect(voltState.rpm).toBeCloseTo(targetRpm, -1); 
       expect(voltState.currentA).toBeCloseTo(rpmState.currentA, 1);
     });
 
@@ -74,19 +68,15 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       const kHydro = 0.0144 / Math.pow(433, 2);
       const loadFn = (w: number) => kHydro * Math.pow(w, 2);
 
-      // At 1.41A through 0.782 Ohm tether, terminal voltage is ~10.9V
       const vTerminal = 12.0 - 1.41 * 0.782;
       const state = motor.solveVoltageMode(vTerminal, 1.0, loadFn);
 
-      // Expected RPM ~ 4140 (+/- 5%)
       expect(state.rpm).toBeGreaterThan(3900);
       expect(state.rpm).toBeLessThan(4400);
 
-      // Expected current ~ 1.41 A (+/- 0.15 A)
       expect(state.currentA).toBeGreaterThan(1.25);
       expect(state.currentA).toBeLessThan(1.55);
 
-      // Operating torque ~ 0.012 to 0.017 Nm
       expect(state.shaftTorqueNm).toBeGreaterThan(0.011);
       expect(state.shaftTorqueNm).toBeLessThan(0.018);
     });
@@ -96,7 +86,6 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       motor.windingTempC = 20.0;
       motor.ambientTempC = 20.0;
 
-      // Advance thermal model step by step at 60 Hz for 18.0 seconds
       const dt = 1.0 / 60.0;
       const totalSteps = 18 * 60;
 
