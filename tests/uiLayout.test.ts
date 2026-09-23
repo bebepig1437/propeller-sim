@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Lightweight in-memory DOM mock for Node test environment without third-party packages
 class MockNode {
   public id: string = '';
   public className: string = '';
@@ -189,7 +188,6 @@ function parseHtml(html: string, parent: MockNode | null = null): MockNode[] {
     const node = new MockNode(tagName);
     node.parentNode = parent;
 
-    // Parse attributes
     const attrRegex = /([a-zA-Z0-9-]+)(?:=["']([^"']*)["'])?/g;
     let attrMatch;
     while ((attrMatch = attrRegex.exec(attrString)) !== null) {

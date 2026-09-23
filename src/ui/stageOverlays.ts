@@ -1,12 +1,3 @@
-/**
- * Stage Overlays Component:
- * 1. Corner Cutaway Toggle button
- * 2. Vertical Overlay Icon Strip on stage's right edge (with hover tooltips & color discipline)
- *
- * The toggle state lives in the shared OverlayState (src/render/overlays.ts)
- * so the 3D OverlaySystem, this strip, and Tweakpane all stay in sync.
- */
-
 import type { OverlayState } from '../render/overlays';
 
 export type { OverlayState } from '../render/overlays';
@@ -17,7 +8,6 @@ export interface StageOverlayCallbacks {
 }
 
 export interface StageOverlaysOptions {
-  /** Shared state object (created by caller, seeded with DEFAULT_OVERLAY_STATE). */
   sharedState?: OverlayState;
 }
 
@@ -75,7 +65,6 @@ export class StageOverlays {
   }
 
   public render(): void {
-    // 1. Stage Corner Cutaway Button & Coupling Badge
     this.cornerContainer.innerHTML = `
       <button id="btn-toggle-cutaway" class="btn-stage-tool ${this.cutawayActive ? 'active' : ''}" title="Toggle 2D Side Cutaway Cross-Section">
         <span>◫</span>

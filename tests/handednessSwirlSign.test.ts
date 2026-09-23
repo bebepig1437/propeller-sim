@@ -13,18 +13,16 @@ describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
     const centerY = 64;
     const radiusCells = 14;
 
-    // 1. CW Thruster simulation
     const solverCW = new FluidSolver({ gridOptions: { width: W, height: H } });
     const couplerCW = new ActuatorDiscCoupler({
       centerX,
       centerY,
       radiusCells,
-      orientationRad: 0.0 // Thrust along +X, transverse tangential along +Y
+      orientationRad: 0.0 
     });
     const bemtCW = solveBEMT(4140, 0, { handedness: 'CW' });
     couplerCW.injectCouplingForces(solverCW.grid, bemtCW, dt, -1);
 
-    // 2. CCW Thruster simulation
     const solverCCW = new FluidSolver({ gridOptions: { width: W, height: H } });
     const couplerCCW = new ActuatorDiscCoupler({
       centerX,
@@ -35,15 +33,12 @@ describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
     const bemtCCW = solveBEMT(4140, 0, { handedness: 'CCW' });
     couplerCCW.injectCouplingForces(solverCCW.grid, bemtCCW, dt, +1);
 
-    // Sample tangential momentum in the disk blade span (rNorm ~ 0.7)
     const sampleY = centerY + Math.round(radiusCells * 0.7);
     const sampleIdx = sampleY * W + centerX;
 
     const cellMassCW = couplerCW.cellMassKg;
     const cellMassCCW = couplerCCW.cellMassKg;
 
-    // 1. Direct Source Term Injection:
-    // Tangential momentum at the disk station must have opposite sign and equal magnitude within 1e-6
     const pInjectedCW = cellMassCW * solverCW.grid.v[sampleIdx];
     const pInjectedCCW = cellMassCCW * solverCCW.grid.v[sampleIdx];
 
@@ -56,7 +51,6 @@ describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
     expect(Math.abs(Math.abs(pInjectedCW) - Math.abs(pInjectedCCW))).toBeLessThan(1e-6);
     expect(Math.abs(pInjectedCW + pInjectedCCW)).toBeLessThan(1e-6);
 
-    // 2. Post-Fluid Step Advection Check:
     solverCW.step(dt);
     solverCCW.step(dt);
 
@@ -83,12 +77,10 @@ describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
     expect(unit0.unit.handedness).toBe('CW');
     expect(unit1.unit.handedness).toBe('CCW');
 
-    // swirlSign must be -1 for CW, +1 for CCW
     expect(unit0.swirlSign).toBe(-1);
     expect(unit1.swirlSign).toBe(1);
     expect(unit0.swirlSign + unit1.swirlSign).toBe(0);
 
-    // Torque magnitudes equal and opposite
     expect(unit0.bemt.torqueNm).toBeLessThan(0);
     expect(unit1.bemt.torqueNm).toBeGreaterThan(0);
     expect(unit0.bemt.torqueNm + unit1.bemt.torqueNm).toBeCloseTo(0, 6);

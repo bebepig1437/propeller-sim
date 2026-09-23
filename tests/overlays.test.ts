@@ -56,21 +56,18 @@ describe('Phase 6 — OverlaySystem', () => {
     const summary = new PropellerArray().evaluate([1.0, 1.0, 0.0]);
     const ctx = makeContext(grid, summary);
 
-    // Toggle every key on, one at a time, updating each frame
     for (const key of OVERLAY_KEYS) {
       system.setVisible(key, true);
       expect(system.state[key]).toBe(true);
       expect(() => system.update(1 / 60, ctx)).not.toThrow();
     }
 
-    // All on simultaneously — the busy-but-distinguishable acceptance case
     expect(() => {
       for (let f = 0; f < 30; f++) {
         system.update(1 / 60, ctx);
       }
     }).not.toThrow();
 
-    // Toggle all off
     for (const key of OVERLAY_KEYS) {
       system.setVisible(key, false);
       expect(system.state[key]).toBe(false);
@@ -112,18 +109,15 @@ describe('Phase 6 — OverlaySystem', () => {
 
     for (const key of OVERLAY_KEYS) system.setVisible(key, true);
 
-    // Warmup (dynamic allocations: streamline/particle buffers sized once)
     for (let f = 0; f < 10; f++) system.update(1 / 60, ctx);
 
     const baselineObjects = countThreeObjects(system.group);
     for (let f = 0; f < 120; f++) {
       system.update(1 / 60, ctx);
-      // Advance the flow a bit so advection paths stay non-trivial
       if (f % 7 === 0) seedFlow(grid);
     }
     const afterObjects = countThreeObjects(system.group);
 
-    // Object graph must not grow (no per-frame object creation)
     expect(afterObjects).toBe(baselineObjects);
     system.dispose();
   });
@@ -142,7 +136,6 @@ describe('Phase 6 — OverlaySystem', () => {
   });
 
   it('variant diff plot accepts curves without throwing and hides DOM-free', () => {
-    // Headless: no diffEl provided, so showVariantDiff must be a safe no-op
     const system = new OverlaySystem();
     const oldCurve = [
       { J: 0.0, thrustN: 5.2 },
@@ -166,19 +159,16 @@ describe('Phase 6 — OverlaySystem', () => {
 
     system.setVisible('thrustArrows', true);
     system.setVisible('torqueArrows', true);
-    // No camera/pointer configured → update must be safe and label-free
     expect(() => system.update(1 / 60, ctx)).not.toThrow();
     system.dispose();
   });
 
   it('exposes a color contract matching the four accent tokens', () => {
-    // Headless fallbacks must equal the CSS custom property values
     expect(OVERLAY_COLORS.thrust).toBe(0x00f2ff);
     expect(OVERLAY_COLORS.torque).toBe(0xf59e0b);
     expect(OVERLAY_COLORS.heat).toBe(0xef4444);
     expect(OVERLAY_COLORS.current).toBe(0xa855f7);
 
-    // Derived torque variants stay in the torque hue family (no new hues)
     const torque = new THREE.Color(OVERLAY_COLORS.torque);
     const stator = new THREE.Color(OVERLAY_COLORS.torqueStator);
     const net = new THREE.Color(OVERLAY_COLORS.torqueNet);
@@ -190,12 +180,11 @@ describe('Phase 6 — OverlaySystem', () => {
     net.getHSL(hslN);
     expect(Math.abs(hslS.h - hslT.h)).toBeLessThan(0.02);
     expect(Math.abs(hslN.h - hslT.h)).toBeLessThan(0.02);
-    expect(hslS.s).toBeLessThan(hslT.s); // desaturated
-    expect(hslN.l).toBeGreaterThan(hslT.l); // brightened
+    expect(hslS.s).toBeLessThan(hslT.s); 
+    expect(hslN.l).toBeGreaterThan(hslT.l); 
   });
 
   it('Directive 2 guard: scene contains zero FlowOverlays-shaped groups after update', () => {
-    // Construct scene and verify legacy renderer is quarantined and absent from runtime
     const scene = new THREE.Scene();
     const system = new OverlaySystem();
     scene.add(system.group);
@@ -206,7 +195,6 @@ describe('Phase 6 — OverlaySystem', () => {
     const ctx = makeContext(grid, summary);
     system.update(1 / 60, ctx);
 
-    // Assert that scene.children has zero flowOverlays groups
     expect(scene.children.filter((c) => c.name === 'flowOverlays').length).toBe(0);
 
     const legacyMatches: THREE.Object3D[] = [];
@@ -229,7 +217,6 @@ describe('Phase 6 — OverlaySystem', () => {
     const summary = new PropellerArray().evaluate([1.0, 1.0, 0.0]);
     const ctx = makeContext(grid, summary);
 
-    // Warm-up 100 iterations so JIT, scratch arrays, and buffers stabilize
     for (let i = 0; i < 100; i++) {
       ctx.elapsed += 1 / 60;
       system.update(1 / 60, ctx);
@@ -240,7 +227,6 @@ describe('Phase 6 — OverlaySystem', () => {
     }
     const heapBefore = process.memoryUsage().heapUsed;
 
-    // Run 600 frames (10 seconds simulated runtime at 60 Hz)
     for (let i = 0; i < 600; i++) {
       ctx.elapsed += 1 / 60;
       system.update(1 / 60, ctx);

@@ -61,7 +61,6 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
     expect(solver.height).toBe(512);
     expect(solver.grid.width).toBe(1024);
     expect(solver.grid.height).toBe(512);
-    // In Node.js / headless test environment without physical GPU, fallback is active
     expect(solver.isGpuAccelerated).toBe(false);
   });
 
@@ -114,7 +113,6 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
 
     solver.compareMetrics.active = true;
 
-    // Run 5 steps in compare mode
     for (let i = 0; i < 5; i++) {
       solver.step(1.0 / 60.0);
     }
@@ -142,10 +140,8 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
       gridOptions: { width: 128, height: 64 }
     });
 
-    // Step solver to populate simulation values
     solver.step(1.0 / 60.0);
 
-    // Perform readback round-trip
     const targetGrid = new FluidGrid({ width: 128, height: 64 });
     const readbackResult = await solver.readbackGpuBuffers(targetGrid);
 
@@ -162,18 +158,15 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
       jetConfig: { vx: 3.0, enabled: true }
     });
 
-    // Initial grid.u is all zero
     let initialSumU = 0;
     for (let i = 0; i < solver.grid.size; i++) {
       initialSumU += Math.abs(solver.grid.u[i]);
     }
     expect(initialSumU).toBe(0);
 
-    // Step solver and perform readback
     solver.step(1.0 / 60.0);
     const readback = solver.readbackSync();
 
-    // grid.u must have changed from its initial value
     let newSumU = 0;
     for (let i = 0; i < solver.grid.size; i++) {
       newSumU += Math.abs(readback.u[i]);
@@ -189,16 +182,13 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
       pressureIterations: 30
     });
 
-    // Warm-up 2 steps
     solver.step(1.0 / 60.0);
     solver.step(1.0 / 60.0);
 
-    // Snapshot live CPU grid before compare validation
     const uSnapshot = new Float32Array(solver.grid.u);
     const vSnapshot = new Float32Array(solver.grid.v);
     const dyeSnapshot = new Float32Array(solver.grid.dye);
 
-    // Run compare validation
     const metrics = solver.runCompareValidation(1.0 / 60.0);
 
     expect(metrics.maxDiffU).toBeLessThan(1e-3);
@@ -206,7 +196,6 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
     expect(metrics.maxDiffDye).toBeLessThan(1e-3);
     expect(metrics.rmsDiff).toBeLessThan(1e-3);
 
-    // Assert live CPU grid is NOT mutated or corrupted by runCompareValidation
     for (let i = 0; i < solver.grid.size; i++) {
       expect(solver.grid.u[i]).toBe(uSnapshot[i]);
       expect(solver.grid.v[i]).toBe(vSnapshot[i]);
@@ -222,13 +211,11 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
     expect(solver.width).toBe(1024);
     expect(solver.height).toBe(512);
 
-    // Resize to 512x256
     solver.setResolution(512, 256);
     expect(solver.width).toBe(512);
     expect(solver.height).toBe(256);
     expect(solver.grid.size).toBe(512 * 256);
 
-    // Dispose
     solver.dispose();
     expect(solver.compareCpuSolver).toBeNull();
     expect(solver.compareCpuGrid).toBeNull();
@@ -242,7 +229,6 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
       jetConfig: { vx: 2.0, enabled: true }
     });
 
-    // Run for 15 steps with steady inflow to reach steady state
     for (let step = 0; step < 15; step++) {
       solver.step(1.0 / 60.0);
     }

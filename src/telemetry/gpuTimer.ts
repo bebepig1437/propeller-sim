@@ -8,12 +8,10 @@ export class GpuTimer {
   private lastDurationMs = 0;
   private cpuStartTime = 0;
 
-  // WebGL2 timer state
   private gl: WebGL2RenderingContext | null = null;
   private extTimerQuery: any = null;
   private activeQuery: WebGLQuery | null = null;
 
-  // WebGPU timer state
   public webgpuDevice: any = null;
   public querySet: any = null;
   public resolveBuffer: any = null;

@@ -48,7 +48,7 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
     const n = rpm / 60.0;
     const D = 0.042;
     const J = 0.40;
-    const Va = J * n * D; // 1.1592 m/s
+    const Va = J * n * D; 
 
     const res = solveBEMT(rpm, Va, {
       diameterMm: 42.0,
@@ -60,8 +60,6 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
 
     expect(res.elements.length).toBe(20);
 
-    // Integrated reference values for Candidate A at J=0.40
-    // Kt_ref ~ 0.168, eta_ref ~ 0.451
     const ktRef = 0.168;
     const etaRef = 0.451;
 

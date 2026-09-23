@@ -1,5 +1,3 @@
-
-
 export interface SimLayoutElements {
   headerEl: HTMLElement;
   paletteEl: HTMLElement;
@@ -87,7 +85,6 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
   const inspectorEl = root.querySelector('#sim-inspector') as HTMLElement;
   const hudEl = root.querySelector('#sim-hud') as HTMLElement;
   const footerValidationLink = root.querySelector('#footer-validation-link') as HTMLAnchorElement;
-
 
   const dismissBtn = root.querySelector('#btn-first-run-dismiss');
   dismissBtn?.addEventListener('click', () => {

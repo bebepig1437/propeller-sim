@@ -24,7 +24,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     const initialDiv = getMaxDivergence(grid, 3);
     expect(initialDiv).toBeGreaterThan(0.002);
 
-    // Project velocity with 200 Jacobi iterations
     projectVelocity(grid, 200, boundary);
 
     const postDiv = getMaxDivergence(grid, 4);
@@ -36,7 +35,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     const boundary = new BoundaryHandler('FREE_SLIP');
     const dt = 0.01;
 
-    // Divergence-free circular vortex in the center
     const cx = 32;
     const cy = 32;
     const radius = 16;
@@ -50,11 +48,9 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
         const r = Math.hypot(dx, dy);
 
         if (r < radius) {
-          // Tangential circular velocity
           grid.u[idx] = -omega * (dy * grid.dx);
           grid.v[idx] = omega * (dx * grid.dx);
 
-          // Smooth cosine bell dye blob in core of vortex
           if (r < 8) {
             grid.dye[idx] = Math.cos((r / 8) * (Math.PI * 0.5));
           }
@@ -63,34 +59,30 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     }
     boundary.applyVelocityBoundary(grid);
 
-    // Initial total mass
     let initialMass = 0;
     for (let i = 0; i < grid.size; i++) {
       initialMass += grid.dye[i];
     }
     expect(initialMass).toBeGreaterThan(0);
 
-    // Advect for 30 steps using MacCormack
     for (let step = 0; step < 30; step++) {
       grid.swapDye();
       advectMacCormack(grid, grid.dyePrev, grid.dye, dt, boundary, false);
     }
 
-    // Final total mass
     let finalMass = 0;
     for (let i = 0; i < grid.size; i++) {
       finalMass += grid.dye[i];
     }
 
     const relativeDiff = Math.abs(finalMass - initialMass) / initialMass;
-    expect(relativeDiff).toBeLessThan(0.01); // within 1%
+    expect(relativeDiff).toBeLessThan(0.01); 
   });
 
   it('Pressure residual decreases monotonically over iterations', () => {
     const grid = new FluidGrid({ width: 64, height: 64 });
     const boundary = new BoundaryHandler('OPEN_OUTFLOW');
 
-    // Create non-zero divergence field
     for (let y = 16; y < 48; y++) {
       for (let x = 16; x < 48; x++) {
         const idx = grid.idx(x, y);
@@ -101,7 +93,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     const result = solvePressurePoisson(grid, 50, boundary);
     expect(result.residuals.length).toBe(50);
 
-    // Sample residuals at intervals and check monotonic decrease
     const r1 = result.residuals[0];
     const r10 = result.residuals[9];
     const r25 = result.residuals[24];
@@ -111,7 +102,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     expect(r25).toBeLessThan(r10);
     expect(r50).toBeLessThan(r25);
 
-    // Ensure non-increasing trend overall (at least 90% non-increasing steps)
     let drops = 0;
     for (let i = 1; i < result.residuals.length; i++) {
       if (result.residuals[i] <= result.residuals[i - 1]) {
@@ -129,12 +119,10 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
       advectionScheme: 'MACCORMACK'
     });
 
-    // Warm-up 3 steps
     for (let i = 0; i < 3; i++) {
       solver.step();
     }
 
-    // Benchmark 20 steps
     const times: number[] = [];
     for (let i = 0; i < 20; i++) {
       const metrics = solver.step();

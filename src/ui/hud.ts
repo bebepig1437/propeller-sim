@@ -1,5 +1,3 @@
-
-
 import { HudMetricsData } from '../types/telemetry';
 export { type HudMetricsData } from '../types/telemetry';
 
@@ -33,12 +31,10 @@ export class SimHudStrip {
   private popoversContainer: HTMLElement;
   private activePopovers: Map<MetricChannel, PopoverChart> = new Map();
 
-
   private historyBuffers: Map<MetricChannel, number[]> = new Map();
   private maxHistorySamples = 300;
   private lastSampleTime = 0;
   private lastMetrics?: HudMetricsData;
-
 
   private thrustEl!: HTMLElement;
   private torqueEl!: HTMLElement;
@@ -206,7 +202,6 @@ export class SimHudStrip {
     this.burstTimerEl = this.container.querySelector('#hud-burst-val') as HTMLElement;
     this.specStatusEl = this.container.querySelector('#hud-spec-status') as HTMLElement;
 
-
     const metricElements = this.container.querySelectorAll('.hud-metric');
     metricElements.forEach((el) => {
       el.addEventListener('click', (e) => {
@@ -278,7 +273,6 @@ export class SimHudStrip {
       this.readbackEl.textContent = rb.toFixed(1) + " ms";
     }
 
-
     if (this.tierItemEl && this.tierEl) {
       const tier = metrics.renderTier ?? 'WebGPU';
       const degraded = tier !== 'WebGPU';
@@ -288,7 +282,6 @@ export class SimHudStrip {
     }
 
     if (this.presetEl) this.presetEl.textContent = metrics.presetName;
-
 
     if (this.burstTimerEl) {
       if (metrics.thermalBurstRemainingS === null) {
@@ -308,14 +301,12 @@ export class SimHudStrip {
       }
     }
 
-
     if (this.specStatusEl) {
       this.specStatusEl.className = `hud-spec-badge status-${metrics.specStatus ?? 'within_spec'}`;
       this.specStatusEl.textContent = metrics.specStatusLabel ?? 'WITHIN SPEC';
     }
 
     this.lastMetrics = metrics;
-
 
     if (nowMs - this.lastSampleTime >= 100) {
       this.lastSampleTime = nowMs;
@@ -334,7 +325,6 @@ export class SimHudStrip {
       if (metrics.rollRatePrediction_deg_m !== undefined && Number.isFinite(metrics.rollRatePrediction_deg_m)) {
         this.recordSample('roll', metrics.rollRatePrediction_deg_m);
       }
-
 
       this.activePopovers.forEach((popover) => {
         this.renderPopoverCanvas(popover);
@@ -438,14 +428,12 @@ export class SimHudStrip {
       max += 1;
     }
 
-
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, height / 2);
     ctx.lineTo(width, height / 2);
     ctx.stroke();
-
 
     ctx.strokeStyle = p.color;
     ctx.lineWidth = 1.6;
@@ -463,13 +451,11 @@ export class SimHudStrip {
     }
     ctx.stroke();
 
-
     const curVal = data[data.length - 1];
     ctx.fillStyle = p.color;
     ctx.font = '10px monospace';
     ctx.textAlign = 'right';
     ctx.fillText(`${curVal.toFixed(2)} ${p.unit}`, width - 6, 13);
-
 
     if (p.channel === 'thrust' && this.lastMetrics?.dT_dr && this.lastMetrics.dT_dr.length > 0) {
       const radial = this.lastMetrics.dT_dr;
