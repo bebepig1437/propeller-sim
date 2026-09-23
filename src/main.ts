@@ -40,6 +40,8 @@ import {
 } from './vehicle/integrator';
 import { computeInterpolatedPose, type InterpolatedPose } from './sim/interpolation';
 import { VehicleFluidCoupler } from './vehicle/coupling';
+import { SpecImportModal } from './ui/importModal';
+import type { VehicleSpec, SpecParseResult } from './config/specParser';
 
 export class App {
   private clock!: SimClock;
@@ -131,6 +133,7 @@ export class App {
   public stageOverlays!: StageOverlays;
   public inspector!: SimInspector;
   public hudStrip!: SimHudStrip;
+  private importModal!: SpecImportModal;
   public recorder = new TelemetryRecorder();
   private presetState: PresetRuntimeState = createDefaultPresetState();
   public refBenchmarkMs = 0;
@@ -365,7 +368,14 @@ export class App {
       },
       onValidationClick: () => {
         window.location.href = '/validation';
+      },
+      onImportSpecClick: () => {
+        this.importModal.open();
       }
+    });
+
+    this.importModal = new SpecImportModal({
+      onApply: (spec, res) => this.applyParsedSpec(spec, res)
     });
 
 
@@ -835,6 +845,61 @@ export class App {
         }
       });
     }
+  }
+
+  public applyParsedSpec(spec: VehicleSpec, parseResult: SpecParseResult): void {
+    defaultConfig.vehicle.frameMassG = spec.mass.frame_g;
+    defaultConfig.vehicle.hardwareMassG = spec.mass.hardware_g;
+    defaultConfig.vehicle.motorUnitMassG = spec.mass.motor_unit_g;
+    defaultConfig.vehicle.displacedVolumeCm3 = spec.buoyancy.displaced_cm3;
+    defaultConfig.vehicle.cobAboveCogMm = spec.buoyancy.cob_above_cog_mm;
+
+    defaultConfig.electrical.supplyVoltage = spec.tether.supply_V;
+    defaultConfig.electrical.tetherLengthFt = spec.tether.length_ft;
+    defaultConfig.electrical.tetherResistance = spec.tether.R_roundtrip_ohm;
+
+    this.bus.supplyV = spec.tether.supply_V;
+    this.bus.tetherResistance = spec.tether.R_roundtrip_ohm;
+
+    this.inspector.supplyV = spec.tether.supply_V;
+    this.inspector.tetherFt = spec.tether.length_ft;
+    this.inspector.tetherAwg = spec.tether.awg;
+    this.inspector.tetherResistance = spec.tether.R_roundtrip_ohm;
+    this.inspector.statorAttached = spec.stator.vanes > 0;
+    this.inspector.statorIncidenceDeg = spec.stator.incidence_deg;
+    this.inspector.statorSlotted = spec.stator.slot_chord_pct > 0;
+    this.inspector.statorSlotChordPct = spec.stator.slot_chord_pct;
+
+    const propR = (spec.propeller.D_mm * 1e-3) * 0.5;
+    this.coupler.config.radiusCells = Math.max(4, Math.round(propR / this.coupler.config.gridDxM));
+
+    if (this.propArray.thrusters[0]) {
+      this.propArray.thrusters[0].stator.config.incidenceDeg = spec.stator.incidence_deg;
+      this.propArray.thrusters[0].stator.config.vaneType = spec.stator.slot_chord_pct > 0 ? 'slotted' : 'solid';
+    }
+
+    if (spec.operating_points && spec.operating_points.length > 0) {
+      const newPresets = spec.operating_points.map(op => ({
+        key: op.label,
+        name: op.label.replace(/_/g, ' ').toUpperCase(),
+        label: `${op.label} (${(op.throttle * 100).toFixed(0)}% / ${op.thrust_N > 0 ? '+' : ''}${op.thrust_N.toFixed(2)} N / ${op.current_A.toFixed(2)} A / ${op.burst_s ? `${op.burst_s}s` : 'unlimited'})`,
+        throttle: op.throttle,
+        rpm: op.rpm,
+        thrust_N: op.thrust_N,
+        current_A: op.current_A,
+        burst_s: op.burst_s,
+        throttleVector: [op.throttle, op.throttle, op.throttle] as [number, number, number]
+      }));
+
+      ALL_PRESETS.length = 0;
+      ALL_PRESETS.push(...newPresets);
+      this.header.updatePresets(newPresets);
+      if (newPresets.length > 0) {
+        this.applyPreset(newPresets[0].key);
+      }
+    }
+
+    this.showNotification(`Applied ${spec.name}: ${parseResult.fields.length} fields imported, ${parseResult.warnings.length} warnings.`);
   }
 
   public applyPreset(presetKey: string): void {
