@@ -144,7 +144,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     expect(grid.inBounds(0, 8)).toBe(false);
     expect(grid.inBounds(-1, 0)).toBe(false);
 
-    // Interior vs Boundary
     expect(grid.isBoundary(0, 0)).toBe(true);
     expect(grid.isBoundary(15, 4)).toBe(true);
     expect(grid.isBoundary(8, 0)).toBe(true);
@@ -153,7 +152,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     expect(grid.isInterior(8, 4)).toBe(true);
     expect(grid.isBoundary(8, 4)).toBe(false);
 
-    // get / set with bounds checking
     grid.set(grid.u, 5, 3, 12.34);
     expect(grid.get(grid.u, 5, 3)).toBeCloseTo(12.34, 4);
 
@@ -171,7 +169,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
       bottom: 'SOLID'
     });
 
-    // Populate interior with known velocities
     for (let y = 1; y < 7; y++) {
       for (let x = 1; x < 7; x++) {
         grid.u[grid.idx(x, y)] = 2.0;
@@ -181,19 +178,15 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
 
     handler.applyVelocityBoundary(grid);
 
-    // Left is SOLID -> u[0, y] = 0, v[0, y] = -v[1, y]
     expect(grid.u[grid.idx(0, 3)]).toBe(0);
     expect(grid.v[grid.idx(0, 3)]).toBe(-3.0);
 
-    // Right is OPEN_OUTFLOW -> u[7, y] = u[6, y], v[7, y] = v[6, y]
     expect(grid.u[grid.idx(7, 3)]).toBe(2.0);
     expect(grid.v[grid.idx(7, 3)]).toBe(3.0);
 
-    // Top is FREE_SLIP -> u[x, 7] = u[x, 6], v[x, 7] = 0
     expect(grid.u[grid.idx(3, 7)]).toBe(2.0);
     expect(grid.v[grid.idx(3, 7)]).toBe(0);
 
-    // Bottom is SOLID -> u[x, 0] = -u[x, 1], v[x, 0] = 0
     expect(grid.u[grid.idx(3, 0)]).toBe(-2.0);
     expect(grid.v[grid.idx(3, 0)]).toBe(0);
   });
@@ -204,15 +197,12 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
       pressureIterations: 20
     });
 
-    // Inject massive velocity spike in the center: u = 100.0 m/s (CFL = 100 * (1/60) / 1.0 = 1.67, with 200 m/s CFL = 3.33 > 2.0)
     const centerIdx = solver.grid.idx(16, 16);
     solver.grid.u[centerIdx] = 250.0;
     solver.grid.v[centerIdx] = 180.0;
 
-    // Advance solver with dt = 1/60
     const metrics = solver.step(1.0 / 60.0);
 
-    // Verify all grid values remain strictly finite (no NaN, no Infinity)
     for (let i = 0; i < solver.grid.size; i++) {
       expect(Number.isFinite(solver.grid.u[i])).toBe(true);
       expect(Number.isFinite(solver.grid.v[i])).toBe(true);
@@ -226,7 +216,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
   it('Vorticity confinement epsilon test: in an irrotational field, confinement force is exactly zero without NaN', () => {
     const grid = new FluidGrid({ width: 32, height: 32, dx: 1.0 });
 
-    // Set uniform irrotational flow: u = 5.0, v = 0.0 everywhere
     for (let i = 0; i < grid.size; i++) {
       grid.u[i] = 5.0;
       grid.v[i] = 0.0;
@@ -235,13 +224,10 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
     const initialU = new Float32Array(grid.u);
     const initialV = new Float32Array(grid.v);
 
-    // Documented epsilon threshold check
     expect(VORTICITY_GRADIENT_EPSILON).toBe(1e-7);
 
-    // Apply vorticity confinement with high strength
     applyVorticityConfinement(grid, 1.0 / 60.0, 10.0);
 
-    // Confinement force must be identically 0.0 everywhere in the irrotational field
     for (let i = 0; i < grid.size; i++) {
       expect(grid.u[i]).toBe(initialU[i]);
       expect(grid.v[i]).toBe(initialV[i]);
@@ -257,7 +243,6 @@ describe('Phase 1 — Fluid Core (CPU Reference)', () => {
       jetConfig: { vx: 2.0, enabled: true }
     });
 
-    // Run for 15 steps with steady inflow
     for (let step = 0; step < 15; step++) {
       solver.step(1.0 / 60.0);
     }

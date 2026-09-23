@@ -110,7 +110,6 @@ describe("Physics Tick Profiler", () => {
   it("profiles all 7 multi-physics pipeline stages", () => {
     const results = runPhysicsTickProfiler(60, 10);
     const totalAvg = results.reduce((sum, s) => sum + s.avgMs, 0);
-    // Check that profiler produces valid non-zero results
     expect(totalAvg).toBeGreaterThan(0);
   });
 });

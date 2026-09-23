@@ -254,7 +254,6 @@ function parseHtml(html: string, parent: MockNode | null = null): MockNode[] {
   return nodes;
 }
 
-// Setup global mock document if running in node
 if (typeof document === 'undefined') {
   (globalThis as any).document = {
     createElement: (tag: string) => new MockNode(tag),
@@ -333,19 +332,16 @@ describe('IBM Quantum Composer Design Language & UI Skeleton', () => {
       expect(runBtn).not.toBeNull();
       expect(runBtn.classList.contains('state-idle')).toBe(true);
 
-      // Click 1: idle -> running
       runBtn.click();
       expect(onRunToggle).toHaveBeenCalledWith('running');
       expect(header.getRunState()).toBe('running');
       expect(runBtn.classList.contains('state-running')).toBe(true);
 
-      // Click 2: running -> paused
       runBtn.click();
       expect(onRunToggle).toHaveBeenCalledWith('paused');
       expect(header.getRunState()).toBe('paused');
       expect(runBtn.classList.contains('state-paused')).toBe(true);
 
-      // Click 3: paused -> running
       runBtn.click();
       expect(onRunToggle).toHaveBeenCalledWith('running');
       expect(header.getRunState()).toBe('running');
@@ -402,12 +398,10 @@ describe('IBM Quantum Composer Design Language & UI Skeleton', () => {
       expect(titles).toContain('Blade Geometry');
       expect(titles).toContain('Blade Material');
 
-      // Stator toggle
       const statorBtn = layout.paletteEl.querySelector('#btn-toggle-stator') as any;
       statorBtn.click();
       expect(onToggleStator).toHaveBeenCalledWith(false);
 
-      // Prop design select
       const kaplanBtn = layout.paletteEl.querySelector('[data-design="kaplan"]') as any;
       kaplanBtn.click();
       expect(onSelectPropDesign).toHaveBeenCalledWith('kaplan');
@@ -428,12 +422,10 @@ describe('IBM Quantum Composer Design Language & UI Skeleton', () => {
       const title = layout.inspectorEl.querySelector('.inspector-title');
       expect(title?.textContent).toBe('Run Settings');
 
-      // Advanced fold is closed by default
       const advFold = layout.inspectorEl.querySelector('.inspector-advanced') as any;
       expect(advFold).not.toBeNull();
       expect(advFold.open).toBe(false);
 
-      // Slider changes supply voltage
       const slider = layout.inspectorEl.querySelector('#slider-supply-v') as any;
       slider.value = '14.0';
       slider.dispatchEvent(new Event('input'));
@@ -495,16 +487,13 @@ describe('IBM Quantum Composer Design Language & UI Skeleton', () => {
 
       expect(layout.stagePopoversEl.children.length).toBe(0);
 
-      // Click Thrust metric
       const thrustMetric = layout.hudEl.querySelector('[data-channel="thrust"]') as any;
       thrustMetric.click();
 
-      // Popover stripchart added
       expect(layout.stagePopoversEl.children.length).toBe(1);
       const popover = layout.stagePopoversEl.querySelector('.stripchart-popover') as any;
       expect(popover).not.toBeNull();
 
-      // Clicking close button removes the popover
       const closeBtn = popover.querySelector('.stripchart-close') as any;
       closeBtn.click();
       expect(layout.stagePopoversEl.children.length).toBe(0);

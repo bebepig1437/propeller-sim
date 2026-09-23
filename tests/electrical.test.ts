@@ -102,8 +102,8 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       console.log(`[Thermal Timing] Calibrated C_th = ${MABUCHI_RC280RA_SPECS.thermalCapacitanceJPerK} J/K, R_th = ${MABUCHI_RC280RA_SPECS.thermalResistanceKPerW} K/W`);
       console.log(`[Thermal Timing] 1.41 A heating reached 85°C warning at t = ${reachedWarnTimeS.toFixed(2)} s (target: 18s ± 20%)`);
 
-      expect(reachedWarnTimeS).toBeGreaterThan(14.4); // 18s - 20%
-      expect(reachedWarnTimeS).toBeLessThan(21.6);    // 18s + 20%
+      expect(reachedWarnTimeS).toBeGreaterThan(14.4); 
+      expect(reachedWarnTimeS).toBeLessThan(21.6);    
       expect(motor.getThermalState()).not.toBe('OK');
     });
 
@@ -111,24 +111,20 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
       motor.windingTempC = 95.0;
 
-      // Heat up past 100°C
       motor.stepThermal(2.0, 5.0);
       expect(motor.windingTempC).toBeGreaterThanOrEqual(100.0);
       expect(motor.isCutout).toBe(true);
       expect(motor.getThermalState()).toBe('CUTOUT');
 
-      // Attempting to run while in cutout produces 0 output
       const cutoutState = motor.solveVoltageMode(12.0, 1.0, () => 0.01);
       expect(cutoutState.rpm).toBe(0);
       expect(cutoutState.currentA).toBe(0);
       expect(cutoutState.isCutout).toBe(true);
 
-      // Cool down to 94°C: hysteresis must keep cutout ACTIVE until <= 90°C
       motor.windingTempC = 94.0;
       motor.stepThermal(0, 0.1);
       expect(motor.isCutout).toBe(true);
 
-      // Cool down below 90°C: cutout resets and motor re-enables
       motor.windingTempC = 88.0;
       motor.stepThermal(0, 0.1);
       expect(motor.isCutout).toBe(false);
@@ -139,7 +135,7 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
   describe('Tether Resistance & Voltage Drop (tether.ts)', () => {
     it('calculates round-trip resistance for 15ft 24AWG copper wire matching 0.782 Ohm', () => {
       const r = calculateTetherResistance(15.0, 24);
-      expect(r).toBe(0.782); // Canonical Candidate A JSON spec anchor
+      expect(r).toBe(0.782); 
     });
 
     it('calculates tether resistance across AWG wire gauges and meters', () => {
@@ -159,7 +155,7 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
     it('evaluates voltage drop and ohmic power dissipation under load', () => {
       const supplyV = 12.0;
       const rTether = 0.782;
-      const current = 1.41; // 1 motor at breakout
+      const current = 1.41; 
 
       const drop = calculateTetherState(current, supplyV, rTether);
       expect(drop.voltageDropV).toBeCloseTo(1.41 * 0.782, 3);
@@ -171,16 +167,13 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
 
   describe('Multi-Motor Power Bus Network (bus.ts)', () => {
     it('reproduces Candidate A exact spec anchor: V_term = 10.82 V ± 0.01 and I = 1.25 A ± 0.02 at 3800 RPM', () => {
-      // Vehicle operating anchor: 3800 RPM, Q_spec = 12.58 mNm, V_term = 10.82 V, I = 1.25 A
       const bus = new PowerBus(1, 12.0, 0.782, { quiescentCurrentA: 0.255 });
       const motor = bus.motors[0];
 
-      // In RPM mode at 3800 RPM with Candidate A torque 12.58 mNm
       const stateRpm = motor.solveRpmMode(3800, () => 0.01258);
       expect(stateRpm.currentA).toBeCloseTo(1.25, 1);
       expect(Math.abs(stateRpm.currentA - 1.25)).toBeLessThan(0.02);
 
-      // In bus network with tether drop:
       const tel = bus.solveBusNetwork([1.0], [() => 0.01258]);
       expect(tel.terminalV).toBeCloseTo(10.82, 2);
       expect(Math.abs(tel.terminalV - 10.82)).toBeLessThan(0.01);
@@ -202,10 +195,8 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
 
     it('demonstrates signed-current behavior: regenerative braking produces negative current and decreases tether drop', () => {
       const bus = new PowerBus(1, 12.0, 0.782);
-      // Net regenerative current (-1.0 A)
       const telRegen = calculateTetherState(-1.0, 12.0, 0.782);
 
-      // Terminal voltage must be HIGHER than supply voltage during regenerative feed
       expect(telRegen.voltageDropV).toBeLessThan(0);
       expect(telRegen.terminalV).toBeGreaterThan(12.0);
       expect(telRegen.terminalV).toBeCloseTo(12.0 - (-1.0 * 0.782), 3);
@@ -216,18 +207,14 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       const kHydro = 0.0144 / Math.pow(433, 2);
       const loadFn = (w: number) => kHydro * Math.pow(w, 2);
 
-      // Case 1: Only 1 motor active (e.g. vertical thruster alone)
       const tel1 = bus.solveBusNetwork([1.0, 0.0, 0.0], [loadFn, loadFn, loadFn]);
       expect(tel1.motors[0].rpm).toBeGreaterThan(3900);
       expect(tel1.terminalV).toBeGreaterThan(10.5);
 
-      // Case 2: All 3 motors firing at full breakout throttle
       const tel3 = bus.solveBusNetwork([1.0, 1.0, 1.0], [loadFn, loadFn, loadFn]);
       expect(tel3.totalBusCurrentA).toBeGreaterThan(tel1.totalBusCurrentA * 2.0);
 
-      // Terminal voltage must sag significantly due to 3x tether current
       expect(tel3.terminalV).toBeLessThan(tel1.terminalV);
-      // Motor RPM under 3-motor bus sag should be lower than single motor
       expect(tel3.motors[0].rpm).toBeLessThan(tel1.motors[0].rpm);
     });
 

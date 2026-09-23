@@ -286,12 +286,8 @@ describe('Phase 5 — Fluid <-> Propeller Bidirectional Coupling', () => {
         `Agreement: ${finalAgreementPct.toFixed(1)}%`
       );
 
-      // Assertions:
-      // 1. Max velocity bounded (< 10 m/s)
       expect(maxVelocityMagnitude).toBeLessThan(10.0);
-      // 2. BEMT thrust is positive and physically realistic
       expect(finalBemtThrust).toBeGreaterThan(0.0);
-      // 3. BEMT vs grid momentum flux agreement converges within 15% at steady state
       expect(finalAgreementPct).toBeGreaterThanOrEqual(85.0);
     },
   );

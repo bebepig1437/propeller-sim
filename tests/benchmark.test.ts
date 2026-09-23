@@ -86,16 +86,13 @@ describe("Phase 8 — Performance Profiling & 60 Hz Real-Time Frame Budget Bench
     console.log(`Heap growth: ${heapGrowthMb.toFixed(3)} MB (Limit: < 1.0 MB)`);
     console.log("======================================================\n");
 
-    // Invariant 1: Deterministic iteration and station counts
     expect(totalPressureIterations).toBe(benchSteps * 20);
     expect(totalBemtElements).toBe(benchSteps * 20);
 
-    // Invariant 2: Heap allocation guard (< 1.0 MB growth under GC)
     if (typeof (global as any).gc === "function") {
       expect(heapGrowthMb).toBeLessThan(1.0);
     }
 
-    // Invariant 3: Must execute comfortably within the 16.67 ms frame budget for 60 FPS real-time capability
     expect(avgMsPerStep).toBeLessThan(16.67);
   });
 });

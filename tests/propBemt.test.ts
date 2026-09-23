@@ -97,8 +97,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
     });
 
     it('validates against 3 UIUC propeller database points and reports % error', () => {
-      // UIUC Propeller Database (Vol 1-4, Brandt & Selig): APC 4.2x4 wind tunnel benchmark
-      // APC 4.2x4: D=106.7mm, pitch=101.6mm (4.0 in), 2 blades, air Re ~ 50k-80k
       const uiucPoints = [
         { J: 0.20, Kt_ref: 0.180, Kq_ref: 0.0260, eta_ref: 0.220 },
         { J: 0.45, Kt_ref: 0.150, Kq_ref: 0.0240, eta_ref: 0.450 },
@@ -107,7 +105,7 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
 
       const rpm = 5000;
       const n = rpm / 60;
-      const D = 0.1067; // 4.2 inches
+      const D = 0.1067; 
 
       console.log('\n--- UIUC Propeller Database Validation ---');
       for (const pt of uiucPoints) {
@@ -138,7 +136,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       const n = rpm / 60;
       const D = 0.042;
 
-      // Reference table for Candidate A geometry (XROTOR validation benchmark)
       const jPoints = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2];
       const refTable: Record<number, { kt: number; kq: number; eta: number }> = {
         0.0: { kt: 0.238, kq: 0.0302, eta: 0.0 },
@@ -160,7 +157,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
           pitchMm: 33.2
         });
 
-        // 1. Assert no NaNs anywhere in element array
         expect(Number.isNaN(res.thrustN)).toBe(false);
         expect(Number.isNaN(res.torqueNm)).toBe(false);
         expect(Number.isNaN(res.kt)).toBe(false);
@@ -176,7 +172,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
           expect(Number.isNaN(elem.tangentialInducedMs)).toBe(false);
         }
 
-        // 2. Compare against reference table
         const ref = refTable[J];
         const ktDiff = Math.abs(res.kt - ref.kt);
         const kqDiff = Math.abs(res.kq - ref.kq);
@@ -184,7 +179,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
         const kqErr = (kqDiff / Math.max(0.005, Math.abs(ref.kq))) * 100;
         console.log(`[J=${J.toFixed(2)}] Kt: ${res.kt.toFixed(4)} (ref ${ref.kt.toFixed(4)}, err=${ktErr.toFixed(1)}%) | Kq: ${res.kq.toFixed(4)} (ref ${ref.kq.toFixed(4)}, err=${kqErr.toFixed(1)}%) | eta: ${res.efficiency.toFixed(3)} (ref ${ref.eta.toFixed(3)})`);
 
-        // Within tolerances: 15% on Kt/Kq
         expect(ktDiff).toBeLessThan(0.025);
         expect(kqDiff).toBeLessThan(0.005);
       }
@@ -195,12 +189,10 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       const resCW = solveBEMT(rpm, 0.4, { handedness: 'CW' });
       const resCCW = solveBEMT(rpm, 0.4, { handedness: 'CCW' });
 
-      // Forward thrust must stay forward and equal magnitude
       expect(resCW.thrustN).toBeGreaterThan(0);
       expect(resCCW.thrustN).toBeGreaterThan(0);
       expect(Math.abs(resCW.thrustN - resCCW.thrustN)).toBeLessThan(1e-6);
 
-      // Torque magnitude must be equal within 1e-6, but opposite sign!
       expect(Math.abs(Math.abs(resCW.torqueNm) - Math.abs(resCCW.torqueNm))).toBeLessThan(1e-6);
       expect(resCW.torqueNm).toBeLessThan(0);
       expect(resCCW.torqueNm).toBeGreaterThan(0);
@@ -208,14 +200,12 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
     });
 
     it('computes locked-rotor drag forces with non-empty elements when |RPM| < 1', () => {
-      const resLocked = solveBEMT(0, 1.5); // Stationary prop facing 1.5 m/s inflow
+      const resLocked = solveBEMT(0, 1.5); 
       expect(resLocked.elements.length).toBe(20);
-      // Locked rotor creates hydrodynamic drag (negative thrust opposing advance)
       expect(resLocked.thrustN).toBeLessThan(0);
       expect(resLocked.torqueNm).toBe(0);
       expect(resLocked.efficiency).toBe(0);
 
-      // All elements should have zero induced velocity but valid non-zero drag
       for (const elem of resLocked.elements) {
         expect(elem.axialInducedMs).toBe(0);
         expect(elem.tangentialInducedMs).toBe(0);
@@ -230,11 +220,9 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       const lowSpeed = solveBEMT(rpm, 0.5);
       const cruiseSpeed = solveBEMT(rpm, 1.2);
 
-      // Thrust must decrease monotonically with forward vehicle speed
       expect(bollard.thrustN).toBeGreaterThan(lowSpeed.thrustN);
       expect(lowSpeed.thrustN).toBeGreaterThan(cruiseSpeed.thrustN);
 
-      // Efficiency is 0 at bollard pull (no useful vehicle advance work), rises at cruise
       expect(bollard.efficiency).toBe(0);
       expect(cruiseSpeed.efficiency).toBeGreaterThan(0.40);
       expect(cruiseSpeed.efficiency).toBeLessThan(0.85);
@@ -245,7 +233,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       const reverse = solveBEMT(-3500, 0);
 
       expect(reverse.thrustN).toBeLessThan(0);
-      // Reverse thrust should exhibit expected marine prop camber penalty (60-80% of forward)
       expect(Math.abs(reverse.thrustN)).toBeLessThan(forward.thrustN);
       expect(Math.abs(reverse.thrustN)).toBeGreaterThan(forward.thrustN * 0.5);
     });
@@ -262,7 +249,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       const thetaHub = getBladePitchAngleAt(rHub, pitch);
       const thetaTip = getBladePitchAngleAt(rTip, pitch);
 
-      // Pitch angle must twist downwards from hub to tip (washout)
       expect(thetaHub).toBeGreaterThan(thetaTip);
     });
   });
@@ -273,13 +259,11 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       shaft.commandedRpm = 3000;
       shaft.commandedPitchDeg = 25.0;
 
-      // Update by dt = 0.05s (one-third of tau_rpm=0.15s, equal to tau_pitch=0.05s)
       shaft.update(0.05);
       expect(shaft.currentRpm).toBeGreaterThan(500);
       expect(shaft.currentRpm).toBeLessThan(3000);
       expect(shaft.currentPitchDeg).toBeCloseTo(25.0, 1);
 
-      // Update for remaining duration so it converges (35 steps * 0.05s = 1.75s >> tau=0.15s)
       for (let t = 0; t < 35; t++) {
         shaft.update(0.05);
       }
@@ -303,17 +287,14 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       expect(iPA12.iDryKgM2).toBeLessThan(iPETG.iDryKgM2);
       expect(iPETG.iDryKgM2).toBeLessThan(iRigid.iDryKgM2);
 
-      // Hydrodynamic added mass must be included
       expect(iPA12.iAddedMassWaterKgM2).toBeGreaterThan(0);
       expect(iPA12.iTotalEffectiveKgM2).toBe(iPA12.iDryKgM2 + iPA12.iAddedMassWaterKgM2);
 
-      // Fast spin-up time constant for PA12-CF15 compared to Rigid 10K
       expect(iPA12.spinUpTimeConstantMs).toBeLessThan(iRigid.spinUpTimeConstantMs);
     });
 
     it('computes angular acceleration from net torque', () => {
       const alpha = calculateAngularAcceleration(0.020, 0.010, 1e-6);
-      // (0.020 - 0.010) / 1e-6 = 10000 rad/s^2
       expect(alpha).toBeCloseTo(10000, 1);
     });
   });
@@ -330,26 +311,21 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       expect(prop.group).toBeInstanceOf(THREE.Group);
       expect(prop.rotorGroup).toBeInstanceOf(THREE.Group);
 
-      // Rotor group contains 1 hub cylinder + 1 nose cone + 3 blades + 1 blur disc = 6 children
       expect(prop.rotorGroup.children.length).toBe(6);
 
-      // Direct manipulation handles exist
       expect(prop.handlesGroup).toBeInstanceOf(THREE.Group);
       expect(prop.translateHandle).toBeInstanceOf(THREE.Group);
       expect(prop.pitchHandle).toBeInstanceOf(THREE.Group);
       expect(prop.handednessBadge).toBeInstanceOf(THREE.Mesh);
 
-      // Rotation update
       prop.setRotation(Math.PI / 4);
       expect(prop.rotorGroup.rotation.z).toBeCloseTo(Math.PI / 4, 3);
 
-      // Material switching
       prop.setMaterial('pa12cf15');
       expect(prop.currentMaterial).toBe('pa12cf15');
       prop.setMaterial('petg');
       expect(prop.currentMaterial).toBe('petg');
 
-      // Design switching
       prop.setDesign('kaplan');
       expect(prop.currentDesignId).toBe('kaplan');
       prop.setDesign('wageningen');
@@ -357,7 +333,6 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       prop.setDesign('candidateA');
       expect(prop.currentDesignId).toBe('candidateA');
 
-      // Handedness flipping swaps blade geometry chirality
       prop.setHandedness('CCW');
       expect(prop.currentHandedness).toBe('CCW');
       prop.setHandedness('CW');
