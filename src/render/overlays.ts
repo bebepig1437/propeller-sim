@@ -18,8 +18,8 @@ export interface OverlayState {
 }
 
 export const DEFAULT_OVERLAY_STATE: OverlayState = {
-  velocityVectors: true,   // default-on #1
-  thrustArrows: true,      // default-on #2
+  velocityVectors: true,
+  thrustArrows: true,
   streamlines: false,
   pressureHeatmap: false,
   vorticity: false,
@@ -41,13 +41,12 @@ export const OVERLAY_KEYS = [
   'currentFlow'
 ] as const;
 
-/** Tunables exposed to Tweakpane. */
 export interface OverlayTunables {
-  vectorStride: number;      // grid cells between velocity arrows
-  vectorScale: number;       // m/s → meters of arrow length
-  streamlineCount: number;   // integrated tracers
-  particleCount: number;     // advected tracers
-  rollIndicatorGain: number; // deg/m → degrees of needle deflection
+  vectorStride: number;
+  vectorScale: number;
+  streamlineCount: number;
+  particleCount: number;
+  rollIndicatorGain: number;
 }
 
 export const DEFAULT_OVERLAY_TUNABLES: OverlayTunables = {
@@ -58,13 +57,10 @@ export const DEFAULT_OVERLAY_TUNABLES: OverlayTunables = {
   rollIndicatorGain: 1.0
 };
 
-/** Hard caps (Directive 7): a user cannot stall the frame with CPU integration. */
 export const MAX_STREAMLINES = 512;
 export const MAX_PARTICLES_TUNABLE = 4096;
-/** Roll needle display clamp in deg/m (Directive 6: clipping is VISIBLE). */
 export const ROLL_NEEDLE_CLAMP_DEG = 45;
 
-/** Reads a CSS accent custom property with a headless-safe fallback. */
 function readAccentVar(varName: string, fallback: number): number {
   try {
     if (typeof document !== 'undefined') {
@@ -72,7 +68,6 @@ function readAccentVar(varName: string, fallback: number): number {
       if (raw.startsWith('#')) return parseInt(raw.slice(1), 16);
     }
   } catch {
-    /* headless / jsdom: fall through */
   }
   return fallback;
 }
@@ -90,33 +85,26 @@ const ACCENT_TORQUE = readAccentVar('--accent-torque', 0xf59e0b);
 const ACCENT_HEAT = readAccentVar('--accent-heat', 0xef4444);
 const ACCENT_CURRENT = readAccentVar('--accent-current', 0xa855f7);
 
-/** The ONLY colors any overlay introduces. */
 export const OVERLAY_COLORS = {
   thrust: ACCENT_THRUST,
   torque: ACCENT_TORQUE,
   heat: ACCENT_HEAT,
   current: ACCENT_CURRENT,
-  torqueStator: shiftColorHex(ACCENT_TORQUE, 0.35, 0.0),  // desaturated torque accent
-  torqueNet: shiftColorHex(ACCENT_TORQUE, 1.0, 0.15)      // brightened torque accent
+  torqueStator: shiftColorHex(ACCENT_TORQUE, 0.35, 0.0),
+  torqueNet: shiftColorHex(ACCENT_TORQUE, 1.0, 0.15)
 } as const;
 
-/** Per-frame input for OverlaySystem.update. Preallocate once and mutate. */
 export interface OverlayUpdateContext {
-  /** Render dt (clamped): used ONLY for animation — variant-diff fade, current
-   *  pulse, roll-needle smoothing. Never for field advection (Directive 5). */
   dt: number;
-  /** Fixed physics dt of the substeps that produced the current field (0 when
-   *  paused). Streamline/particle integration uses this so advection stays
-   *  time-consistent with the velocity field regardless of display refresh rate. */
   physicsDt: number;
-  elapsed: number;         // total elapsed seconds (animations)
+  elapsed: number;
   grid: FluidGrid | null;
-  gridCenter: THREE.Vector3; // world position of the grid plane center
-  gridDxM: number;         // meters per grid cell; plane extent = dims × gridDxM (single source of truth)
+  gridCenter: THREE.Vector3;
+  gridDxM: number;
   vehicle: VehicleBody | null;
   summary: VehiclePropulsionSummary;
-  motorTempsC: number[];   // per-propulsor winding temperature
-  motorCurrentsA: number[]; // per-propulsor bus current
+  motorTempsC: number[];
+  motorCurrentsA: number[];
 }
 
 export interface ThrustCurvePoint {
@@ -125,9 +113,7 @@ export interface ThrustCurvePoint {
 }
 
 export interface OverlaySystemOptions {
-  /** Container for hover numeric labels (absolute-positioned over the stage). */
   hoverEl?: HTMLElement;
-  /** Container for the variant diff mini-plot. */
   diffEl?: HTMLElement;
 }
 
@@ -142,18 +128,11 @@ interface TracerState {
   life: number;
 }
 
-/**
- * The Phase 6 overlay system. One THREE.Group with nine sub-groups, one per
- * toggle. All rendering is GPU-side (instanced meshes / points / lines); all
- * field integration happens on CPU from the authoritative readback grid so
- * behavior is identical on the WebGPU and WebGL2 backends.
- */
 export class OverlaySystem {
   public group: THREE.Group = new THREE.Group();
   public state: OverlayState = { ...DEFAULT_OVERLAY_STATE };
   public tunables: OverlayTunables = { ...DEFAULT_OVERLAY_TUNABLES };
 
-  // Sub-groups (order matches OVERLAY_KEYS minus pressureHeatmap, which is cutaway-only)
   private velocityGroup = new THREE.Group();
   private streamlineGroup = new THREE.Group();
   private vorticityGroup = new THREE.Group();
@@ -163,45 +142,38 @@ export class OverlaySystem {
   private thermalGroup = new THREE.Group();
   private currentGroup = new THREE.Group();
 
-  // Hover & variant diff DOM (optional in headless)
   private hoverEl: HTMLElement | null;
   private diffEl: HTMLElement | null;
   private hoverLabel: HTMLDivElement | null = null;
   private diffCanvas: HTMLCanvasElement | null = null;
-  private diffLife = 0; // remaining seconds; 0 = hidden
+  private diffLife = 0;
 
-  // Camera for hover raycast
   private camera: THREE.Camera | null = null;
   private hoverDom: HTMLElement | null = null;
   private pointerNdc = new THREE.Vector2();
   private hasPointer = false;
   private raycaster = new THREE.Raycaster();
 
-  // ── Velocity vectors ──
   private arrowInstanced!: THREE.InstancedMesh;
   private arrowUp = new THREE.Vector3(0, 1, 0);
 
-  // ── Streamlines ──
   private streamlineLines: THREE.Line[] = [];
   private tracerStates: TracerState[] = [];
   private divergencePoints!: THREE.Points;
   private lastMarkerCount = 0;
   private streamlineCountActive = 0;
 
-  // ── Vorticity ──
   private vorticitySheet!: THREE.Mesh;
 
-  // ── Particles ──
   private particlePoints!: THREE.Points;
   private particleStreaks!: THREE.LineSegments;
-  private particlePos!: Float32Array;   // xyz per particle (world)
-  private particleVel!: Float32Array;   // uv per particle (grid m/s)
+  private particlePos!: Float32Array;
+  private particleVel!: Float32Array;
   private particleAge!: Float32Array;
   private particleLife!: Float32Array;
   private particleCountActive = 0;
   private particleAllocatedCapacity = 0;
 
-  // ── Vehicle-anchored overlays ──
   private thrustArrows: THREE.Group[] = [];
   private torquePropArcs: THREE.Line[] = [];
   private torqueStatorArcs: THREE.Line[] = [];
@@ -209,9 +181,7 @@ export class OverlaySystem {
   private rollIndicator = new THREE.Group();
   private rollNeedle!: THREE.Line;
   private rollSmoothed = 0;
-  /** Raw (unclamped) predicted roll rate from the last update, deg/m. NaN = no valid prediction. */
   public rollRateRaw = NaN;
-  /** True when |roll rate| hit the needle clamp (Directive 6: visible clip state). */
   public rollNeedleClipped = false;
   private rollNeedleClippedLast = false;
   private heatSpheres: THREE.Mesh[] = [];
@@ -221,7 +191,6 @@ export class OverlaySystem {
   private hoverProxies: THREE.Mesh[] = [];
   private vehicleCapacity = 0;
 
-  // Shared assets
   private thrustMaterial!: THREE.MeshBasicMaterial;
   private arrowShaftGeo!: THREE.BufferGeometry;
   private arrowHeadGeo!: THREE.BufferGeometry;
@@ -229,7 +198,6 @@ export class OverlaySystem {
   private hubSphereGeo!: THREE.BufferGeometry;
   private arcGeo!: THREE.BufferGeometry;
 
-  // Scratch (zero-alloc)
   private scratchV1 = new THREE.Vector3();
   private scratchV2 = new THREE.Vector3();
   private scratchV3 = new THREE.Vector3();
@@ -270,8 +238,6 @@ export class OverlaySystem {
     this.syncVisibility();
   }
 
-  // ────────────────────────────── public API ──────────────────────────────
-
   public setVisible(key: keyof OverlayState, active: boolean): void {
     this.state[key] = active;
     this.syncVisibility();
@@ -291,10 +257,6 @@ export class OverlaySystem {
     this.hasPointer = false;
   }
 
-  /**
-   * Variant diff: old vs new open-water thrust curve on a stage-corner mini
-   * plot. Shows for 5 s then fades. Not an icon — fires on design swap.
-   */
   public showVariantDiff(oldCurve: ThrustCurvePoint[], newCurve: ThrustCurvePoint[]): void {
     if (!this.diffCanvas) return;
     this.drawThrustCurve(oldCurve, '#64748b', 'OLD');
