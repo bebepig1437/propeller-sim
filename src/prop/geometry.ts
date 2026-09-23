@@ -362,10 +362,10 @@ export class Propeller3D {
   public setSelected(selected: boolean): void {
     this.isSelected = selected;
     this.selectionBox.visible = selected;
-    this.axisTranslateHandle.visible = selected;
-    this.pitchArcHandle.visible = selected;
-    this.statorIncidenceHandle.visible = selected && this.statorAttached;
-    this.handednessBadge.visible = selected;
+    this.axisTranslateHandle.visible = false;
+    this.pitchArcHandle.visible = false;
+    this.statorIncidenceHandle.visible = false;
+    this.handednessBadge.visible = false;
   }
 
   public setRotation(angleRad: number, rpm = 0): void {

@@ -1,3 +1,4 @@
+import { defaultConfig } from '../core/config';
 import type { OverlayState } from '../render/overlays';
 
 export type { OverlayState } from '../render/overlays';
@@ -5,6 +6,8 @@ export type { OverlayState } from '../render/overlays';
 export interface StageOverlayCallbacks {
   onToggleCutaway: (active: boolean) => void;
   onToggleOverlay: (overlayKey: keyof OverlayState, active: boolean) => void;
+  onSelectViewPreset?: (preset: 'full' | 'testSection' | 'cutaway') => void;
+  onToggleVisualSpin?: (enabled: boolean) => void;
 }
 
 export interface StageOverlaysOptions {
@@ -37,6 +40,7 @@ export class StageOverlays {
   private callbacks: StageOverlayCallbacks;
 
   private cutawayActive = false;
+  private activePreset: 'full' | 'testSection' | 'cutaway' = 'testSection';
   public state: OverlayState;
 
   constructor(
@@ -65,10 +69,23 @@ export class StageOverlays {
   }
 
   public render(): void {
+    const spinActive = defaultConfig.propellerVisualSpinEnabled;
     this.cornerContainer.innerHTML = `
+      <button id="btn-view-full" class="btn-stage-tool ${this.activePreset === 'full' ? 'active' : ''}" title="View Full Water Tunnel" aria-label="View Full Water Tunnel">
+        <span>⚏</span>
+        <span>Full Tunnel</span>
+      </button>
+      <button id="btn-view-section" class="btn-stage-tool ${this.activePreset === 'testSection' ? 'active' : ''}" title="Close-up View of Propulsor Test Section" aria-label="Close-up View of Propulsor Test Section">
+        <span>⊕</span>
+        <span>Test Section</span>
+      </button>
       <button id="btn-toggle-cutaway" class="btn-stage-tool ${this.cutawayActive ? 'active' : ''}" title="Toggle 2D Side Cutaway Cross-Section" aria-label="Toggle 2D Side Cutaway Cross-Section" aria-pressed="${this.cutawayActive}">
         <span>◫</span>
-        <span>Cutaway View</span>
+        <span>Cutaway</span>
+      </button>
+      <button id="btn-toggle-spin" class="btn-stage-tool ${spinActive ? 'active' : ''}" title="Toggle Propeller Visual Spin" aria-label="Toggle Propeller Visual Spin" aria-pressed="${spinActive}">
+        <span>↻</span>
+        <span>Spin: ${spinActive ? 'ON' : 'OFF'}</span>
       </button>
       <div id="thrust-coupling-badge" class="stage-coupling-badge hidden">
         <span>⇄ COUPLING</span>
@@ -76,12 +93,47 @@ export class StageOverlays {
       </div>
     `;
 
+    const fullBtn = this.cornerContainer.querySelector('#btn-view-full');
+    fullBtn?.addEventListener('click', () => {
+      this.activePreset = 'full';
+      if (this.cutawayActive) {
+        this.cutawayActive = false;
+        this.updateCutawayVisibility();
+        this.callbacks.onToggleCutaway(false);
+      }
+      this.render();
+      this.callbacks.onSelectViewPreset?.('full');
+    });
+
+    const sectionBtn = this.cornerContainer.querySelector('#btn-view-section');
+    sectionBtn?.addEventListener('click', () => {
+      this.activePreset = 'testSection';
+      if (this.cutawayActive) {
+        this.cutawayActive = false;
+        this.updateCutawayVisibility();
+        this.callbacks.onToggleCutaway(false);
+      }
+      this.render();
+      this.callbacks.onSelectViewPreset?.('testSection');
+    });
+
     const cutawayBtn = this.cornerContainer.querySelector('#btn-toggle-cutaway');
     cutawayBtn?.addEventListener('click', () => {
       this.cutawayActive = !this.cutawayActive;
+      this.activePreset = this.cutawayActive ? 'cutaway' : 'testSection';
       this.updateCutawayVisibility();
       this.render();
       this.callbacks.onToggleCutaway(this.cutawayActive);
+      if (this.cutawayActive) {
+        this.callbacks.onSelectViewPreset?.('cutaway');
+      }
+    });
+
+    const spinBtn = this.cornerContainer.querySelector('#btn-toggle-spin');
+    spinBtn?.addEventListener('click', () => {
+      defaultConfig.propellerVisualSpinEnabled = !defaultConfig.propellerVisualSpinEnabled;
+      this.render();
+      this.callbacks.onToggleVisualSpin?.(defaultConfig.propellerVisualSpinEnabled);
     });
 
     this.stripContainer.innerHTML = OVERLAY_DEFS.map((def) => {

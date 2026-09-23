@@ -1,6 +1,6 @@
 import type { FluidGrid } from './grid';
 
-export type BoundaryType = 'SOLID' | 'OPEN_OUTFLOW' | 'FREE_SLIP';
+export type BoundaryType = 'SOLID' | 'OPEN_OUTFLOW' | 'FREE_SLIP' | 'INFLOW';
 export type EdgeName = 'left' | 'right' | 'top' | 'bottom';
 
 export interface EdgeBoundaries {
@@ -12,6 +12,7 @@ export interface EdgeBoundaries {
 
 export class BoundaryHandler {
   public edges: EdgeBoundaries;
+  public inflowVelocity = 1.5;
 
   constructor(typeOrEdges: BoundaryType | Partial<EdgeBoundaries> = 'FREE_SLIP') {
     if (typeof typeOrEdges === 'string') {
@@ -108,6 +109,13 @@ export class BoundaryHandler {
     }
 
     switch (this.edges.left) {
+      case 'INFLOW':
+        for (let y = 0; y < H; y++) {
+          const left = y * W;
+          u[left] = this.inflowVelocity;
+          v[left] = 0;
+        }
+        break;
       case 'SOLID':
         for (let y = 0; y < H; y++) {
           const left = y * W;
@@ -173,8 +181,13 @@ export class BoundaryHandler {
     for (let y = 0; y < H; y++) {
       p[y * W + 0] = p[y * W + 2];
       p[y * W + 1] = p[y * W + 2];
-      p[y * W + W - 1] = p[y * W + W - 3];
-      p[y * W + W - 2] = p[y * W + W - 3];
+      if (this.edges.right === 'OPEN_OUTFLOW') {
+        p[y * W + W - 1] = 0;
+        p[y * W + W - 2] = 0;
+      } else {
+        p[y * W + W - 1] = p[y * W + W - 3];
+        p[y * W + W - 2] = p[y * W + W - 3];
+      }
     }
     for (let x = 0; x < W; x++) {
       p[0 * W + x] = p[2 * W + x];

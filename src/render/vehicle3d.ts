@@ -248,13 +248,13 @@ export class Vehicle3D {
 
   public setSelected(selected: boolean): void {
     this.isSelected = selected;
-    this.handleGroup.visible = selected;
+    this.handleGroup.visible = false;
     this.frameMaterial.color.setHex(selected ? COLOR_FRAME_SELECTED : COLOR_FRAME);
     this.frameMaterial.emissiveIntensity = selected ? 1.4 : 0.6;
   }
 
   public pickables(): THREE.Object3D[] {
-    return [this.body, this.grabSphere, this.heaveHandle, this.yawRing];
+    return [this.body];
   }
 
   public isHandle(object: THREE.Object3D): 'grab' | 'heave' | 'yaw' | null {
