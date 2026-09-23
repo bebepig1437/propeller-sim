@@ -44,6 +44,8 @@ export interface ReadbackSlot {
 }
 
 export interface GpuFluidSolverOptions extends FluidSolverParams {
+  width?: number;
+  height?: number;
   renderer?: any;
   backend?: 'gpu' | 'cpu';
   pressureMethod?: 'jacobi' | 'multigrid';
@@ -114,8 +116,8 @@ export class GpuFluidSolver {
   private pPrevAttr!: StorageBufferAttribute;
 
   constructor(options?: GpuFluidSolverOptions) {
-    this.width = options?.gridOptions?.width ?? 1024;
-    this.height = options?.gridOptions?.height ?? 512;
+    this.width = options?.gridOptions?.width ?? options?.width ?? 256;
+    this.height = options?.gridOptions?.height ?? options?.height ?? 64;
     this.backend = options?.backend ?? 'gpu';
     this.pressureMethod = options?.pressureMethod ?? 'jacobi';
     this.renderer = options?.renderer ?? null;
@@ -232,6 +234,15 @@ export class GpuFluidSolver {
 
   public get grid(): FluidGrid {
     return this.cpuFallback.grid;
+  }
+
+  public primeTunnel(inflowVelocity: number): void {
+    this.cpuFallback.primeTunnel(inflowVelocity);
+    if (this.uAttr && this.uAttr.array) {
+      const arr = this.uAttr.array as Float32Array;
+      arr.fill(inflowVelocity);
+      this.uAttr.needsUpdate = true;
+    }
   }
 
   public get jet() {

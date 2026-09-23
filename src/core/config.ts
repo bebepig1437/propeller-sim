@@ -13,10 +13,29 @@ export type BoundaryConditionType = 'solid' | 'outflow' | 'free-slip';
 export type PropellerMaterialType = 'rigid10k' | 'pa12cf15' | 'petg';
 
 export interface SimConfig {
+  simulationMode: 'tunnel' | 'pool';
+  vehicleDynamicsEnabled: boolean;
+  propellerVisualSpinEnabled: boolean;
+  tunnel: {
+    lengthM: number;
+    heightM: number;
+    depthM: number;
+    inflowVelocity: number;
+    wallMode: 'free-slip' | 'no-slip';
+  };
+  testSection: {
+    xFraction: number;
+    yFraction: number;
+  };
+  fluidGrid: {
+    width: number;
+    height: number;
+  };
+
   fluid: {
     nx: number;
     ny: number;
-    resolutionPreset: '1024x512' | '512x256' | '256x128';
+    resolutionPreset: '384x96' | '256x64' | '1024x512' | '512x256' | '256x128';
     backend: 'gpu' | 'cpu';
     pressureMethod: 'jacobi' | 'multigrid';
     compareMode: boolean;
@@ -138,10 +157,28 @@ export interface SimConfig {
 }
 
 export const defaultConfig: SimConfig = {
+  simulationMode: 'tunnel',
+  vehicleDynamicsEnabled: false,
+  propellerVisualSpinEnabled: false,
+  tunnel: {
+    lengthM: 2.4,
+    heightM: 0.5,
+    depthM: 0.5,
+    inflowVelocity: 1.5,
+    wallMode: 'free-slip'
+  },
+  testSection: {
+    xFraction: 0.25,
+    yFraction: 0.50
+  },
+  fluidGrid: {
+    width: 256,
+    height: 64
+  },
   fluid: {
-    nx: 1024,
-    ny: 512,
-    resolutionPreset: '1024x512',
+    nx: 256,
+    ny: 64,
+    resolutionPreset: '256x64',
     backend: 'gpu',
     pressureMethod: 'jacobi',
     compareMode: false,
@@ -149,7 +186,7 @@ export const defaultConfig: SimConfig = {
     vorticityStrength: 0.25,
     pressureIterations: 30,
     advectionScheme: 'semi-lagrangian',
-    boundaryCondition: 'solid',
+    boundaryCondition: 'free-slip',
     inflowActive: true,
     inflowVelocity: 1.5,
     inflowRadius: 10,

@@ -164,8 +164,22 @@ export class FluidSolver {
     return sum;
   }
 
+  public primeTunnel(inflowVelocity: number): void {
+    const { width: W, height: H, u, v } = this.grid;
+    for (let y = 1; y < H - 1; y++) {
+      const row = y * W;
+      for (let x = 1; x < W - 1; x++) {
+        u[row + x] = inflowVelocity;
+        v[row + x] = 0;
+      }
+    }
+  }
+
   public reset(): void {
     this.grid.resetAll();
     this.simTime = 0;
+    if (this.jet.config.enabled && this.jet.config.vx !== 0) {
+      this.primeTunnel(this.jet.config.vx);
+    }
   }
 }

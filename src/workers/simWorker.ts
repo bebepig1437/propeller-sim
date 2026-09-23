@@ -141,8 +141,10 @@ function stepAndRender(nowMs: number): void {
       b.solveBusNetwork([activeThrottle, 0, 0], [() => Math.abs(bemt.torqueNm), () => 0, () => 0]);
       b.stepThermal(dt);
       c.injectCouplingForces(f.grid, bemt, dt);
-      const summary = p.evaluate(undefined, [va, va, 0]);
-      stepVehicleRigidBody(v, dt, summary.totalForceN, summary.totalMomentNm);
+      if (defaultConfig.vehicleDynamicsEnabled) {
+        const summary = p.evaluate(undefined, [va, va, 0]);
+        stepVehicleRigidBody(v, dt, summary.totalForceN, summary.totalMomentNm);
+      }
       f.step(dt);
     });
   }

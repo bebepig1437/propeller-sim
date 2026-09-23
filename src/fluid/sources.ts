@@ -42,17 +42,23 @@ export class InflowJet {
     const yEnd = Math.min(H - 2, Math.floor(this.config.y + this.config.height));
 
     const perturbation = Math.sin(simTime * 8.0) * 0.15 * this.config.vx;
+    const isTunnel = (yStart <= 2 && yEnd >= H - 4);
 
     for (let y = yStart; y <= yEnd; y++) {
       const rowOffset = y * W;
-      const yNorm = ((y - yStart) / (yEnd - yStart) - 0.5) * 2.0;
-      const profile = Math.max(0, 1.0 - yNorm * yNorm);
+      const yNorm = ((y - yStart) / Math.max(1, (yEnd - yStart)) - 0.5) * 2.0;
+      const profile = isTunnel ? 1.0 : Math.max(0, 1.0 - yNorm * yNorm);
+
+      const isStreamline = isTunnel ? (y % 8 === 0 || Math.abs(y - Math.floor(H / 2)) <= 4) : true;
+      const dyeAmount = isStreamline ? this.config.dyeDensity * profile : 0;
 
       for (let x = xStart; x <= xEnd; x++) {
         const idx = rowOffset + x;
         u[idx] = this.config.vx * profile;
         v[idx] = (this.config.vy + perturbation) * profile;
-        dye[idx] = Math.min(1.0, dye[idx] + this.config.dyeDensity * profile);
+        if (dyeAmount > 0) {
+          dye[idx] = Math.min(1.0, dye[idx] + dyeAmount);
+        }
       }
     }
   }

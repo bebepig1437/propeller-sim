@@ -162,8 +162,8 @@ export class App {
 
 
   public coupler = new ActuatorDiscCoupler({
-    centerX: 28,
-    centerY: 64,
+    centerX: 64,
+    centerY: 32,
     radiusCells: 14,
     thicknessCells: 3,
     gridDxM: 0.0015,
@@ -171,8 +171,8 @@ export class App {
     inflowRelaxation: 0.5
   });
   public hull = new HullObstacle({
-    x: 48,
-    y: 54,
+    x: 64,
+    y: 22,
     width: 28,
     height: 20,
     cd: 1.05
@@ -256,6 +256,7 @@ export class App {
         enabled: defaultConfig.fluid.inflowActive
       }
     });
+    this.fluidSolver.primeTunnel(defaultConfig.tunnel.inflowVelocity);
 
     this.fluidRenderer = new FluidRenderer2D(layout.fluidCanvasEl, defaultConfig.fluid.nx, defaultConfig.fluid.ny);
 
@@ -551,9 +552,19 @@ export class App {
           if (active) {
             this.renderer.setSideCutawayView();
           } else {
-            this.renderer.resetOrbitView();
+            this.renderer.setTestSectionCloseUpView();
           }
         },
+        onSelectViewPreset: (preset) => {
+          if (preset === 'full') {
+            this.renderer.setFullTunnelView();
+          } else if (preset === 'testSection') {
+            this.renderer.setTestSectionCloseUpView();
+          } else if (preset === 'cutaway') {
+            this.renderer.setSideCutawayView();
+          }
+        },
+        onToggleVisualSpin: (_enabled) => {},
         onToggleOverlay: (key, active) => {
           this.overlayState[key] = active;
           this.overlaySystem.setVisible(key, active);
@@ -1083,21 +1094,48 @@ export class App {
           this.vehicleInit.tetherAnchorSurgeM
         ];
         this.vehiclePosePrevious = this.vehiclePoseCurrent;
-        this.vehicleTelemetry = stepVehicleSubstepped(
-          this.vehicle,
-          dt,
-          defaultConfig.vehicle.vehicleSubstepDivider,
-          { forceBodyMarine: this.vehicleForceMarineN, momentBodyMarine: this.vehicleMomentMarineNm },
-          undefined,
-          DEFAULT_TANK_BOUNDARIES,
-          this.vehicleTether,
-          [this.vehicleAmbientFlowWorld.x, this.vehicleAmbientFlowWorld.y, this.vehicleAmbientFlowWorld.z]
-        );
-        this.vehiclePoseCurrent = {
-          position: [this.vehicle.position.x, this.vehicle.position.y, this.vehicle.position.z],
-          yawRad: this.vehicle.getEulerDegrees().yawDeg * (Math.PI / 180),
-          scale: 1
-        };
+        if (defaultConfig.vehicleDynamicsEnabled) {
+          this.vehicleTelemetry = stepVehicleSubstepped(
+            this.vehicle,
+            dt,
+            defaultConfig.vehicle.vehicleSubstepDivider,
+            { forceBodyMarine: this.vehicleForceMarineN, momentBodyMarine: this.vehicleMomentMarineNm },
+            undefined,
+            DEFAULT_TANK_BOUNDARIES,
+            this.vehicleTether,
+            [this.vehicleAmbientFlowWorld.x, this.vehicleAmbientFlowWorld.y, this.vehicleAmbientFlowWorld.z]
+          );
+          this.vehiclePoseCurrent = {
+            position: [this.vehicle.position.x, this.vehicle.position.y, this.vehicle.position.z],
+            yawRad: this.vehicle.getEulerDegrees().yawDeg * (Math.PI / 180),
+            scale: 1
+          };
+        } else {
+          this.vehicle.position.set(0, 0, 0);
+          this.vehicle.velocityBodyMs = [0, 0, 0];
+          this.vehicle.angularVelocityBodyRadS = [0, 0, 0];
+          this.vehicle.quaternion.set(0, 0, 0, 1);
+          this.vehicleTelemetry = {
+            bodyVelocityMs: [0, 0, 0],
+            bodyAccelerationMs2: [0, 0, 0],
+            dragForceBodyN: [0, 0, 0],
+            coriolisForceBodyN: [0, 0, 0, 0, 0, 0],
+            restoringTorqueBodyNm: [0, 0, 0],
+            tetherForceBodyN: [0, 0, 0],
+            appliedForceBodyN: this.vehicleForceMarineN,
+            appliedTorqueBodyNm: this.vehicleMomentMarineNm,
+            contactNormalWorld: [0, 0, 0],
+            isGrounded: false,
+            isBroaching: false,
+            isWallContact: false,
+            angularRateClamped: false
+          };
+          this.vehiclePoseCurrent = {
+            position: [0, 0, 0],
+            yawRad: 0,
+            scale: 1
+          };
+        }
 
 
 
@@ -1306,8 +1344,8 @@ export class App {
       defaultConfig.water.causticIntensity,
       this.fluidSolver.grid,
       renderDt,
-      this.shaft.bladePhaseRad,
-      this.shaft.currentRpm
+      defaultConfig.propellerVisualSpinEnabled ? this.shaft.bladePhaseRad : 0.0,
+      defaultConfig.propellerVisualSpinEnabled ? this.shaft.currentRpm : 0.0
     );
     this.gpuTimer.end();
 
