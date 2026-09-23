@@ -1,32 +1,9 @@
-/**
- * Phase 6b — 3D vehicle body with direct-manipulation handles.
- *
- * GEOMETRY FRAME: every child of `body` is expressed in the three.js BODY frame,
- * i.e. marine (surge, sway, heave) remapped to (x = sway, y = heave, z = surge)
- * — the same mapping as src/render/frameMap.ts. A marine mount of
- * (0, ±0.075, 0) therefore becomes (x = ±0.075, y = 0, z = 0).
- *
- * MANIPULATION (stage):
- *   drag the translucent grab sphere   → translate in the world X–Z plane
- *   drag the vertical arrow (or shift) → translate along world Y
- *   drag the yaw ring                  → rotate about the heave axis
- * Pitch and roll are NOT user-set: they are owned by the buoyancy model.
- *
- * The body pose is authoritative in src/vehicle/body.ts; this class mirrors it
- * and reports edits back through the callbacks so the physics state is the only
- * source of truth.
- */
-
 import * as THREE from 'three';
 
 export interface Vehicle3DGeometry {
-  /** Frame truss node offset from the CoG (m). */
   cornerHalfGapM: number;
-  /** Lateral rotor mount offset (m), marine sway axis. */
   mountSwayM: number;
-  /** Rotor diameter (m). */
   propDiameterM: number;
-  /** Center of buoyancy height above the CoG (m). */
   cobAboveCogM: number;
 }
 
@@ -39,9 +16,7 @@ export const DEFAULT_VEHICLE_3D_GEOMETRY: Vehicle3DGeometry = {
 
 export interface Vehicle3DCallbacks {
   onSelected?: () => void;
-  /** Fired continuously while dragging: the physics state has been re-posed. */
   onPoseChanged?: (position: THREE.Vector3, yawRad: number) => void;
-  /** Fired once when a drag gesture ends. */
   onPoseCommit?: (position: THREE.Vector3, yawRad: number) => void;
 }
 
@@ -53,7 +28,6 @@ const COLOR_COB = 0x22d3ee;
 const COLOR_HANDLE = 0x38bdf8;
 const COLOR_YAW = 0xa78bfa;
 
-/** Ray → horizontal plane at `planeY`, in world space. Returns null if parallel. */
 export function pointerToHorizontalPlane(
   ndc: THREE.Vector2,
   camera: THREE.Camera,
@@ -68,9 +42,7 @@ export function pointerToHorizontalPlane(
 
 export class Vehicle3D {
   public readonly root: THREE.Group = new THREE.Group();
-  /** Pose-driven visual body (rotates with the vehicle quaternion). */
   public readonly body: THREE.Group = new THREE.Group();
-  /** Handles: kept world-aligned (never inherits the vehicle's roll/pitch). */
   public readonly handleGroup: THREE.Group = new THREE.Group();
 
   public readonly grabSphere: THREE.Mesh;
@@ -120,13 +92,10 @@ export class Vehicle3D {
     this.syncHandlePose();
   }
 
-  // ---------------------------------------------------------------- geometry
-
   private buildFrame(): void {
     const c = this.geometry.cornerHalfGapM;
     const beam = 0.006;
 
-    // 12 truss beams of the (±c, ±c, ±c) lattice, in the three.js body frame.
     const rails: [THREE.Vector3, THREE.Vector3][] = [];
     for (let axis = 0; axis < 3; axis++) {
       const u = (axis + 1) % 3;
@@ -157,7 +126,6 @@ export class Vehicle3D {
       this.body.add(mesh);
     }
 
-    // Corner nodes.
     const nodeGeo = new THREE.SphereGeometry(0.005, 10, 8);
     for (const sx of [-1, 1]) {
       for (const sy of [-1, 1]) {
@@ -169,10 +137,6 @@ export class Vehicle3D {
       }
     }
 
-    // Motor pods + rotor discs at the array mount points. Marine (surge, sway,
-    // heave) → three body (z, x, y); horizontal rotors spin about the marine
-    // surge axis (three body +Z), the vertical rotor about the marine heave
-    // axis (three body +Y).
     const s = this.geometry.mountSwayM;
     const R = this.geometry.propDiameterM / 2;
     const pods: { pos: THREE.Vector3; axis: THREE.Vector3 }[] = [
@@ -204,8 +168,6 @@ export class Vehicle3D {
       this.body.add(disc);
     }
 
-    // CoG marker + CoB marker (marine heave is three body +Y) and the
-    // CoB−CoG lever that produces the righting moment.
     const cog = new THREE.Mesh(new THREE.SphereGeometry(0.004, 10, 8), new THREE.MeshBasicMaterial({ color: COLOR_COG }));
     const cob = new THREE.Mesh(new THREE.SphereGeometry(0.004, 10, 8), new THREE.MeshBasicMaterial({ color: COLOR_COB }));
     cob.position.set(0, this.geometry.cobAboveCogM, 0);
@@ -227,7 +189,6 @@ export class Vehicle3D {
   }
 
   private buildHeaveHandle(): THREE.Mesh {
-    // Double-headed arrow along world +Y, sitting above the vehicle.
     const group = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.09, 10), this.handleMaterial);
     const tip = new THREE.Mesh(new THREE.ConeGeometry(0.009, 0.018, 12), this.handleMaterial);
     tip.position.y = 0.054;
@@ -246,12 +207,10 @@ export class Vehicle3D {
       new THREE.TorusGeometry(this.geometry.cornerHalfGapM * 1.45, 0.0035, 8, 40),
       new THREE.MeshBasicMaterial({ color: COLOR_YAW, transparent: true, opacity: 0.75 })
     );
-    ring.rotation.x = Math.PI / 2; // lay flat: rotation is about world Y
+    ring.rotation.x = Math.PI / 2;
     ring.name = 'vehicle-yaw';
     return ring;
   }
-
-  // -------------------------------------------------------------------- state
 
   public getPosition(): THREE.Vector3 {
     return this.position;
@@ -261,7 +220,6 @@ export class Vehicle3D {
     return this.yawRad;
   }
 
-  /** Mirrors the physics body pose (called every frame after the solver). */
   public setPose(position: THREE.Vector3, quaternion: THREE.Quaternion): void {
     this.position.copy(position);
     this.body.quaternion.copy(quaternion);
@@ -295,7 +253,6 @@ export class Vehicle3D {
     this.frameMaterial.emissiveIntensity = selected ? 1.4 : 0.6;
   }
 
-  /** Objects eligible for picking (frame body + handles). */
   public pickables(): THREE.Object3D[] {
     return [this.body, this.grabSphere, this.heaveHandle, this.yawRing];
   }
@@ -310,8 +267,6 @@ export class Vehicle3D {
     }
     return null;
   }
-
-  // ------------------------------------------------------------- drag gestures
 
   public beginHorizontalDrag(pointerWorld: THREE.Vector3): void {
     this.dragOffset.copy(this.position).sub(pointerWorld);
@@ -329,7 +284,6 @@ export class Vehicle3D {
     this.dragStartHeaveM = this.position.y;
   }
 
-  /** metersPerPixel converts a screen-space drag into world meters along +Y. */
   public updateHeaveDrag(clientY: number, metersPerPixel: number): void {
     this.position.y = this.dragStartHeaveM + (this.dragStartClientY - clientY) * metersPerPixel;
     this.root.position.copy(this.position);

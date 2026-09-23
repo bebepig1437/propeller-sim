@@ -14,9 +14,6 @@ export interface RendererInitResult {
   renderer: THREE.WebGLRenderer | WebGPURenderer;
 }
 
-/**
- * Creates an equirectangular procedural sky environment texture with horizon gradient and sun halo.
- */
 function createProceduralSkyTexture(): THREE.CanvasTexture {
   let canvas: HTMLCanvasElement;
   if (typeof document !== 'undefined') {
@@ -25,17 +22,15 @@ function createProceduralSkyTexture(): THREE.CanvasTexture {
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      // Sky atmospheric gradient
       const grad = ctx.createLinearGradient(0, 0, 0, 256);
-      grad.addColorStop(0.0, '#0369a1'); // Zenith deep oceanic sky
-      grad.addColorStop(0.45, '#38bdf8'); // Horizon sky blue
-      grad.addColorStop(0.5, '#7dd3fc'); // Bright horizon glow
-      grad.addColorStop(0.55, '#072b42'); // Sea level horizon
-      grad.addColorStop(1.0, '#020b14'); // Nadir deep oceanic floor
+      grad.addColorStop(0.0, '#0369a1');
+      grad.addColorStop(0.45, '#38bdf8');
+      grad.addColorStop(0.5, '#7dd3fc');
+      grad.addColorStop(0.55, '#072b42');
+      grad.addColorStop(1.0, '#020b14');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 512, 256);
 
-      // Sun glow halo
       const sunGrad = ctx.createRadialGradient(256, 110, 4, 256, 110, 60);
       sunGrad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
       sunGrad.addColorStop(0.3, 'rgba(254, 240, 138, 0.45)');
@@ -67,7 +62,6 @@ export class AppRenderer {
   public controls: OrbitControls;
   public backend: 'WebGPU' | 'WebGL2';
 
-  // Water & Environment components
   public waterSurface: WaterSurface;
   public caustics: CausticTextureGenerator;
   public prop3D?: Propeller3D;
@@ -81,10 +75,8 @@ export class AppRenderer {
   private tankStructure: THREE.Group;
   private isDisposed = false;
 
-  // Phase 6b vehicle body + direct manipulation (null until attachVehicle3D)
   public vehicle3D?: Vehicle3D;
 
-  // Propeller Direct Manipulation Callbacks
   public onPropellerSelected?: () => void;
   public onPropellerPositionChanged?: (zM: number) => void;
   public onPitchChanged?: (pitchDeg: number) => void;
@@ -92,7 +84,6 @@ export class AppRenderer {
   public onIncidenceChanged?: (incidenceDeg: number) => void;
   public onRemoveThruster?: () => void;
 
-  // Vehicle Direct Manipulation Callbacks
   public onVehicleSelected?: () => void;
   public onVehiclePoseChanged?: (position: THREE.Vector3, yawRad: number) => void;
   public onVehiclePoseCommit?: (position: THREE.Vector3, yawRad: number) => void;
@@ -117,12 +108,10 @@ export class AppRenderer {
     this.camera = new THREE.PerspectiveCamera(45, width / height, 0.05, 100);
     this.camera.position.set(0.65, 0.42, 0.85);
 
-    // Initialize WebGPURenderer with automatic WebGL2 fallback
     const init = this.createRenderer(container, width, height);
     this.renderer = init.renderer;
     this.backend = init.backend;
 
-    // Controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement as HTMLElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
@@ -130,7 +119,6 @@ export class AppRenderer {
     this.controls.minDistance = 0.1;
     this.controls.target.set(0, 0, 0);
 
-    // Setup Procedural Sky & Environment Reflections
     this.skyTexture = createProceduralSkyTexture();
     this.scene.environment = this.skyTexture;
 
@@ -139,16 +127,12 @@ export class AppRenderer {
     this.skyDome = new THREE.Mesh(skyGeo, skyMat);
     this.scene.add(this.skyDome);
 
-    // Setup Underwater Optics & Fog
     applyUnderwaterOpticalProperties(this.scene);
 
-    // Setup Tunable Lighting & Sunlight
     this.setupLighting();
 
-    // Initialize Animated Caustic Texture Generator
     this.caustics = new CausticTextureGenerator(128);
 
-    // Submersible Test Tank Floor
     const planeGeo = new THREE.PlaneGeometry(2.4, 2.4);
     this.floorMaterial = new THREE.MeshStandardMaterial({
       color: 0x071520,
@@ -165,21 +149,17 @@ export class AppRenderer {
     this.groundPlane.receiveShadow = true;
     this.scene.add(this.groundPlane);
 
-    // Submersible Test Tank Boundary Grid for scale reference
     const gridHelper = new THREE.GridHelper(2.4, 24, 0x00f2ff, 0x0d283d);
     gridHelper.position.y = -0.249;
     this.scene.add(gridHelper);
 
-    // Coordinate Axes Helper
     const axes = new THREE.AxesHelper(0.12);
     axes.position.set(-1.0, -0.248, -1.0);
     this.scene.add(axes);
 
-    // Submersible Test Tank Transparent Glass Structure & Markers
     this.tankStructure = this.createTestTankStructure();
     this.scene.add(this.tankStructure);
 
-    // Phase 3 Water Free Surface (Default 512x512 vertices)
     this.waterSurface = new WaterSurface({
       size: 2.4,
       elevation: 0.22,
@@ -189,7 +169,6 @@ export class AppRenderer {
     });
     this.scene.add(this.waterSurface.mesh);
 
-    // Phase 4 3D Procedural Propeller with Direct Manipulation
     this.prop3D = new Propeller3D({
       design: CANDIDATE_A_DESIGN,
       materialType: 'rigid10k',
@@ -204,10 +183,6 @@ export class AppRenderer {
     }
   }
 
-  /**
-   * Phase 6b — mounts the vehicle body in the stage with its direct-manipulation
-   * handles. Called from the main app once the vehicle config is known.
-   */
   public attachVehicle3D(config: SimConfig['vehicle']): Vehicle3D {
     if (this.vehicle3D) return this.vehicle3D;
     this.vehicle3D = new Vehicle3D(
@@ -269,7 +244,6 @@ export class AppRenderer {
 
       const handle = v3.isHandle(intersects[0].object);
 
-      // Shift-drag on the body (or a grab on the vertical arrow) moves heave.
       if (handle === 'heave' || (e.shiftKey && handle === 'grab')) {
         this.vehicleDragMode = 'heave';
         v3.beginHeaveDrag(e.clientY);
@@ -284,7 +258,6 @@ export class AppRenderer {
         this.vehicleDragMode = 'grab';
         v3.beginHorizontalDrag(p);
       } else {
-        // Bare frame click: select the vehicle, no drag.
         v3.setSelected(true);
         this.onVehicleSelected?.();
         return;
@@ -326,7 +299,6 @@ export class AppRenderer {
     let renderer: THREE.WebGLRenderer | WebGPURenderer;
     let backend: 'WebGPU' | 'WebGL2' = 'WebGL2';
 
-    // Headless / Node testing environment fallback
     if (typeof document === 'undefined') {
       const mockDoc = {
         addEventListener: () => {},
@@ -389,7 +361,6 @@ export class AppRenderer {
     this.ambientLight = new THREE.AmbientLight(0x0f2b42, 1.6);
     this.scene.add(this.ambientLight);
 
-    // Primary Sunlight beam penetrating from above with tunable direction
     this.sunLight = new THREE.DirectionalLight(0xbae6fd, 3.2);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
@@ -397,15 +368,11 @@ export class AppRenderer {
     this.setSunDirection(45.0, 60.0);
     this.scene.add(this.sunLight);
 
-    // Deep water bioluminescent upward bounce
     this.bounceLight = new THREE.DirectionalLight(0x00f2ff, 0.9);
     this.bounceLight.position.set(-1.8, -1.0, -1.8);
     this.scene.add(this.bounceLight);
   }
 
-  /**
-   * Sets sun position in spherical coordinates (elevation: 0-90°, azimuth: 0-360°).
-   */
   public setSunDirection(elevationDeg: number, azimuthDeg: number): void {
     const elRad = (Math.max(2.0, Math.min(89.0, elevationDeg)) * Math.PI) / 180.0;
     const azRad = (azimuthDeg * Math.PI) / 180.0;
@@ -420,19 +387,12 @@ export class AppRenderer {
     this.sunLight.target.updateMatrixWorld();
   }
 
-  /**
-   * Preset "Side Cutaway" view that shows the fluid cross-section directly face-on.
-   * This aligns cleanly with the 2D fluid simulation vectors and streamtubes.
-   */
   public setSideCutawayView(): void {
     this.camera.position.set(0.0, 0.05, 1.85);
     this.controls.target.set(0.0, 0.05, 0.0);
     this.controls.update();
   }
 
-  /**
-   * Resets camera to perspective orbit angle viewing tank, surface, and vehicle in 3D.
-   */
   public resetOrbitView(): void {
     this.camera.position.set(0.65, 0.42, 0.85);
     this.controls.target.set(0.0, 0.0, 0.0);
@@ -476,7 +436,6 @@ export class AppRenderer {
   private createTestTankStructure(): THREE.Group {
     const tank = new THREE.Group();
 
-    // Transparent acrylic/glass walls (transmission, IOR 1.52)
     const glassMat = new THREE.MeshPhysicalMaterial({
       color: 0x0a2538,
       metalness: 0.05,
@@ -489,34 +448,29 @@ export class AppRenderer {
       side: THREE.DoubleSide
     });
 
-    const tankHeight = 0.52; // from y = -0.25 to y = +0.27
+    const tankHeight = 0.52;
     const halfSize = 1.2;
     const centerY = 0.01;
 
-    // Front Wall (Z = +1.2)
     const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(2.4, tankHeight), glassMat);
     frontWall.position.set(0, centerY, halfSize);
     tank.add(frontWall);
 
-    // Back Wall (Z = -1.2)
     const backWall = new THREE.Mesh(new THREE.PlaneGeometry(2.4, tankHeight), glassMat);
     backWall.position.set(0, centerY, -halfSize);
     backWall.rotation.y = Math.PI;
     tank.add(backWall);
 
-    // Left Wall (X = -1.2)
     const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(2.4, tankHeight), glassMat);
     leftWall.position.set(-halfSize, centerY, 0);
     leftWall.rotation.y = Math.PI / 2;
     tank.add(leftWall);
 
-    // Right Wall (X = +1.2)
     const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(2.4, tankHeight), glassMat);
     rightWall.position.set(halfSize, centerY, 0);
     rightWall.rotation.y = -Math.PI / 2;
     tank.add(rightWall);
 
-    // 4 Corner support pillars with depth markers
     const pillarGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.52, 12);
     const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.9, roughness: 0.2 });
 
@@ -533,7 +487,6 @@ export class AppRenderer {
       tank.add(pillar);
     });
 
-    // Top Rim
     const rimGeo = new THREE.BoxGeometry(2.42, 0.012, 0.012);
     const topRimFront = new THREE.Mesh(rimGeo, pillarMat);
     topRimFront.position.set(0, 0.27, 1.2);
@@ -541,7 +494,6 @@ export class AppRenderer {
     topRimBack.position.set(0, 0.27, -1.2);
     tank.add(topRimFront, topRimBack);
 
-    // Water level datum ring indicator (at +0.22m)
     const datumGeo = new THREE.BoxGeometry(2.41, 0.003, 0.003);
     const datumMat = new THREE.MeshBasicMaterial({ color: 0x00f2ff });
     const datum = new THREE.Mesh(datumGeo, datumMat);
@@ -569,7 +521,6 @@ export class AppRenderer {
       if (intersects.length > 0) {
         let hit = intersects[0].object;
 
-        // Check if clicking handedness toggle badge
         if (hit === this.prop3D.handednessBadge) {
           const newH = this.prop3D.toggleHandedness();
           this.onHandednessChanged?.(newH);
@@ -577,7 +528,6 @@ export class AppRenderer {
           return;
         }
 
-        // Check if clicking translate handle
         if (hit.parent === this.prop3D.axisTranslateHandle || hit === this.prop3D.axisTranslateHandle) {
           this.isDraggingTranslate = true;
           this.controls.enabled = false;
@@ -585,7 +535,6 @@ export class AppRenderer {
           return;
         }
 
-        // Check if clicking pitch handle
         if (hit.parent === this.prop3D.pitchArcHandle || hit === this.prop3D.pitchArcHandle) {
           this.isDraggingPitch = true;
           this.dragStartY = e.clientY;
@@ -595,7 +544,6 @@ export class AppRenderer {
           return;
         }
 
-        // Check if clicking stator incidence handle
         if (hit.parent === this.prop3D.statorIncidenceHandle || hit === this.prop3D.statorIncidenceHandle) {
           this.isDraggingIncidence = true;
           this.dragStartY = e.clientY;
@@ -605,11 +553,9 @@ export class AppRenderer {
           return;
         }
 
-        // Clicking propeller body/hub selects it
         this.prop3D.setSelected(true);
         this.onPropellerSelected?.();
       } else {
-        // Clicking empty space deselects handles if not dragging
         if (!this.isDraggingTranslate && !this.isDraggingPitch && !this.isDraggingIncidence) {
           this.prop3D.setSelected(false);
         }
@@ -647,7 +593,6 @@ export class AppRenderer {
 
     window.addEventListener('pointerup', onPointerUp);
 
-    // Keyboard shortcut: Delete or Backspace removes selected thruster
     window.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (this.prop3D?.isSelected) {
@@ -667,13 +612,10 @@ export class AppRenderer {
   ): void {
     if (this.isDisposed) return;
 
-    // Update 3D free surface wave displacement coupled to 2D fluid velocity field & high shear foam
     this.waterSurface.update(time, dt, fluidGrid);
 
-    // Update animated floor caustics
     this.caustics.update(time, causticIntensity);
 
-    // Update 3D propeller rotation if attached with high-RPM blur
     if (this.prop3D && propAngle !== undefined) {
       this.prop3D.setRotation(propAngle, propRpm ?? 0);
     }

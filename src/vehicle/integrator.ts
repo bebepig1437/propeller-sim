@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import {
   VehicleBody,
-  coriolisBodyForce,
-  marineAngularToThree,
-  threeToMarine,
   type Marine3,
   type Marine6
 } from './body';
+import {
+  marineAngularToThree,
+  worldToBodyMarine,
+  coriolisBodyForce
+} from '../math/vectors';
 import { computeHydrodynamicDamping } from './drag';
 import { metacentricRestoringTorqueBodyMarine } from './buoyancy';
 
@@ -67,7 +69,6 @@ const DETACHED_TETHER: TetherParams = {
 
 const scratchWorldVelocity = new THREE.Vector3();
 const scratchBodyVector = new THREE.Vector3();
-const scratchInverseQuaternion = new THREE.Quaternion();
 const scratchRotationDelta = new THREE.Quaternion();
 const scratchAxis = new THREE.Vector3();
 
@@ -105,12 +106,6 @@ const telemetry: IntegratorTelemetry = {
   angularRateClamped: false
 };
 
-function worldToBodyMarine(world: THREE.Vector3, quaternion: THREE.Quaternion, out: Marine3): Marine3 {
-  scratchInverseQuaternion.copy(quaternion).invert();
-  scratchBodyVector.copy(world).applyQuaternion(scratchInverseQuaternion);
-  return threeToMarine(scratchBodyVector, out);
-}
-
 export function thrusterInputToMarine(
   thrusterInput: ThrusterInput6DOF | Marine3 = ZERO_MARINE3,
   thrusterMoments?: Marine3
@@ -127,7 +122,7 @@ export function thrusterInputToMarine(
     return result;
   }
 
-  const input = thrusterInput as ThrusterInput6DOF;
+  const input = thrusterInput;
   if (input.forceBodyMarine) {
     result.forceMarine[0] = input.forceBodyMarine[0];
     result.forceMarine[1] = input.forceBodyMarine[1];
@@ -245,8 +240,6 @@ export function stepVehicleRigidBody(
     Math.hypot(vehicle.position.x, vehicle.position.z) > bounds.radiusM;
 
   if (hasContact) {
-    vehicle.worldVelocity(scratchWorldVelocity);
-
     if (vehicle.position.y <= bounds.floorElevationM) {
       vehicle.position.y = bounds.floorElevationM;
       isGrounded = true;

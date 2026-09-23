@@ -15,9 +15,9 @@ export interface ThrusterUnit {
   id: string;
   name: string;
   handedness: ThrusterHandedness;
-  positionM: [number, number, number]; // [x (Surge), y (Sway), z (Heave)] relative to CG
-  orientation: [number, number, number, number]; // Quaternion [x, y, z, w]
-  thrustDirection: [number, number, number]; // Unit vector along thrust axis
+  positionM: [number, number, number];
+  orientation: [number, number, number, number];
+  thrustDirection: [number, number, number];
   stator: StatorVaneSystem;
   ratedRpm: number;
   design: 'candidateA' | 'kaplan' | 'wageningen';
@@ -38,8 +38,8 @@ export interface ThrusterState {
 }
 
 export interface VehiclePropulsionSummary {
-  totalForceN: [number, number, number]; // [Fx (surge), Fy (sway), Fz (heave)]
-  totalMomentNm: [number, number, number]; // [Mx (roll), My (pitch), Mz (yaw)]
+  totalForceN: [number, number, number];
+  totalMomentNm: [number, number, number];
   thrusters: ThrusterState[];
   rollCancelledFraction: number;
   torqueLedger: TorqueLedger;
@@ -51,7 +51,6 @@ export class PropellerArray {
   public currentPreset: HandednessPreset = 'alternating';
   public torqueLedger: TorqueLedger = new TorqueLedger();
 
-  // Zero-allocation pre-allocated cache
   private cachedStates: ThrusterState[] = [];
   private cachedSummary: VehiclePropulsionSummary = {
     totalForceN: [0, 0, 0],
@@ -59,19 +58,13 @@ export class PropellerArray {
     thrusters: [],
     rollCancelledFraction: 1.0,
     torqueLedger: this.torqueLedger,
-    ledgerSummary: this.torqueLedger.getNetSummary(1.0) // spec-anchor for the static init snapshot
+    ledgerSummary: this.torqueLedger.getNetSummary(1.0)
   };
 
   constructor() {
     this.setupCandidateADefaults();
   }
 
-  /**
-   * Initializes Candidate A default 3-thruster alternating layout:
-   * - Port: CW, -75mm lateral, forward surge
-   * - Starboard: CCW, +75mm lateral, forward surge
-   * - Vertical: CW, centered, vertical heave
-   */
   public setupCandidateADefaults(): void {
     this.currentPreset = 'alternating';
     this.thrusters = [
@@ -79,9 +72,9 @@ export class PropellerArray {
         id: 'port',
         name: 'Port Horizontal Thruster (CW)',
         handedness: 'CW',
-        positionM: [0.0, -0.075, 0.0], // 75mm to Port (-Y)
+        positionM: [0.0, -0.075, 0.0],
         orientation: [0, 0, 0, 1],
-        thrustDirection: [1.0, 0.0, 0.0], // Forward (+X Surge)
+        thrustDirection: [1.0, 0.0, 0.0],
         stator: new StatorVaneSystem({ vaneType: 'slotted' }),
         ratedRpm: 4140,
         design: 'candidateA',
@@ -91,9 +84,9 @@ export class PropellerArray {
         id: 'starboard',
         name: 'Starboard Horizontal Thruster (CCW)',
         handedness: 'CCW',
-        positionM: [0.0, 0.075, 0.0], // 75mm to Starboard (+Y)
+        positionM: [0.0, 0.075, 0.0],
         orientation: [0, 0, 0, 1],
-        thrustDirection: [1.0, 0.0, 0.0], // Forward (+X Surge)
+        thrustDirection: [1.0, 0.0, 0.0],
         stator: new StatorVaneSystem({ vaneType: 'slotted' }),
         ratedRpm: 4140,
         design: 'candidateA',
@@ -103,9 +96,9 @@ export class PropellerArray {
         id: 'vertical',
         name: 'Vertical Heave Thruster (CW)',
         handedness: 'CW',
-        positionM: [0.0, 0.0, 0.0], // Center
+        positionM: [0.0, 0.0, 0.0],
         orientation: [0, 0.7071, 0, 0.7071],
-        thrustDirection: [0.0, 0.0, 1.0], // Upward (+Z Heave)
+        thrustDirection: [0.0, 0.0, 1.0],
         stator: new StatorVaneSystem({ vaneType: 'slotted' }),
         ratedRpm: 4140,
         design: 'candidateA',
@@ -114,14 +107,6 @@ export class PropellerArray {
     ];
   }
 
-  /**
-   * Applies one of the 5 handedness layout presets:
-   * - 'all_cw': all CW. Net torque = sum.
-   * - 'all_ccw': all CCW.
-   * - 'alternating': CW, CCW, CW (candidateA default).
-   * - 'contra_rotating_coaxial': two props on the same axis, opposite handedness, phase 0°. Cancels torque (< 1e-6).
-   * - 'tandem': two props in series on the same axis, same handedness, different phase.
-   */
   public applyHandednessPreset(preset: HandednessPreset): void {
     this.currentPreset = preset;
 
@@ -145,8 +130,6 @@ export class PropellerArray {
         break;
 
       case 'contra_rotating_coaxial':
-        // Two props on the same axis, opposite handedness (CW and CCW)
-        // Positioned along the centerline (y=0, z=0) so r x F = 0
         this.thrusters = [
           {
             id: 'crp_forward',
@@ -176,7 +159,6 @@ export class PropellerArray {
         break;
 
       case 'tandem':
-        // Two props in series on the same axis, same handedness (both CW)
         this.thrusters = [
           {
             id: 'tandem_forward',
@@ -207,9 +189,6 @@ export class PropellerArray {
     }
   }
 
-  /**
-   * Adds a thruster to the array at the vehicle's stern.
-   */
   public addThruster(partial?: Partial<ThrusterUnit>): ThrusterUnit {
     const idx = this.thrusters.length + 1;
     const handedness: ThrusterHandedness = this.currentPreset === 'all_ccw'

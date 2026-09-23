@@ -1,12 +1,3 @@
-/**
- * Propeller Variant Registry & Built-in Designs.
- *
- * Provides pure data specifications for parametric propeller geometries:
- * - Candidate A (D=42mm, 3 blades, matched to vehicle JSON, KQ=0.024)
- * - Kaplan High-Thrust (higher solidity, broad tip chord for bollard pull)
- * - Wageningen B4 (Troost B-series, 4 blades, wide operating envelope)
- */
-
 export interface RadialStation {
   rOverR: number;
   val: number;
@@ -24,15 +15,11 @@ export interface PropDesign {
   skewDeg: number;
   sectionAirfoil: string;
   KQ: number;
-  // Non-dimensional radial distributions from hub (r/R ~ 0.19) to tip (r/R = 1.0)
   chordDist: { rOverR: number; chordOverD: number }[];
   twistDist: { rOverR: number; twistDeg: number }[];
   thicknessDist: { rOverR: number; tOverC: number }[];
 }
 
-/**
- * Linearly interpolates a value from a discrete radial distribution.
- */
 export function interpolateRadialDistribution(
   rOverR: number,
   dist: { rOverR: number; [key: string]: number }[],
@@ -54,9 +41,6 @@ export function interpolateRadialDistribution(
   return dist[dist.length - 1][key];
 }
 
-/**
- * 1. Candidate A — Reconciled High-Burst Vector-Skewed Propulsor (D=42mm, 3 blades).
- */
 export const CANDIDATE_A_DESIGN: PropDesign = {
   id: 'candidateA',
   name: 'Candidate A High-Burst (D42/3B)',
@@ -97,9 +81,6 @@ export const CANDIDATE_A_DESIGN: PropDesign = {
   ]
 };
 
-/**
- * 2. Kaplan High-Thrust — Ducted profile with broad chord at tip for high bollard pull.
- */
 export const KAPLAN_DESIGN: PropDesign = {
   id: 'kaplan',
   name: 'Kaplan High-Thrust (D42/3B)',
@@ -134,9 +115,6 @@ export const KAPLAN_DESIGN: PropDesign = {
   ]
 };
 
-/**
- * 3. Wageningen B4 — Classical Troost 4-blade marine screw for wide advance speed envelope.
- */
 export const WAGENINGEN_B4_DESIGN: PropDesign = {
   id: 'wageningen',
   name: 'Wageningen B-Series (D42/4B)',
@@ -177,9 +155,6 @@ export const PROP_DESIGNS: Record<string, PropDesign> = {
   wageningen: WAGENINGEN_B4_DESIGN
 };
 
-/**
- * Retrieves a propeller design by ID, defaulting to candidateA.
- */
 export function getPropDesign(id: string): PropDesign {
   const key = id.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (key.includes('kaplan')) return KAPLAN_DESIGN;
@@ -187,9 +162,6 @@ export function getPropDesign(id: string): PropDesign {
   return CANDIDATE_A_DESIGN;
 }
 
-/**
- * Evaluates blade chord in meters at radius r for a given PropDesign.
- */
 export function getDesignBladeChordAt(rM: number, design: PropDesign, diameterMmOverride?: number): number {
   const diameterMm = diameterMmOverride ?? design.diameterMm;
   const R = (diameterMm / 2.0) * 1e-3;
@@ -198,10 +170,6 @@ export function getDesignBladeChordAt(rM: number, design: PropDesign, diameterMm
   return chordOverD * (diameterMm * 1e-3);
 }
 
-/**
- * Evaluates blade geometric pitch angle theta in radians at radius r for a given PropDesign.
- * Supports pitch override in mm and diameter override in mm.
- */
 export function getDesignBladePitchAngleAt(
   rM: number,
   design: PropDesign,

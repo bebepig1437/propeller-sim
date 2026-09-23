@@ -1,20 +1,3 @@
-/**
- * GPU Advection Compute Pass (TSL)
- *
- * Citations:
- * 1. MacCormack, R. W. (1969). "The Effect of Viscosity in Hypervelocity Impact Cratering".
- *    AIAA Paper No. 69-354. https://doi.org/10.2514/6.1969-354
- * 2. Harris, M. J. (2004). "Fast Fluid Dynamics on the GPU".
- *    In R. Fernando (Ed.), GPU Gems: Programming Techniques, Tips, and Tricks for Real-Time Graphics (Chapter 38).
- *    Addison-Wesley. https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-38-fast-fluid-dynamics-gpu
- *
- * MacCormack Advection Scheme:
- *   Pass 1 (Forward):   phi*  = SL(phi^n, +dt)
- *   Pass 2 (Backward):  phi** = SL(phi*,  -dt)
- *   Pass 3 (Correction & Monotonic Limiter):
- *     phi^(n+1) = clamp(phi* + 0.5 * (phi^n - phi**), min_neighbor(phi^n), max_neighbor(phi^n))
- */
-
 import {
   Fn,
   instanceIndex,
@@ -51,7 +34,6 @@ export function createAdvectionComputeNode(
   const widthUniform = uniform(width);
   const heightUniform = uniform(height);
 
-  // Storage attributes
   const uAttr = buffers?.u ?? new StorageBufferAttribute(new Float32Array(size), 1);
   const vAttr = buffers?.v ?? new StorageBufferAttribute(new Float32Array(size), 1);
   const srcAttr = buffers?.source ?? new StorageBufferAttribute(new Float32Array(size), 1);
@@ -66,7 +48,6 @@ export function createAdvectionComputeNode(
   const starStorage = storage(starAttr, 'float', size);
   const starStarStorage = storage(starStarAttr, 'float', size);
 
-  // Bilinear interpolation helper in TSL
   const sampleBilinear = Fn(([field, px, py, W, H]: [any, any, any, any, any]) => {
     const cx = clamp(px, float(0.5), sub(float(W), float(1.5)));
     const cy = clamp(py, float(0.5), sub(float(H), float(1.5)));
@@ -96,7 +77,6 @@ export function createAdvectionComputeNode(
     );
   });
 
-  // 1. Semi-Lagrangian Forward Pass: target = SL(source, +dt)
   const forwardShader = Fn(() => {
     const idx = instanceIndex;
     const W = uint(width);
@@ -110,7 +90,6 @@ export function createAdvectionComputeNode(
     starStorage.element(idx).assign(sampleBilinear(srcStorage, traceX, traceY, W, H));
   });
 
-  // 2. Semi-Lagrangian Backward Pass: target = SL(phiStar, -dt)
   const backwardShader = Fn(() => {
     const idx = instanceIndex;
     const W = uint(width);
@@ -124,7 +103,6 @@ export function createAdvectionComputeNode(
     starStarStorage.element(idx).assign(sampleBilinear(starStorage, traceX, traceY, W, H));
   });
 
-  // 3. MacCormack Correction & Monotonic Limiting Pass
   const correctShader = Fn(() => {
     const idx = instanceIndex;
     const W = uint(width);
@@ -132,13 +110,11 @@ export function createAdvectionComputeNode(
     const x = idx.remainder(W);
     const y = idx.div(W);
 
-    // Corrected value: phi* + 0.5 * (phi^n - phi**)
     const phiStarVal = starStorage.element(idx);
     const phiNVal = srcStorage.element(idx);
     const phiStarStarVal = starStarStorage.element(idx);
     const corrected = add(phiStarVal, mul(float(0.5), sub(phiNVal, phiStarStarVal)));
 
-    // Sample 4-point neighborhood in sourceField at backtraced origin
     const traceX = clamp(
       sub(float(x), mul(dtUniform, mul(uStorage.element(idx), invDxUniform))),
       float(0.5),
@@ -171,7 +147,6 @@ export function createAdvectionComputeNode(
     tgtStorage.element(idx).assign(clamp(corrected, minNeighbor, maxNeighbor));
   });
 
-  // 4. Standalone Semi-Lagrangian Pass
   const slShader = Fn(() => {
     const idx = instanceIndex;
     const W = uint(width);
@@ -190,7 +165,7 @@ export function createAdvectionComputeNode(
     backwardNode: backwardShader().compute(size),
     correctNode: correctShader().compute(size),
     semiLagrangianNode: slShader().compute(size),
-    node: slShader().compute(size), // default backward-compatible
+    node: slShader().compute(size),
     dtUniform,
     invDxUniform,
     widthUniform,

@@ -1,13 +1,3 @@
-/**
- * @deprecated LEGACY (pre-Phase 6) overlay renderer — DO NOT WIRE INTO THE SCENE.
- * Quarantined: 2026-09-20 per Phase 6 Principal Engineer Review Directive 2.
- *
- * Superseded by `OverlaySystem` in `src/render/overlays.ts`, which covers all
- * nine Phase 6 overlays behind the shared `OverlayState` contract. This class
- * is retained ONLY because `tests/vehicleDynamics.test.ts` pins its object-graph
- * contract (`group.children.length === 4`). No runtime path in `src/` may
- * construct it: the App instantiates exactly one `OverlaySystem`.
- */
 import * as THREE from 'three';
 import type { VehiclePropulsionSummary } from '../../prop/array';
 import type { VehicleBody } from '../../vehicle/body';
@@ -17,7 +7,7 @@ export interface OverlayConfig {
   showStreamtubes: boolean;
   showTorqueRings: boolean;
   showCogCob: boolean;
-  vectorScale: number; // Scale factor for thrust arrows (m/N)
+  vectorScale: number;
 }
 
 export const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
@@ -25,33 +15,23 @@ export const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   showStreamtubes: true,
   showTorqueRings: true,
   showCogCob: true,
-  vectorScale: 0.05 // 1 N = 50mm arrow
+  vectorScale: 0.05
 };
 
-/**
- * 3D Scientific Overlays (Phase 6):
- * - Thrust vector arrows (cyan for propulsion, green for net thrust)
- * - Contracting streamtube envelope downstream of propellers (BEMT slipstream contraction)
- * - Reaction torque arcs / rings
- * - CoG (yellow) and CoB (cyan) metacentric righting arm visualizers
- */
 export class FlowOverlays {
   public group: THREE.Group = new THREE.Group();
   public config: OverlayConfig;
 
-  // Visual sub-groups
   private thrustArrowsGroup: THREE.Group = new THREE.Group();
   private streamtubesGroup: THREE.Group = new THREE.Group();
   private torqueRingsGroup: THREE.Group = new THREE.Group();
   private cogCobGroup: THREE.Group = new THREE.Group();
 
-  // Reusable arrow helpers & materials
   private arrowHelpers: THREE.ArrowHelper[] = [];
   private netArrowHelper: THREE.ArrowHelper;
   private streamtubeMeshes: THREE.LineSegments[] = [];
   private torqueArcs: THREE.Line[] = [];
 
-  // CoG / CoB markers
   private cogMarker: THREE.Mesh;
   private cobMarker: THREE.Mesh;
   private rightingArmLine: THREE.Line;
@@ -64,7 +44,6 @@ export class FlowOverlays {
     this.group.add(this.torqueRingsGroup);
     this.group.add(this.cogCobGroup);
 
-    // Initialize 3 thruster arrows + 1 net thrust arrow
     const thrusterColors = [0x00f2ff, 0x00f2ff, 0x38bdf8];
     for (let i = 0; i < 3; i++) {
       const arrow = new THREE.ArrowHelper(
@@ -79,7 +58,6 @@ export class FlowOverlays {
       this.thrustArrowsGroup.add(arrow);
     }
 
-    // Net thrust arrow (bright neon green)
     this.netArrowHelper = new THREE.ArrowHelper(
       new THREE.Vector3(0, 0, 1),
       new THREE.Vector3(0, 0, 0),
@@ -90,7 +68,6 @@ export class FlowOverlays {
     );
     this.thrustArrowsGroup.add(this.netArrowHelper);
 
-    // Initialize contracting streamtube line meshes for 3 thrusters
     for (let i = 0; i < 3; i++) {
       const tubeGeo = this.buildStreamtubeGeometry(0.021, 0.015, 0.12, 12, 6);
       const tubeMat = new THREE.LineBasicMaterial({
@@ -103,7 +80,6 @@ export class FlowOverlays {
       this.streamtubesGroup.add(tubeMesh);
     }
 
-    // Initialize reaction torque circular arcs
     for (let i = 0; i < 3; i++) {
       const arcGeo = this.buildTorqueArcGeometry(0.025, Math.PI * 1.5);
       const arcMat = new THREE.LineBasicMaterial({
@@ -117,13 +93,12 @@ export class FlowOverlays {
       this.torqueRingsGroup.add(arc);
     }
 
-    // Initialize CoG / CoB Visualizers
     const cogGeo = new THREE.SphereGeometry(0.006, 12, 12);
-    const cogMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 }); // Gold CoG
+    const cogMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
     this.cogMarker = new THREE.Mesh(cogGeo, cogMat);
 
     const cobGeo = new THREE.SphereGeometry(0.006, 12, 12);
-    const cobMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 }); // Cyan CoB
+    const cobMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 });
     this.cobMarker = new THREE.Mesh(cobGeo, cobMat);
 
     const armGeo = new THREE.BufferGeometry().setFromPoints([
@@ -138,10 +113,6 @@ export class FlowOverlays {
     this.cogCobGroup.add(this.rightingArmLine);
   }
 
-  /**
-   * Generates a contracting streamtube wireframe geometry downstream of the actuator disc.
-   * R_stream(x) = R_0 * sqrt((Va + vi) / (Va + 2*vi * (x/L)))
-   */
   private buildStreamtubeGeometry(
     r0: number,
     rInf: number,
@@ -151,7 +122,6 @@ export class FlowOverlays {
   ): THREE.BufferGeometry {
     const points: THREE.Vector3[] = [];
 
-    // Generate axial streamlines
     for (let i = 0; i < radialSegs; i++) {
       const theta = (i / radialSegs) * Math.PI * 2;
       for (let j = 0; j < axialSegs; j++) {
@@ -167,7 +137,6 @@ export class FlowOverlays {
       }
     }
 
-    // Generate circular cross-section rings
     for (let j = 0; j <= axialSegs; j++) {
       const s = j / axialSegs;
       const r = r0 + (rInf - r0) * Math.sqrt(s);
@@ -183,9 +152,6 @@ export class FlowOverlays {
     return new THREE.BufferGeometry().setFromPoints(points);
   }
 
-  /**
-   * Generates a circular arc wireframe indicating rotational torque direction.
-   */
   private buildTorqueArcGeometry(radius: number, angleSpan: number): THREE.BufferGeometry {
     const points: THREE.Vector3[] = [];
     const segments = 24;
@@ -198,15 +164,11 @@ export class FlowOverlays {
     return new THREE.BufferGeometry().setFromPoints(points);
   }
 
-  /**
-   * Updates all 3D overlays from current vehicle dynamics and thruster telemetry.
-   */
   public update(
     vehicle: VehicleBody,
     propSummary: VehiclePropulsionSummary,
     advanceSpeed = 0.0
   ): void {
-    // Sync visibility flags
     this.thrustArrowsGroup.visible = this.config.showThrustVectors;
     this.streamtubesGroup.visible = this.config.showStreamtubes;
     this.torqueRingsGroup.visible = this.config.showTorqueRings;
@@ -215,7 +177,6 @@ export class FlowOverlays {
     const vPos = vehicle.position;
     const vQuat = vehicle.quaternion;
 
-    // 1. Update CoG / CoB Visualizers
     if (this.config.showCogCob) {
       this.cogMarker.position.copy(vPos);
       const [cobSurge, cobSway, cobHeave] = vehicle.buoyancyForces.cobOffsetMarineM;
@@ -228,20 +189,15 @@ export class FlowOverlays {
       armPos.needsUpdate = true;
     }
 
-    // 2. Update Thruster & Net Thrust Vectors
     if (this.config.showThrustVectors) {
       const thrusters = propSummary.thrusters;
       for (let i = 0; i < Math.min(thrusters.length, this.arrowHelpers.length); i++) {
         const t = thrusters[i];
         const arrow = this.arrowHelpers[i];
 
-        // Thruster mounting position in world frame:
-        // Thruster positionM: [0, -0.075, 0] in array.ts -> map to body axes [Sway X, Heave Y, Surge Z]
-        // Port thruster is at Sway = -0.075, Starboard at Sway = +0.075
         const posBody = new THREE.Vector3(t.unit.positionM[1], t.unit.positionM[2], t.unit.positionM[0]);
         const posWorld = vehicle.localToWorldPoint(posBody);
 
-        // Thrust vector direction: t.forceVectorN
         const fBody = new THREE.Vector3(t.forceVectorN[1], t.forceVectorN[2], t.forceVectorN[0]);
         const fWorld = vehicle.localToWorldVector(fBody);
         const fMag = fWorld.length();
@@ -257,7 +213,6 @@ export class FlowOverlays {
         }
       }
 
-      // Net thrust arrow from CoG
       const fNetBody = new THREE.Vector3(
         propSummary.totalForceN[1],
         propSummary.totalForceN[2],
@@ -276,7 +231,6 @@ export class FlowOverlays {
       }
     }
 
-    // 3. Update Streamtube Geometries (Contracting slipstream)
     if (this.config.showStreamtubes) {
       const thrusters = propSummary.thrusters;
       for (let i = 0; i < Math.min(thrusters.length, this.streamtubeMeshes.length); i++) {
@@ -289,15 +243,13 @@ export class FlowOverlays {
           mesh.position.copy(vehicle.localToWorldPoint(posBody));
           mesh.quaternion.copy(vQuat);
 
-          // Streamtube contracts downstream: R_inf = R0 * sqrt((Va + vi) / (Va + 2*vi))
-          const r0 = 0.021; // 42mm propeller radius
+          const r0 = 0.021;
           const meanVi = t.bemt.elements && t.bemt.elements.length > 0
             ? t.bemt.elements.reduce((acc: number, el: { axialInducedMs: number }) => acc + el.axialInducedMs, 0) / t.bemt.elements.length
             : 0.5;
           const vi = Math.max(0.1, meanVi);
           const rInf = r0 * Math.sqrt((advanceSpeed + vi) / (advanceSpeed + 2.0 * vi));
 
-          // Rebuild dynamic streamtube geometry if needed
           mesh.geometry.dispose();
           mesh.geometry = this.buildStreamtubeGeometry(r0, Math.max(0.012, rInf), 0.15, 12, 6);
         } else {
@@ -306,7 +258,6 @@ export class FlowOverlays {
       }
     }
 
-    // 4. Update Reaction Torque Arcs
     if (this.config.showTorqueRings) {
       const thrusters = propSummary.thrusters;
       for (let i = 0; i < Math.min(thrusters.length, this.torqueArcs.length); i++) {
@@ -319,7 +270,6 @@ export class FlowOverlays {
           arc.position.copy(vehicle.localToWorldPoint(posBody));
           arc.quaternion.copy(vQuat);
 
-          // If CW propeller, reaction torque on body is CCW (negative roll)
           const isCw = t.unit.handedness === 'CW';
           arc.rotation.z = isCw ? Math.PI : 0;
         } else {

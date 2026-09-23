@@ -1,8 +1,5 @@
 import * as THREE from 'three';
 
-/**
- * Fluid tracer particles / micro-bubble plumes (Phase 3/6).
- */
 export class ParticleSystem {
   public points: THREE.Points;
 

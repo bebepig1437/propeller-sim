@@ -13,9 +13,6 @@ export interface Propeller3DOptions {
   handedness?: 'CW' | 'CCW';
 }
 
-/**
- * Creates physical PBR materials representing Candidate A's propeller materials.
- */
 export function createPropellerMaterial(type: PropellerMaterial): THREE.Material {
   switch (type) {
     case 'rigid10k':
@@ -57,7 +54,6 @@ export class Propeller3D {
   private bladeMeshes: THREE.Mesh[] = [];
   private blurDiscMesh!: THREE.Mesh;
 
-  // Direct Manipulation Handles
   public isSelected = false;
   public selectionBox!: THREE.BoxHelper;
   public handlesGroup: THREE.Group;
@@ -66,7 +62,6 @@ export class Propeller3D {
   public statorIncidenceHandle!: THREE.Group;
   public handednessBadge!: THREE.Mesh;
 
-  // Stator 3D cascade
   public statorGroup: THREE.Group;
   public statorAttached = true;
   public statorSlotted = true;
@@ -112,11 +107,7 @@ export class Propeller3D {
     this.buildDirectManipulationHandles();
   }
 
-  /**
-   * Rebuilds all procedural blade and hub meshes according to active design & handedness.
-   */
   public rebuild(): void {
-    // Clear existing children from rotorGroup
     while (this.rotorGroup.children.length > 0) {
       const child = this.rotorGroup.children[0] as THREE.Mesh;
       if (child.geometry) child.geometry.dispose();
@@ -135,15 +126,13 @@ export class Propeller3D {
 
     const mat = createPropellerMaterial(this.currentMaterial);
 
-    // 1. Central Aerodynamic Hub
     const hubGeo = new THREE.CylinderGeometry(Dhub / 2.0, Dhub / 2.0, Lhub, 24);
-    hubGeo.rotateX(Math.PI / 2); // Align thrust along Z axis
+    hubGeo.rotateX(Math.PI / 2);
     this.hubMesh = new THREE.Mesh(hubGeo, mat);
     this.hubMesh.castShadow = true;
     this.hubMesh.receiveShadow = true;
     this.rotorGroup.add(this.hubMesh);
 
-    // 2. Nose Cone / Spinner Cap
     const coneGeo = new THREE.ConeGeometry(Dhub / 2.0, Dhub * 0.75, 24);
     coneGeo.rotateX(Math.PI / 2);
     this.spinnerMesh = new THREE.Mesh(coneGeo, mat);
@@ -151,7 +140,6 @@ export class Propeller3D {
     this.spinnerMesh.castShadow = true;
     this.rotorGroup.add(this.spinnerMesh);
 
-    // 3. Parametric Blades
     const Rhub = Dhub / 2.0;
     const R = D / 2.0;
     const radialStations = 14;
@@ -167,7 +155,6 @@ export class Propeller3D {
       this.bladeMeshes.push(bladeMesh);
     }
 
-    // 4. Subtle Motion Blur Disk for > 500 RPM anti-strobing
     const blurGeo = new THREE.RingGeometry(Rhub, R, 32);
     const blurMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
@@ -181,9 +168,6 @@ export class Propeller3D {
     this.rotorGroup.add(this.blurDiscMesh);
   }
 
-  /**
-   * Generates blade surface buffer geometry using radial chord, twist, and camber distributions.
-   */
   private generateParametricBladeGeometry(
     Rhub: number,
     R: number,
@@ -206,24 +190,19 @@ export class Propeller3D {
       const halfChord = chord / 2.0;
       const thickness = chord * 0.12 * (1.0 - t * 0.45);
 
-      // Skew and Rake offsets
       const zRake = t * Math.sin(rakeRad) * (R - Rhub);
       const xSkew = Math.sin(t * skewRad) * halfChord * chiralitySign;
 
-      // Leading edge (Z forward, X sideways)
       const leX = xSkew - halfChord * Math.cos(theta);
       const leZ = zRake + halfChord * Math.sin(theta);
 
-      // Trailing edge
       const teX = xSkew + halfChord * Math.cos(theta);
       const teZ = zRake - halfChord * Math.sin(theta);
 
-      // Camber upper crown and lower belly
       const midX = xSkew;
       const midZ = zRake + thickness * chiralitySign;
       const bellyZ = zRake - thickness * 0.5 * chiralitySign;
 
-      // 4 points per radial ring: LE, Upper Crown, TE, Lower Belly
       positions.push(leX, r, leZ);
       positions.push(midX, r, midZ);
       positions.push(teX, r, teZ);
@@ -234,14 +213,12 @@ export class Propeller3D {
       const ring0 = s * 4;
       const ring1 = (s + 1) * 4;
 
-      // Top surface (LE -> Upper -> TE)
       indices.push(ring0 + 0, ring1 + 0, ring1 + 1);
       indices.push(ring0 + 0, ring1 + 1, ring0 + 1);
 
       indices.push(ring0 + 1, ring1 + 1, ring1 + 2);
       indices.push(ring0 + 1, ring1 + 2, ring0 + 2);
 
-      // Bottom surface (TE -> Lower -> LE)
       indices.push(ring0 + 2, ring1 + 2, ring1 + 3);
       indices.push(ring0 + 2, ring1 + 3, ring0 + 3);
 
@@ -257,12 +234,10 @@ export class Propeller3D {
   }
 
   private buildDirectManipulationHandles(): void {
-    // 1. Selection Outline / Bounding Box
     this.selectionBox = new THREE.BoxHelper(this.hubMesh, 0x00f2ff);
     this.selectionBox.visible = false;
     this.handlesGroup.add(this.selectionBox);
 
-    // 2. Mount Axis Translation Handle (Z-axis Arrow)
     this.axisTranslateHandle = new THREE.Group();
     const arrowShaft = new THREE.CylinderGeometry(0.0015, 0.0015, 0.04, 12);
     arrowShaft.rotateX(Math.PI / 2);
@@ -279,7 +254,6 @@ export class Propeller3D {
     this.axisTranslateHandle.visible = false;
     this.handlesGroup.add(this.axisTranslateHandle);
 
-    // 3. Pitch Arc Handle at Tip
     this.pitchArcHandle = new THREE.Group();
     const arcCurve = new THREE.EllipseCurve(0, 0, 0.008, 0.008, -Math.PI / 4, Math.PI / 4, false, 0);
     const points = arcCurve.getPoints(16);
@@ -291,7 +265,6 @@ export class Propeller3D {
     this.pitchArcHandle.visible = false;
     this.handlesGroup.add(this.pitchArcHandle);
 
-    // 4. Stator Incidence Arc Handle (Amber)
     this.statorIncidenceHandle = new THREE.Group();
     const statorArc = new THREE.EllipseCurve(0, 0, 0.007, 0.007, -Math.PI / 4, Math.PI / 4, false, 0);
     const statorPoints = statorArc.getPoints(16);
@@ -303,7 +276,6 @@ export class Propeller3D {
     this.statorIncidenceHandle.visible = false;
     this.handlesGroup.add(this.statorIncidenceHandle);
 
-    // 5. Handedness Badge Indicator on Hub
     const badgeGeo = new THREE.TorusGeometry(0.0055, 0.0008, 8, 16, Math.PI * 1.5);
     const badgeMat = new THREE.MeshBasicMaterial({ color: 0x00f2ff });
     this.handednessBadge = new THREE.Mesh(badgeGeo, badgeMat);
@@ -312,9 +284,6 @@ export class Propeller3D {
     this.handlesGroup.add(this.handednessBadge);
   }
 
-  /**
-   * Builds stator vane cascade behind propeller hub.
-   */
   public buildStatorGeometry(): void {
     while (this.statorGroup.children.length > 0) {
       const c = this.statorGroup.children[0] as THREE.Mesh;
@@ -335,7 +304,7 @@ export class Propeller3D {
     const R = D / 2.0;
     const Rhub = Dhub / 2.0;
     const span = R - Rhub;
-    const chord = 0.012; // 12mm chord
+    const chord = 0.012;
     const thickness = chord * 0.12;
 
     const statorMat = new THREE.MeshStandardMaterial({
@@ -354,7 +323,6 @@ export class Propeller3D {
       vaneGroup.rotation.z = angle;
       vaneGroup.position.z = zPos;
 
-      // Stator vane blade
       const vaneGeo = new THREE.BoxGeometry(thickness, span, chord);
       vaneGeo.translate(0, Rhub + span / 2.0, 0);
       const vaneMesh = new THREE.Mesh(vaneGeo, statorMat);
@@ -362,7 +330,6 @@ export class Propeller3D {
       vaneMesh.castShadow = true;
       vaneMesh.receiveShadow = true;
 
-      // Visual slot slit at 40% chord if slotted
       if (this.statorSlotted) {
         const slotGeo = new THREE.BoxGeometry(thickness * 1.2, span * 0.85, chord * 0.15);
         slotGeo.translate(0, Rhub + span / 2.0, -chord * 0.1);
@@ -377,33 +344,21 @@ export class Propeller3D {
     }
   }
 
-  /**
-   * Sets stator attachment state.
-   */
   public setStatorAttached(attached: boolean): void {
     this.statorAttached = attached;
     this.buildStatorGeometry();
   }
 
-  /**
-   * Sets stator slot configuration.
-   */
   public setStatorSlotted(slotted: boolean): void {
     this.statorSlotted = slotted;
     this.buildStatorGeometry();
   }
 
-  /**
-   * Sets stator vane incidence angle.
-   */
   public setStatorIncidence(deg: number): void {
     this.statorIncidenceDeg = deg;
     this.buildStatorGeometry();
   }
 
-  /**
-   * Sets selection state and toggles manipulation handles.
-   */
   public setSelected(selected: boolean): void {
     this.isSelected = selected;
     this.selectionBox.visible = selected;
@@ -413,13 +368,9 @@ export class Propeller3D {
     this.handednessBadge.visible = selected;
   }
 
-  /**
-   * Sets propeller rotation angle (in radians) around Z-thrust axis.
-   */
   public setRotation(angleRad: number, rpm = 0): void {
     this.rotorGroup.rotation.z = angleRad;
 
-    // Update anti-strobe blur disc opacity
     const absRpm = Math.abs(rpm);
     if (this.blurDiscMesh) {
       const mat = this.blurDiscMesh.material as THREE.MeshBasicMaterial;
@@ -431,9 +382,6 @@ export class Propeller3D {
     }
   }
 
-  /**
-   * Updates physical PBR material according to Candidate A selection.
-   */
   public setMaterial(type: PropellerMaterial): void {
     this.currentMaterial = type;
     const newMat = createPropellerMaterial(type);
@@ -444,9 +392,6 @@ export class Propeller3D {
     }
   }
 
-  /**
-   * Sets propeller design variant.
-   */
   public setDesign(designOrId: PropDesign | string): void {
     if (typeof designOrId === 'string') {
       this.design = getPropDesign(designOrId);
@@ -457,9 +402,6 @@ export class Propeller3D {
     this.selectionBox.update();
   }
 
-  /**
-   * Toggles handedness CW <-> CCW.
-   */
   public toggleHandedness(): 'CW' | 'CCW' {
     this.handedness = this.handedness === 'CW' ? 'CCW' : 'CW';
     this.rebuild();
@@ -473,28 +415,12 @@ export class Propeller3D {
     }
   }
 
-  /**
-   * Updates motor temperature-mapped emissive glow in 3D viewport.
-   * - < 50°C: normal (no glow)
-   * - 50–85°C: amber warning glow
-   * - 85–100°C: fiery crimson cutout glow
-   *
-   * Phase 6 array form: `thrusterIndex` is REQUIRED (Directive 5, principal
-   * review) so a caller can never silently write thruster 0's temperature by
-   * forgetting an argument. This 3D unit renders the primary propulsor;
-   * temperatures for index > 0 are visualized by the OverlaySystem thermal
-   * overlay instead of here.
-   */
   public setMotorTemperature(tempC: number, thrusterIndex: number): void {
     if (thrusterIndex <= 0) {
       this.applyMotorEmissive(tempC);
     }
   }
 
-  /**
-   * Explicit "all thrusters share this temperature" convenience (Directive 5):
-   * keeps intent unambiguous at the call site rather than a defaulted index.
-   */
   public setAllMotorTemperatures(tempC: number): void {
     this.applyMotorEmissive(tempC);
   }

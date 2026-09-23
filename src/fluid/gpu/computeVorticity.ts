@@ -1,21 +1,3 @@
-/**
- * GPU Vorticity Confinement Compute Pass (TSL)
- *
- * Citation:
- * Fedkiw, R., Stam, J., & Jensen, H. W. (2001). "Visual Simulation of Smoke".
- * Proceedings of the 28th Annual Conference on Computer Graphics and Interactive Techniques (SIGGRAPH '01),
- * ACM, pp. 15–22. https://doi.org/10.1145/383259.383260
- *
- * Vorticity Confinement Formulation:
- * 1. omega = curl(u) = dv/dx - du/dy
- * 2. N = grad(|omega|) / (|grad(|omega|)| + eps_regularizer)
- * 3. Force = eps * h * (N x omega)
- *    F_x =  eps * h * (N_y * omega)
- *    F_y = -eps * h * (N_x * omega)
- *    u <- u + dt * F_x
- *    v <- v + dt * F_y
- */
-
 import {
   Fn,
   instanceIndex,
@@ -67,7 +49,6 @@ export function createVorticityComputeNode(
     const isInterior = x.greaterThan(uint(0)).and(x.lessThan(sub(W, uint(1))))
       .and(y.greaterThan(uint(0))).and(y.lessThan(sub(H, uint(1))));
 
-    // Neighbors for grad(|omega|)
     const xLeft = x.greaterThan(uint(0)).select(sub(x, uint(1)), x);
     const xRight = x.lessThan(sub(W, uint(1))).select(add(x, uint(1)), x);
     const yDown = y.greaterThan(uint(0)).select(sub(y, uint(1)), y);

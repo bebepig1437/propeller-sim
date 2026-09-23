@@ -1,14 +1,3 @@
-/**
- * Phase 7 Telemetry Recorder & CSV Exporter
- * Captures high-frequency time series for all simulation subsystems:
- * - Time & frame metrics (t, dt, fps)
- * - Per-unit thruster metrics (rpm, pitch, thrust, torque, current, V_term, T_motor)
- * - Electrical bus metrics (V_bus, I_total, P_total)
- * - 6-DOF Vehicle metrics (pos, vel, quat, omega, roll_dev_per_m)
- * - Fluid field metrics (max |v|, mean |v|, max vorticity)
- * - Solver diagnostics (pressure iters, residual, per-pass GPU ms)
- */
-
 export interface ThrusterSample {
   rpm: number;
   pitchDeg: number;
@@ -32,8 +21,8 @@ export interface TelemetrySample {
 
   pos: [number, number, number];
   vel: [number, number, number];
-  quat: [number, number, number, number]; // [w, x, y, z]
-  omega: [number, number, number]; // [p, q, r] (rad/s)
+  quat: [number, number, number, number];
+  omega: [number, number, number];
   rollDevPerM: number;
 
   fluidMaxV: number;
@@ -96,7 +85,6 @@ export class TelemetryRecorder {
   public generateCsv(): string {
     const numThrusters = this.records.length > 0 ? this.records[0].thrusters.length : 3;
 
-    // Build header columns
     const headers: string[] = ['t_s', 'dt_s', 'fps'];
 
     for (let i = 0; i < numThrusters; i++) {

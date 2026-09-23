@@ -1,5 +1,3 @@
-
-
 import * as THREE from 'three';
 import type { FluidGrid } from '../fluid/grid';
 import {
@@ -34,7 +32,6 @@ export class WaterSurface {
   public material: THREE.MeshPhysicalMaterial;
   public normalGenerator: DualScrollingNormalMapGenerator;
 
-
   public elevation: number;
   public amplitude: number;
   public frequency: number;
@@ -45,12 +42,10 @@ export class WaterSurface {
   public size: number;
   public segments: number;
 
-
   private originalPositions: Float32Array;
   private colors: Float32Array;
   private foamIntensity: Float32Array;
   private octaves: GerstnerWaveOctave[];
-
 
   public fluidSurfaceElevation: Float32Array;
   public prevFluidSurfaceElevation: Float32Array | null = null;
@@ -77,7 +72,6 @@ export class WaterSurface {
     const vertexCount = this.geometry.attributes.position.count;
     this.originalPositions = new Float32Array(this.geometry.attributes.position.array);
 
-
     this.colors = new Float32Array(vertexCount * 3);
     this.foamIntensity = new Float32Array(vertexCount);
     for (let i = 0; i < vertexCount; i++) {
@@ -87,9 +81,7 @@ export class WaterSurface {
     }
     this.geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
 
-
     this.normalGenerator = new DualScrollingNormalMapGenerator(128);
-
 
     this.material = createWaterPhysicalMaterial(this.normalGenerator.texture, {
       transmission: params?.transmission ?? 0.88,
@@ -99,7 +91,6 @@ export class WaterSurface {
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.position.y = this.elevation;
     this.mesh.receiveShadow = true;
-
 
     this.octaves = [
       { direction: [1.0, 0.25], amplitude: 0.45, frequency: 1.0, speed: 1.0, steepness: 0.35 },
@@ -111,7 +102,6 @@ export class WaterSurface {
     this.fluidSurfaceElevation = new Float32Array(this.fluidGridWidth);
   }
 
-  
   public setMeshResolution(segments: number): void {
     if (this.segments === segments) return;
     this.segments = segments;
@@ -134,7 +124,6 @@ export class WaterSurface {
     this.mesh.geometry = this.geometry;
   }
 
-  
   public getHeightfieldEnergy(): number {
     let total = 0;
     for (let i = 0; i < this.fluidSurfaceElevation.length; i++) {
@@ -143,7 +132,6 @@ export class WaterSurface {
     return total;
   }
 
-  
   public getGerstnerDisplacement(
     x: number,
     z: number,
@@ -157,7 +145,6 @@ export class WaterSurface {
     let dz = 0;
     const t = time * this.speed;
 
-
     const speedScale = localSpeed > 0 ? Math.min(1.0, localSpeed / 0.4) : 0.0;
     if (speedScale <= 0.0001 && this.amplitude <= 0) {
       return { dy: 0, dx: 0, dz: 0 };
@@ -170,14 +157,12 @@ export class WaterSurface {
       const k = oct.frequency * this.frequency;
       const wavelength = (2.0 * Math.PI) / (k + 1e-5);
 
-
       if (wavelength > this.cutoffWavelength * 4.0) {
         continue;
       }
 
       const a = oct.amplitude * effectiveAmplitude;
       const omega = Math.sqrt(9.81 * k) * oct.speed;
-
 
       let dirX = oct.direction[0];
       let dirZ = oct.direction[1];
@@ -204,19 +189,16 @@ export class WaterSurface {
     return { dy, dx, dz };
   }
 
-  
   public getElevationAt(x: number, z: number, time: number): number {
     return this.elevation + this.getGerstnerDisplacement(x, z, time, 0.5).dy;
   }
 
-  
   public update(time: number, dt = 1.0 / 60.0, fluidGrid?: FluidGrid): void {
 
     this.normalGenerator.update(time);
     if (this.crossfadeRemainingSec > 0) {
       this.crossfadeRemainingSec = Math.max(0, this.crossfadeRemainingSec - dt);
     }
-
 
     if (fluidGrid) {
       if (this.fluidSurfaceElevation.length !== fluidGrid.width) {
@@ -250,7 +232,6 @@ export class WaterSurface {
       }
     }
 
-
     const posAttr = this.geometry.attributes.position;
     const posArray = posAttr.array as Float32Array;
     const orig = this.originalPositions;
@@ -261,11 +242,9 @@ export class WaterSurface {
     const tankSize = this.size;
     const halfSize = tankSize * 0.5;
 
-
     const foamColorR = 0.95;
     const foamColorG = 0.99;
     const foamColorB = 1.00;
-
 
     const waterBaseR = 0.05;
     const waterBaseG = 0.52;
@@ -278,18 +257,15 @@ export class WaterSurface {
       const xOrig = orig[i3];
       const zOrig = orig[i3 + 2];
 
-
       let fluidH = 0.0;
       let newFoam = 0.0;
       let localSpeed = 0.0;
       let flowDirX = 0.0;
       let flowDirZ = 0.0;
 
-
       if (fluidGrid && xOrig >= -halfSize && xOrig <= halfSize) {
         const normX = Math.max(0.0, Math.min(1.0, (xOrig + halfSize) / tankSize));
         const gx = normX * (fluidGrid.width - 1);
-
 
         const gx0 = Math.floor(gx);
         const gx1 = Math.min(fluidGrid.width - 1, gx0 + 1);
@@ -309,7 +285,6 @@ export class WaterSurface {
           fluidH = newFluidH;
         }
 
-
         const surfY = Math.max(1, fluidGrid.height - 2);
         const curlVal = Math.abs(fluidGrid.sampleBilinear(fluidGrid.curl, gx, surfY));
         const uVal = fluidGrid.sampleBilinear(fluidGrid.u, gx, surfY);
@@ -321,9 +296,7 @@ export class WaterSurface {
           flowDirZ = 0.0;
         }
 
-
         const shear = curlVal * 1.2 + localSpeed * 0.5;
-
 
         if (shear > this.foamThreshold) {
           const t = Math.min(1.0, (shear - this.foamThreshold) / (this.foamThreshold * 1.5));
@@ -331,18 +304,14 @@ export class WaterSurface {
         }
       }
 
-
       foam[i] = Math.max(newFoam, Math.max(0.0, foam[i] - foamDecayRate));
       const foamAmount = foam[i];
 
-
       const gerstner = this.getGerstnerDisplacement(xOrig, zOrig, time, localSpeed, flowDirX, flowDirZ);
-
 
       posArray[i3 + 0] = xOrig + gerstner.dx;
       posArray[i3 + 1] = fluidH + gerstner.dy;
       posArray[i3 + 2] = zOrig + gerstner.dz;
-
 
       colors[i3 + 0] = waterBaseR + (foamColorR - waterBaseR) * foamAmount;
       colors[i3 + 1] = waterBaseG + (foamColorG - waterBaseG) * foamAmount;

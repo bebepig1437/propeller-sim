@@ -1,5 +1,3 @@
-
-
 import { FluidGrid } from './grid';
 
 export interface TemporalUpsamplerOptions {

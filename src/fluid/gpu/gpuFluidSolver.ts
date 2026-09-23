@@ -1,17 +1,3 @@
-/**
- * GPU Fluid Dynamics Solver (TSL Compute Pipeline)
- *
- * Citations:
- * 1. MacCormack, R. W. (1969). "The Effect of Viscosity in Hypervelocity Impact Cratering".
- *    AIAA Paper No. 69-354. https://doi.org/10.2514/6.1969-354
- * 2. Fedkiw, R., Stam, J., & Jensen, H. W. (2001). "Visual Simulation of Smoke".
- *    Proceedings of SIGGRAPH 2001, pp. 15–22. https://doi.org/10.1145/383259.383260
- * 3. Harris, M. J. (2004). "Fast Fluid Dynamics on the GPU".
- *    In R. Fernando (Ed.), GPU Gems: Programming Techniques, Tips, and Tricks for Real-Time Graphics (Chapter 38).
- *    Addison-Wesley. https://developer.nvidia.com/gpugems/gpugems/part-vi-beyond-triangles/chapter-38-fast-fluid-dynamics-gpu
- * 4. Briggs, W. L., Henson, V. E., & McCormick, S. F. (2000). "A Multigrid Tutorial" (2nd ed.). SIAM.
- */
-
 import { FluidSolver, type FluidSolverParams, type FluidSolverMetrics } from '../FluidSolver';
 import { FluidGrid } from '../grid';
 import { getMaxDivergence } from '../pressure';
@@ -79,11 +65,9 @@ export class GpuFluidSolver {
 
   public renderer: any = null;
 
-  // Grid Dimensions
   public width: number;
   public height: number;
 
-  // TSL Compute Nodes
   public sourcesNode!: ReturnType<typeof createSourcesComputeNode>;
   public curlNode!: ReturnType<typeof createCurlComputeNode>;
   public vorticityNode!: ReturnType<typeof createVorticityComputeNode>;
@@ -93,7 +77,6 @@ export class GpuFluidSolver {
   public multigridNodes!: ReturnType<typeof createMultigridComputeNodes>;
   public projectNode!: ReturnType<typeof createProjectComputeNode>;
 
-  // Per-pass timing metrics
   public passTimings: GpuPassTimings = {
     submitMs: 0,
     sourcesMs: 0,
@@ -106,7 +89,6 @@ export class GpuFluidSolver {
     totalFluidMs: 0
   };
 
-  // Compare mode (CPU vs GPU side-by-side diff test)
   public compareMetrics: GpuCompareMetrics = {
     active: false,
     maxDiffU: 0,
@@ -118,7 +100,6 @@ export class GpuFluidSolver {
   public compareCpuSolver: FluidSolver | null = null;
   public diffGrid: FluidGrid | null = null;
 
-  // Shared StorageBufferAttributes
   private uAttr!: StorageBufferAttribute;
   private vAttr!: StorageBufferAttribute;
   private dyeAttr!: StorageBufferAttribute;
@@ -135,7 +116,6 @@ export class GpuFluidSolver {
     this.pressureMethod = options?.pressureMethod ?? 'jacobi';
     this.renderer = options?.renderer ?? null;
 
-    // CPU Reference and Fallback Solver
     this.cpuFallback = new FluidSolver({
       ...options,
       gridOptions: { width: this.width, height: this.height, dx: options?.gridOptions?.dx ?? 1.0 }
@@ -143,7 +123,6 @@ export class GpuFluidSolver {
 
     this.initBuffersAndComputeNodes(this.width, this.height);
 
-    // Verify if WebGPU compute is natively available on the active renderer
     if (
       this.renderer &&
       typeof this.renderer.compute === 'function' &&
@@ -181,7 +160,6 @@ export class GpuFluidSolver {
       startTime: 0
     }));
 
-    // Initialize individual compute passes
     this.sourcesNode = createSourcesComputeNode(width, height, {
       u: this.uAttr,
       v: this.vAttr,
@@ -303,26 +281,22 @@ export class GpuFluidSolver {
       return this.stepGpu(stepDt);
     }
 
-    // Reference CPU execution with per-pass profiling
     return this.stepCpuWithProfiling(stepDt);
   }
 
   private stepGpu(dt: number): FluidSolverMetrics {
     const t0 = performance.now();
     try {
-      // 1. Pass: Sources
       const tSources0 = performance.now();
       this.sourcesNode.vxUniform.value = this.jet.config.vx;
       this.sourcesNode.enabledUniform.value = this.jet.config.enabled ? 1 : 0;
       this.renderer.compute(this.sourcesNode.node);
       this.passTimings.sourcesMs = performance.now() - tSources0;
 
-      // 2. Pass: Curl
       const tCurl0 = performance.now();
       this.renderer.compute(this.curlNode.node);
       this.passTimings.curlMs = performance.now() - tCurl0;
 
-      // 3. Pass: Vorticity Confinement (Fedkiw 2001)
       const tVort0 = performance.now();
       this.vorticityNode.strengthUniform.value = this.vorticityStrength;
       this.vorticityNode.dtUniform.value = dt;
@@ -331,7 +305,6 @@ export class GpuFluidSolver {
       }
       this.passTimings.vorticityMs = performance.now() - tVort0;
 
-      // 4. Pass: CFL guard & Advection (MacCormack 1969 or Semi-Lagrangian)
       const tAdv0 = performance.now();
       const uArr = this.uAttr.array as Float32Array;
       const vArr = this.vAttr.array as Float32Array;
@@ -357,28 +330,23 @@ export class GpuFluidSolver {
       }
       this.passTimings.advectMs = performance.now() - tAdv0;
 
-      // 5. Pass: Divergence
       const tDiv0 = performance.now();
       this.renderer.compute(this.divergenceNode.node);
       this.passTimings.divergenceMs = performance.now() - tDiv0;
 
-      // 6. Pass: Pressure Solve (Jacobi or Multigrid V-Cycle)
       const tPress0 = performance.now();
       if (this.pressureMethod === 'multigrid') {
-        // Multigrid V-Cycle: restrict -> solve coarse -> prolongate -> correct
         this.renderer.compute(this.multigridNodes.residualNode);
         this.renderer.compute(this.multigridNodes.restrictNode);
         for (let i = 0; i < 8; i++) {
           this.renderer.compute(this.multigridNodes.coarseJacobiNode);
         }
         this.renderer.compute(this.multigridNodes.prolongateCorrectNode);
-        // Post-smoothing
         for (let i = 0; i < 4; i++) {
           this.renderer.compute(this.pressureNode.forwardNode);
           this.renderer.compute(this.pressureNode.backwardNode);
         }
       } else {
-        // Standard Jacobi iterations
         const iters = Math.max(1, Math.floor(this.pressureIterations / 2));
         for (let i = 0; i < iters; i++) {
           this.renderer.compute(this.pressureNode.forwardNode);
@@ -387,7 +355,6 @@ export class GpuFluidSolver {
       }
       this.passTimings.pressureMs = performance.now() - tPress0;
 
-      // 7. Pass: Project (velocity - grad(p))
       const tProj0 = performance.now();
       this.renderer.compute(this.projectNode.node);
       this.passTimings.projectMs = performance.now() - tProj0;
@@ -428,7 +395,6 @@ export class GpuFluidSolver {
       this.passTimings.submitMs = totalElapsed;
       this.passTimings.totalFluidMs = totalElapsed;
 
-      // Populate metrics from readback data (no hardcoded metrics)
       this.cpuFallback.metrics.stepTimeMs = totalElapsed;
       this.cpuFallback.metrics.maxDivergence = getMaxDivergence(this.cpuFallback.grid);
       this.cpuFallback.metrics.totalDyeMass = this.cpuFallback.computeTotalDyeMass();
@@ -446,7 +412,6 @@ export class GpuFluidSolver {
     this.readbackSync();
     const total = performance.now() - t0;
 
-    // Distribute measured timings across passes based on physical execution breakdown
     this.passTimings.submitMs = 0;
     this.passTimings.sourcesMs = total * 0.05;
     this.passTimings.curlMs = total * 0.08;
@@ -461,10 +426,6 @@ export class GpuFluidSolver {
     return metrics;
   }
 
-  /**
-   * Reads back GPU storage buffers into target CPU grid.
-   * Fulfills Rule 8: Fix the GPU readback before trusting any GPU number.
-   */
   public async readbackGpuBuffers(targetGrid?: FluidGrid): Promise<{ u: Float32Array; v: Float32Array; dye: Float32Array }> {
     const grid = targetGrid ?? this.cpuFallback.grid;
     if (this.isGpuAccelerated && this.renderer && typeof (this.renderer as any).getArrayBufferAsync === 'function') {
@@ -488,9 +449,6 @@ export class GpuFluidSolver {
     return { u: grid.u, v: grid.v, dye: grid.dye };
   }
 
-  /**
-   * Synchronous copy from storage attribute arrays into target grid.
-   */
   public readbackSync(targetGrid?: FluidGrid): { u: Float32Array; v: Float32Array; dye: Float32Array } {
     const grid = targetGrid ?? this.cpuFallback.grid;
     if (this.isGpuAccelerated) {
@@ -513,11 +471,6 @@ export class GpuFluidSolver {
     return this.syncReadbackResult;
   }
 
-  /**
-   * Compare Mode (Rule 9): Compare mode must compare, not self-compare.
-   * Reads back GPU buffers into a separate array, advances an independent CPU reference grid,
-   * diffs GPU vs CPU, and populates the diff visualization grid.
-   */
   public stepCompareMode(dt: number): FluidSolverMetrics {
     if (
       !this.compareCpuSolver ||
@@ -538,16 +491,13 @@ export class GpuFluidSolver {
       this.diffGrid = new FluidGrid({ width: 256, height: 128 });
     }
 
-    // 1. Step GPU path or CPU fallback
     const gpuMetrics = this.isGpuAccelerated && this.renderer
       ? this.stepGpu(dt)
       : this.stepCpuWithProfiling(dt);
 
-    // 2. Read back GPU buffers into target grid
     const gpuGrid = this.cpuFallback.grid;
     this.readbackSync(gpuGrid);
 
-    // 3. Step independent CPU reference solver
     this.compareCpuSolver.viscosity = this.viscosity;
     this.compareCpuSolver.vorticityStrength = this.vorticityStrength;
     this.compareCpuSolver.pressureIterations = this.pressureIterations;
@@ -555,7 +505,6 @@ export class GpuFluidSolver {
     this.compareCpuSolver.jet.config = { ...this.jet.config };
     this.compareCpuSolver.step(dt);
 
-    // 4. Compute true diff between GPU readback and independent CPU reference
     const size = 256 * 128;
     let maxU = 0;
     let maxV = 0;
@@ -590,25 +539,14 @@ export class GpuFluidSolver {
     return gpuMetrics;
   }
 
-  /**
-   * Phase 2 Validation Comparator:
-   * 1. Read GPU u/v/dye into gpuU/gpuV/gpuDye.
-   * 2. Copy live CPU grid into cpuCopyU/cpuCopyV/cpuCopyDye.
-   * 3. Step a CPU solver that owns cpuCopy* (not the live grid).
-   * 4. Diff gpuU vs cpuCopyU, gpuV vs cpuCopyV, gpuDye vs cpuCopyDye.
-   * 5. Restore live CPU grid from the backup taken in step 2.
-   * Note: Compare mode does NOT mutate any live state.
-   */
   public runCompareValidation(dt = 1.0 / 60.0): GpuCompareMetrics {
     const liveGrid = this.cpuFallback.grid;
     const size = liveGrid.size;
 
-    // 2. Backup live CPU grid into cpuCopy*
     const cpuCopyU = new Float32Array(liveGrid.u);
     const cpuCopyV = new Float32Array(liveGrid.v);
     const cpuCopyDye = new Float32Array(liveGrid.dye);
 
-    // 1. Advance GPU path (or CPU fallback) forward by dt to produce GPU u/v/dye
     if (this.isGpuAccelerated && this.renderer) {
       this.stepGpu(dt);
     } else {
@@ -618,7 +556,6 @@ export class GpuFluidSolver {
     const gpuV = new Float32Array(this.vAttr.array as Float32Array);
     const gpuDye = new Float32Array(this.dyeAttr.array as Float32Array);
 
-    // 3. Step an independent CPU solver that owns a separate grid initialized with cpuCopy*
     const independentSolver = new FluidSolver({
       gridOptions: { width: liveGrid.width, height: liveGrid.height, dx: liveGrid.dx },
       viscosity: this.viscosity,
@@ -633,7 +570,6 @@ export class GpuFluidSolver {
     independentSolver.simTime = this.cpuFallback.simTime - dt;
     independentSolver.step(dt);
 
-    // 4. Diff gpuU vs stepped cpuCopy
     let maxU = 0;
     let maxV = 0;
     let maxDye = 0;
@@ -652,7 +588,6 @@ export class GpuFluidSolver {
       sumSq += dd * dd;
     }
 
-    // 5. Restore live CPU grid from the backup taken in step 2 (guarantee no mutation of live state)
     liveGrid.u.set(cpuCopyU);
     liveGrid.v.set(cpuCopyV);
     liveGrid.dye.set(cpuCopyDye);
