@@ -20,6 +20,15 @@ describe('Async readback ring', () => {
     }
   }, 15000);
 
+  it('never consumes an inflight or pending slot', () => {
+    const s = new GpuFluidSolver({ width: 64, height: 32 });
+    s.dispatch();
+    for (const slot of (s as any).readbackRing) {
+      slot.state = 'inflight';
+    }
+    expect(s.consumeReadback()).toBeNull();
+  });
+
   it('reuses slots without leaking stale frames', () => {
     const solver = new GpuFluidSolver({ width: 64, height: 32 });
     const ringSize = solver.readbackRingSize;
