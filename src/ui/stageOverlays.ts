@@ -84,7 +84,6 @@ export class StageOverlays {
       this.callbacks.onToggleCutaway(this.cutawayActive);
     });
 
-    // 2. Stage Right-Edge Vertical Overlay Strip
     this.stripContainer.innerHTML = OVERLAY_DEFS.map((def) => {
       const isActive = this.state[def.key];
       const accentAttr = def.accent ? `data-accent="${def.accent}"` : '';
@@ -111,10 +110,6 @@ export class StageOverlays {
     });
   }
 
-  /**
-   * Updates the stage corner BEMT-vs-grid thrust agreement badge.
-   * Only visible when the thrust or velocity overlay is turned on and thrust is active.
-   */
   public updateCouplingBadge(agreementPct: number, bemtN: number, gridN: number): void {
     const badgeEl = this.cornerContainer.querySelector('#thrust-coupling-badge');
     const textEl = this.cornerContainer.querySelector('#thrust-coupling-text');

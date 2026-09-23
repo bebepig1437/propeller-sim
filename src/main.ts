@@ -5,7 +5,7 @@ import { CanvasRecorder } from "./ui/recorder";
 import { parseSimStateFromUrl, serializeSimStateToUrl } from "./core/urlState";
 import './index.css';
 import * as THREE from 'three';
-import { defaultConfig } from './core/config';
+import { defaultConfig, DEBUG as debug } from './core/config';
 import { SimClock } from './sim/clock';
 import { GpuFluidSolver } from './fluid/gpu/gpuFluidSolver';
 import { FluidRenderer2D } from './fluid/FluidRenderer2D';
@@ -215,7 +215,7 @@ export class App {
   public init(): void {
     const root = document.getElementById('app');
     if (!root) {
-      console.error('[App] Missing #app root element');
+      if (debug) console.error('[App] Missing #app root element');
       return;
     }
 
@@ -269,7 +269,7 @@ export class App {
 
     this.recovery = new RecoveryCoordinator({
       onBackendChange: (backend) => {
-        console.log(`[App] Render backend transitioned to ${backend}`);
+        if (debug) console.log(`[App] Render backend transitioned to ${backend}`);
 
 
         this.fluidSolver.setBackend(backend);
@@ -373,7 +373,7 @@ export class App {
       this.inspector.setSelection({ type: 'thruster', index: 0 });
     };
     this.renderer.onPropellerPositionChanged = (zM) => {
-      console.log(`[Stage] Propeller translated along Z-axis: ${zM.toFixed(3)} m`);
+      if (debug) console.log(`[Stage] Propeller translated along Z-axis: ${zM.toFixed(3)} m`);
       const baseCenterX = 28;
       const shiftCells = Math.round(zM / this.coupler.config.gridDxM);
       this.coupler.config.centerX = Math.max(8, Math.min(this.fluidSolver.grid.width - 40, baseCenterX + shiftCells));
@@ -447,7 +447,7 @@ export class App {
 
     this.palette = new SimPalette(layout.paletteEl, {
       onLoadVehicle: (vehicleId) => {
-        console.log(`[Palette] Loaded vehicle: ${vehicleId}`);
+        if (debug) console.log(`[Palette] Loaded vehicle: ${vehicleId}`);
         this.renderer.vehicle3D?.setSelected(false);
         this.propArray.setupCandidateADefaults();
         this.palette.setThrusterCount(3, 0);
@@ -772,7 +772,7 @@ export class App {
       this.renderer.resetOrbitView();
     }
 
-    console.log('[App] IBM Quantum-inspired instrument UI ready.');
+    if (debug) console.log('[App] IBM Quantum-inspired instrument UI ready.');
     this.start();
   }
 
@@ -798,7 +798,7 @@ export class App {
     const device = rendererAny?.backend?.device ?? rendererAny?._device;
     if (device && typeof device.lost?.then === 'function') {
       device.lost.then((info: { reason?: string } | undefined) => {
-        console.warn(`[App] WebGPU device lost (reason: ${info?.reason ?? 'unknown'})`);
+        if (debug) console.warn(`[App] WebGPU device lost (reason: ${info?.reason ?? 'unknown'})`);
         void this.recovery.handleDeviceLoss();
       });
     }
@@ -809,7 +809,7 @@ export class App {
     if (dom && typeof dom.addEventListener === 'function') {
       const onContextLost = (e: Event) => {
         e.preventDefault();
-        console.warn('[App] WebGL2 context lost');
+        if (debug) console.warn('[App] WebGL2 context lost');
         void this.recovery.handleDeviceLoss();
       };
       dom.addEventListener('webglcontextlost', onContextLost as EventListener);
@@ -819,7 +819,7 @@ export class App {
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
       window.addEventListener('keydown', (e: KeyboardEvent) => {
         if (e.shiftKey && (e.key === 'D' || e.key === 'd')) {
-          console.log('[App] Manual device-loss simulation (Shift+D)');
+          if (debug) console.log('[App] Manual device-loss simulation (Shift+D)');
           void this.recovery.handleDeviceLoss();
         }
       });

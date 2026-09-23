@@ -123,7 +123,6 @@ export class SimPalette {
   }
 
   private bindEvents(): void {
-    // Vehicle
     this.container.querySelector('#btn-load-candidate-a')?.addEventListener('click', () => {
       this.callbacks.onLoadVehicle('candidateA');
     });
@@ -131,7 +130,6 @@ export class SimPalette {
       this.callbacks.onResetPose();
     });
 
-    // Thruster Select
     const segButtons = this.container.querySelectorAll('#thruster-selector-group button');
     segButtons.forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -142,7 +140,6 @@ export class SimPalette {
       });
     });
 
-    // Add Thruster
     this.container.querySelector('#btn-add-thruster')?.addEventListener('click', () => {
       if (this.thrusterCount < 6) {
         this.thrusterCount++;
@@ -152,7 +149,6 @@ export class SimPalette {
       }
     });
 
-    // Remove Thruster
     this.container.querySelector('#btn-remove-thruster')?.addEventListener('click', () => {
       if (this.thrusterCount > 1) {
         const idxToRemove = this.selectedThruster;
@@ -163,7 +159,6 @@ export class SimPalette {
       }
     });
 
-    // Handedness Preset
     const presetSelect = this.container.querySelector('#select-handedness-preset') as HTMLSelectElement;
     presetSelect?.addEventListener('change', () => {
       const p = presetSelect.value as HandednessPresetType;
@@ -176,7 +171,6 @@ export class SimPalette {
       this.callbacks.onHandednessPresetChange?.(p);
     });
 
-    // Stator
     this.container.querySelector('#btn-toggle-stator')?.addEventListener('click', () => {
       this.statorAttached = !this.statorAttached;
       this.render();
@@ -191,7 +185,6 @@ export class SimPalette {
       }
     });
 
-    // Prop Design
     const designButtons = this.container.querySelectorAll('[data-design]');
     designButtons.forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -202,7 +195,6 @@ export class SimPalette {
       });
     });
 
-    // Material
     const matButtons = this.container.querySelectorAll('[data-mat]');
     matButtons.forEach((btn) => {
       btn.addEventListener('click', (e) => {
