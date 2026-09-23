@@ -7,6 +7,7 @@ export interface HeaderCallbacks {
   onExportCsv: () => void;
   onValidationClick: () => void;
   onRecordToggle?: () => void;
+  onImportSpecClick?: () => void;
 }
 
 export interface OperatingPointPreset {
@@ -144,6 +145,11 @@ export class SimHeader {
       </div>
 
       <div class="header-right">
+        <button id="btn-import-spec" class="btn-import-spec" title="Paste and auto-import raw engineering specification">
+          <span>📋</span>
+          <span class="btn-label">Import Spec</span>
+        </button>
+
         <button id="btn-record" class="btn-icon btn-record" title="Record stage viewport to WebM video">
           <span class="record-dot">⏺</span>
           <span class="btn-label" id="record-label">REC</span>
@@ -179,6 +185,11 @@ export class SimHeader {
     this.runBtn = this.container.querySelector("#btn-run") as HTMLButtonElement;
     this.presetSelect = this.container.querySelector("#preset-selector") as HTMLSelectElement;
     this.recordBtn = this.container.querySelector("#btn-record") as HTMLButtonElement;
+
+    const importBtn = this.container.querySelector("#btn-import-spec");
+    importBtn?.addEventListener("click", () => {
+      this.callbacks.onImportSpecClick?.();
+    });
 
     this.runBtn.addEventListener("click", () => {
       try {
@@ -270,6 +281,12 @@ export class SimHeader {
   public setPreset(key: string): void {
     if (this.presetSelect) {
       this.presetSelect.value = key;
+    }
+  }
+
+  public updatePresets(newPresets: OperatingPointPreset[]): void {
+    if (this.presetSelect) {
+      this.presetSelect.innerHTML = newPresets.map(p => `<option value="${p.key}">${p.label}</option>`).join("");
     }
   }
 }
