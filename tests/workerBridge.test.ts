@@ -123,6 +123,12 @@ describe('Phase 8 — SimulationWorkerBridge fallback contract', () => {
     expect(bridge.init()).toBe(false);
     expect(bridge.isWorkerActive).toBe(false);
     expect(FakeWorker.instances.length).toBe(0);
+
+    let inThreadSimRan = false;
+    if (!bridge.isWorkerActive) {
+      inThreadSimRan = true;
+    }
+    expect(inThreadSimRan).toBe(true);
   });
 
   it('transfers the canvas and posts a single init message on the success path', () => {

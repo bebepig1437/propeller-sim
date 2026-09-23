@@ -134,4 +134,23 @@ export class RecoveryCoordinator {
     }
     return this.handleDeviceLoss();
   }
+
+  public async notifyDeviceLost(target?: 'webgpu' | 'webgl2' | 'cpu' | RenderBackendType): Promise<RenderBackendType> {
+    if (target) {
+      const lower = target.toLowerCase();
+      if (lower === 'webgl2') {
+        this.currentBackend = 'WebGL2';
+        return this.handleDeviceLoss();
+      }
+      if (lower === 'webgpu') {
+        this.currentBackend = 'WebGPU';
+        return this.handleDeviceLoss();
+      }
+      if (lower === 'cpu') {
+        this.currentBackend = 'CPU';
+        return 'CPU';
+      }
+    }
+    return this.handleDeviceLoss();
+  }
 }
