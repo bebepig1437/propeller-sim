@@ -336,3 +336,10 @@ sign-correct and monotone in commanded thrust.
 1. Static datasets in `public/validation/` (`j_sweep_validation.json`, `j_sweep_validation.svg`) are reserved solely as static assets for the Phase 9 offline `/validation` report page.
 2. Per master architecture rules, runtime modules under `src/` must NEVER import from `public/validation/`. Dynamic runtime comparisons against oracles occur exclusively offline or within Vitest test fixtures under `tests/`. in `public/validation/` (`j_sweep_validation.json`, `j_sweep_validation.svg`) are reserved solely as static assets for the Phase 9 offline `/validation` report page.
 2. Per master architecture rules, runtime modules under `src/` must NEVER import from `public/validation/`. Dynamic runtime comparisons against oracles occur exclusively offline or within Vitest test fixtures under `tests/`.
+
+## 12. Module Registry & Architecture
+
+1. **ServiceRegistry (`src/core/registry.ts`)**: Implements central decoupled cross-module access without circular imports per Phase 0 Master Context.
+2. **Propeller Design Registry (`src/prop/designs/index.ts`)**: Canonical repository of propeller design definitions (Candidate A, Kaplan, Wageningen B-Series) and spanwise blade geometry interpolation functions.
+3. **Vehicle Config Loader (`src/config/vehicleLoader.ts`)**: Loads and validates authoritative vehicle configuration schemas from `public/vehicles/*.json`.
+4. **Telemetry Logger (`src/telemetry/logger.ts`)**: Ring-buffered high-frequency telemetry sink for CSV export and performance analysis.

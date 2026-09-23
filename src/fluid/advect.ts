@@ -1,3 +1,4 @@
+// MacCormack / Stam / Harris: Second-order advection with error correction
 import type { FluidGrid } from './grid';
 import type { BoundaryHandler } from './boundary';
 

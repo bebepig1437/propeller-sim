@@ -1,3 +1,4 @@
+import { defaultConfig } from "../core/config";
 import * as THREE from 'three';
 import {
   VehicleBody,
@@ -317,4 +318,47 @@ export function stepVehicleSubstepped(
     result = stepVehicleRigidBody(vehicle, subDt, thrusterInput, thrusterMoments, bounds, tether, ambientFlowWorld);
   }
   return result;
+}
+
+export const FREE_SPACE: TankBoundaries = {
+  floorElevationM: -1000,
+  surfaceElevationM: 1000,
+  radiusM: 1000
+};
+
+export function stepSurgeManeuver(params?: { durationS?: number; dt?: number; forceN?: number }): {
+  finalVelocityMs: number;
+  riseTimeS: number;
+} {
+  const durationS = params?.durationS ?? 10;
+  const dt = params?.dt ?? (1 / 60);
+  const forceN = params?.forceN ?? 1.0;
+
+  const vehicle = new VehicleBody(defaultConfig.vehicle);
+  vehicle.reset([0, -0.4, 0]);
+
+  const steps = Math.round(durationS / dt);
+  const simulated: { t: number; v: number }[] = [{ t: 0, v: 0 }];
+
+  for (let s = 0; s < steps; s++) {
+    stepVehicleRigidBody(vehicle, dt, { surgeN: forceN }, undefined, FREE_SPACE);
+    simulated.push({ t: (s + 1) * dt, v: vehicle.velocityBodyMs[0] });
+  }
+
+  const finalVelocityMs = simulated[simulated.length - 1].v;
+
+  function crossingTime(trajectory: { t: number; v: number }[], target: number): number {
+    for (let index = 1; index < trajectory.length; index++) {
+      if (trajectory[index].v >= target) {
+        const previous = trajectory[index - 1];
+        const span = trajectory[index].v - previous.v;
+        const fraction = span > 0 ? (target - previous.v) / span : 0;
+        return previous.t + fraction * (trajectory[index].t - previous.t);
+      }
+    }
+    return 0;
+  }
+
+  const riseTimeS = crossingTime(simulated, 0.9 * finalVelocityMs) - crossingTime(simulated, 0.1 * finalVelocityMs);
+  return { finalVelocityMs, riseTimeS };
 }

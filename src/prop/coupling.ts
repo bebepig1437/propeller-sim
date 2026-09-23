@@ -1,3 +1,4 @@
+// see CONVENTIONS.md: Marine vs Cartesian coordinate frames and swirl sign
 import type { FluidGrid } from '../fluid/grid';
 import type { BEMTResult } from './bemt';
 
@@ -344,4 +345,10 @@ export class ActuatorDiscCoupler {
 
     return this.lastTelemetry;
   }
+}
+
+export function computeOrientationAngle(dx: number, dy: number): number {
+  const mag = Math.hypot(dx, dy);
+  if (mag < 1e-12) return 0;
+  return Math.atan2(dy, dx);
 }

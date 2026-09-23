@@ -488,3 +488,12 @@ export class SimHudStrip {
     }
   }
 }
+
+export function getDebugHudChannels(): string[] {
+  return [
+    "ledger.qNet",
+    "integrator.appliedTorque",
+    "motor.current",
+    "fluid.maxVelocity"
+  ];
+}

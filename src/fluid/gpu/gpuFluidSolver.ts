@@ -38,6 +38,7 @@ export interface ReadbackSlot {
   dye: Float32Array;
   inFlight: boolean;
   ready: boolean;
+  pending: boolean;
   startTime: number;
 }
 
@@ -158,6 +159,7 @@ export class GpuFluidSolver {
       dye: new Float32Array(size),
       inFlight: false,
       ready: false,
+      pending: false,
       startTime: 0
     }));
 
@@ -686,5 +688,17 @@ export class GpuFluidSolver {
 
   public reset(): void {
     this.cpuFallback.reset();
+  }
+
+  public dispatch(dt = 1 / 60): FluidSolverMetrics {
+    return this.step(dt);
+  }
+
+  public consumeReadback(): { u: Float32Array; v: Float32Array; dye: Float32Array; pending: boolean } | null {
+    const slot = this.readbackRing[(this.currentRingIndex + 2) % 3];
+    if (slot && slot.ready && !slot.pending && !slot.inFlight) {
+      return { u: slot.u, v: slot.v, dye: slot.dye, pending: false };
+    }
+    return null;
   }
 }
