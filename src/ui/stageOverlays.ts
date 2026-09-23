@@ -66,7 +66,7 @@ export class StageOverlays {
 
   public render(): void {
     this.cornerContainer.innerHTML = `
-      <button id="btn-toggle-cutaway" class="btn-stage-tool ${this.cutawayActive ? 'active' : ''}" title="Toggle 2D Side Cutaway Cross-Section">
+      <button id="btn-toggle-cutaway" class="btn-stage-tool ${this.cutawayActive ? 'active' : ''}" title="Toggle 2D Side Cutaway Cross-Section" aria-label="Toggle 2D Side Cutaway Cross-Section" aria-pressed="${this.cutawayActive}">
         <span>◫</span>
         <span>Cutaway View</span>
       </button>
@@ -92,6 +92,8 @@ export class StageOverlays {
         <button class="btn-overlay-toggle ${isActive ? 'active' : ''}"
                 data-key="${def.key}"
                 data-tooltip="${def.label}"
+                aria-label="${def.label}"
+                aria-pressed="${isActive}"
                 ${accentAttr}>
           ${def.icon}
         </button>
