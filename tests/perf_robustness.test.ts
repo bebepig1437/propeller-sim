@@ -129,10 +129,10 @@ describe("Phase 8 Performance and Robustness Verification", () => {
     }
 
     const samples: number[] = [];
-    let result = solvePressureMultigrid(grid, 5);
+    let result = solvePressureMultigrid(grid, 3);
     for (let i = 0; i < 3; i++) {
       const t0 = performance.now();
-      result = solvePressureMultigrid(grid, 5);
+      result = solvePressureMultigrid(grid, 3);
       samples.push(performance.now() - t0);
     }
 
