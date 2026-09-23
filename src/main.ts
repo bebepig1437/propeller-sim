@@ -439,7 +439,6 @@ export class App {
     };
     this.renderer.onVehiclePoseCommit = () => {
       this.syncVehicleInitFromBody();
-      this.controlPanel?.refreshVehicleGroup();
     };
     this.applyVehicleInitPose();
     vehicle3D.setSelected(true);
@@ -559,19 +558,18 @@ export class App {
       layout.fluidCutawayEl,
       {
         onToggleCutaway: (active) => {
-          if (active) {
-            this.renderer.setSideCutawayView();
-          } else {
-            this.renderer.setTestSectionCloseUpView();
-          }
+          this.renderer.setCutaway(active);
+          this.overlaySystem.setCutaway(active);
         },
         onSelectViewPreset: (preset) => {
           if (preset === 'full') {
+            this.renderer.setCutaway(false);
             this.renderer.setFullTunnelView();
           } else if (preset === 'testSection') {
+            this.renderer.setCutaway(false);
             this.renderer.setTestSectionCloseUpView();
           } else if (preset === 'cutaway') {
-            this.renderer.setSideCutawayView();
+            this.renderer.setCutaway(true);
           }
         },
         onToggleVisualSpin: (_enabled) => {},
@@ -581,6 +579,10 @@ export class App {
 
           if (key === 'pressureHeatmap') {
             this.fluidRenderer.mode = active ? 'PRESSURE' : 'DYE';
+          } else if (key === 'vorticity') {
+            this.fluidRenderer.mode = active ? 'VORTICITY' : 'DYE';
+          } else if (key === 'dye') {
+            this.fluidRenderer.mode = 'DYE';
           }
           this.controlPanel?.syncOverlayState(this.overlayState);
         }
@@ -1384,6 +1386,7 @@ export class App {
     const renderDt = Math.min(0.05, Math.max(0.001, (currentTimeMs - this.lastRenderTime) * 0.001));
     this.lastRenderTime = currentTimeMs;
     this.overlayCtx.dt = renderDt;
+    this.overlayCtx.isCutaway = this.renderer.isCutaway;
     this.overlaySystem.update(renderDt, this.overlayCtx);
 
 

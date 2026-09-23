@@ -386,7 +386,7 @@ describe('UX & Accessibility Review (Sections A through F)', () => {
       });
 
       const buttons = strip.querySelectorAll('button');
-      expect(buttons.length).toBe(9);
+      expect(buttons.length).toBe(10);
       buttons.forEach(btn => {
         expect((btn as any).ariaLabel).toBeTruthy();
       });
