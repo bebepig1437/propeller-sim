@@ -189,6 +189,9 @@ export class SimHeader {
       this.runBtn.classList.remove("pulse-once");
       const callout = this.container.querySelector("#run-callout-text");
       callout?.classList.add("hidden");
+      if (typeof document !== "undefined" && typeof document.querySelector === "function") {
+        document.querySelector("#first-run-callout")?.classList.add("hidden");
+      }
 
       let nextState: RunState;
       if (this.runState === "idle") {

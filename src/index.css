@@ -858,9 +858,15 @@ details.inspector-advanced[open] summary {
 }
 
 .hud-metric-val {
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
+  text-align: right;
   color: var(--text-primary);
+}
+
+.hud-metric-secondary {
+  display: none !important;
 }
 
 .hud-metric[data-channel="thrust"] .hud-metric-val { color: var(--accent-thrust); }
@@ -888,22 +894,41 @@ details.inspector-advanced[open] summary {
   color: var(--text-primary);
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent-thrust);
+  outline-offset: 2px;
+}
 
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent-thrust);
+  outline-offset: 2px;
+}
 
+.btn-run:focus-visible {
+  outline: 3px solid #00f2ff;
+  outline-offset: 3px;
+  box-shadow: 0 0 14px rgba(0, 242, 255, 0.85);
+}
 
-
-
-@media (max-width: 1279px) and (min-width: 768px) {
+@media (max-width: 1024px) and (min-width: 768px) {
   :root {
     --palette-width: 56px;
-    --inspector-width: 240px;
+    --inspector-width: 0px;
+  }
+
+  .sim-body {
+    grid-template-columns: var(--palette-width) 1fr;
   }
 
   .palette-section-title {
     display: none;
   }
 
-  .palette-btn span.label {
+  .palette-btn span.label,
+  .palette-btn span.badge {
     display: none;
   }
 
@@ -915,8 +940,23 @@ details.inspector-advanced[open] summary {
   .palette-segmented {
     flex-direction: column;
   }
-}
 
+  .sim-inspector {
+    position: fixed;
+    bottom: var(--hud-height);
+    left: var(--palette-width);
+    right: 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: 220px;
+    z-index: 40;
+    background-color: var(--bg-surface);
+    border-top: 1px solid var(--border-subtle);
+    border-left: 1px solid var(--border-subtle);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
+  }
+}
 
 @media (max-width: 767px) {
   .sim-body {
@@ -934,6 +974,28 @@ details.inspector-advanced[open] summary {
 
   .hud-right {
     display: none;
+  }
+
+  .run-control-wrapper {
+    position: fixed;
+    bottom: calc(var(--hud-height) + 16px);
+    right: 16px;
+    z-index: 100;
+  }
+
+  .btn-run {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 16px rgba(16, 185, 129, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

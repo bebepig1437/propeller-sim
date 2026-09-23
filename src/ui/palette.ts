@@ -228,4 +228,8 @@ export class SimPalette {
     }
     this.render();
   }
+
+  public loadVehicle(vehicleId: 'candidateA' | 'custom'): void {
+    this.callbacks.onLoadVehicle(vehicleId);
+  }
 }

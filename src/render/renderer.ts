@@ -82,6 +82,7 @@ export class AppRenderer {
   public onPitchChanged?: (pitchDeg: number) => void;
   public onHandednessChanged?: (handedness: 'CW' | 'CCW') => void;
   public onIncidenceChanged?: (incidenceDeg: number) => void;
+  public onStatorSlottedChanged?: (slotted: boolean) => void;
   public onRemoveThruster?: () => void;
 
   public onVehicleSelected?: () => void;
@@ -259,12 +260,14 @@ export class AppRenderer {
         v3.beginHorizontalDrag(p);
       } else {
         v3.setSelected(true);
+        this.prop3D?.setSelected(false);
         this.onVehicleSelected?.();
         return;
       }
 
       this.controls.enabled = false;
       v3.setSelected(true);
+      this.prop3D?.setSelected(false);
       this.onVehicleSelected?.();
       e.stopPropagation();
     });
@@ -400,8 +403,17 @@ export class AppRenderer {
   }
 
   public playIntroCameraMove(onComplete?: () => void): void {
-    const startPos = new THREE.Vector3(1.15, 0.65, 1.35);
     const targetPos = new THREE.Vector3(0.65, 0.42, 0.85);
+    const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
+      this.camera.position.copy(targetPos);
+      this.controls.target.set(0.0, 0.0, 0.0);
+      this.controls.update();
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const startPos = new THREE.Vector3(1.15, 0.65, 1.35);
     const duration = 1200;
     const startTime = (typeof performance !== "undefined" ? performance.now() : Date.now());
     this.camera.position.copy(startPos);
@@ -553,7 +565,29 @@ export class AppRenderer {
           return;
         }
 
+        let isStatorHit = false;
+        let currObj: THREE.Object3D | null = hit;
+        while (currObj && currObj !== this.prop3D.group) {
+          if (currObj === this.prop3D.statorGroup) {
+            isStatorHit = true;
+            break;
+          }
+          currObj = currObj.parent;
+        }
+
+        if (isStatorHit && this.prop3D.statorAttached) {
+          const nextSlotted = !this.prop3D.statorSlotted;
+          this.prop3D.setStatorSlotted(nextSlotted);
+          this.onStatorSlottedChanged?.(nextSlotted);
+          this.prop3D.setSelected(true);
+          this.vehicle3D?.setSelected(false);
+          this.onPropellerSelected?.();
+          e.stopPropagation();
+          return;
+        }
+
         this.prop3D.setSelected(true);
+        this.vehicle3D?.setSelected(false);
         this.onPropellerSelected?.();
       } else {
         if (!this.isDraggingTranslate && !this.isDraggingPitch && !this.isDraggingIncidence) {

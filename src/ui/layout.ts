@@ -37,8 +37,22 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
         <!-- On-Demand 30s Popover Stripcharts (Stacked in Stage Corner) -->
         <div id="stage-popovers" class="stage-popovers"></div>
 
-        <!-- First-Run Experience Callout -->
-        <div id="first-run-callout" class="first-run-callout hidden"></div>
+        <div id="first-run-callout" class="first-run-callout hidden" role="dialog" aria-modal="true" aria-label="First visit welcome overlay">
+          <div class="first-run-content">
+            <div class="first-run-header">
+              <span class="first-run-badge">CANDIDATE A INTRO</span>
+              <button id="btn-first-run-dismiss" class="first-run-dismiss" aria-label="Close introduction overlay">✕</button>
+            </div>
+            <p class="first-run-text">
+              Welcome to the SeaPerch Candidate A hydrodynamic and propulsion simulator.
+              Directly manipulate thrusters, evaluate BEMT momentum injection, and verify slotted stator roll cancellation in real time.
+              Select an operating preset or press RUN to begin live physics integration.
+            </p>
+            <div class="first-run-actions">
+              <button id="btn-first-run-load" class="first-run-load-btn">Load candidateA</button>
+            </div>
+          </div>
+        </div>
 
         <!-- 2D Cutaway Surface (Hidden unless Cutaway View is active) -->
         <div id="fluid-cutaway-container" class="fluid-cutaway-container hidden">
@@ -86,19 +100,29 @@ export function buildSimLayout(root: HTMLElement): SimLayoutElements {
   const hudEl = root.querySelector('#sim-hud') as HTMLElement;
   const footerValidationLink = root.querySelector('#footer-validation-link') as HTMLAnchorElement;
 
-  const dismissBtn = root.querySelector('#btn-first-run-dismiss');
-  dismissBtn?.addEventListener('click', () => {
+  const firstRunSeen = (() => {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem('seaperch_first_run_seen') === 'true';
+    } catch {
+      return false;
+    }
+  })();
+
+  if (!firstRunSeen) {
+    firstRunCalloutEl.classList.remove('hidden');
+  }
+
+  const dismissFirstRun = () => {
     firstRunCalloutEl.classList.add('hidden');
     try {
-      localStorage.setItem('seaperch_first_run_seen', 'true');
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('seaperch_first_run_seen', 'true');
+      }
     } catch {}
-  });
+  };
 
-  try {
-    if (localStorage.getItem('seaperch_first_run_seen') === 'true') {
-      firstRunCalloutEl.classList.add('hidden');
-    }
-  } catch {}
+  root.querySelector('#btn-first-run-dismiss')?.addEventListener('click', dismissFirstRun);
+  root.querySelector('#btn-first-run-load')?.addEventListener('click', dismissFirstRun);
 
   return {
     headerEl,

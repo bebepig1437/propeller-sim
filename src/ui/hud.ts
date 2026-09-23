@@ -90,67 +90,67 @@ export class SimHudStrip {
       <div class="hud-left">
         <div class="hud-metric hud-accent-cyan" data-channel="thrust" title="Click to view 30s Thrust stripchart">
           <span class="hud-metric-label">Thrust</span>
-          <span class="hud-metric-val" id="hud-thrust-val">0.00 N</span>
+          <output class="hud-metric-val" id="hud-thrust-val" aria-live="polite">0.00 N</output>
         </div>
 
         <div class="hud-metric hud-accent-amber" data-channel="torque" title="Click to view 30s Torque stripchart">
           <span class="hud-metric-label">Torque</span>
-          <span class="hud-metric-val" id="hud-torque-val">0.000 Nm</span>
-        </div>
-
-        <div class="hud-metric hud-accent-violet" data-channel="power" title="Click to view 30s Electrical Power stripchart">
-          <span class="hud-metric-label">Power</span>
-          <span class="hud-metric-val" id="hud-power-val">0.0 W</span>
-        </div>
-
-        <div class="hud-metric hud-accent-emerald" data-channel="efficiency" title="Click to view 30s Propulsive Efficiency stripchart">
-          <span class="hud-metric-label">Efficiency</span>
-          <span class="hud-metric-val" id="hud-efficiency-val">0.0 %</span>
-        </div>
-
-        <div class="hud-metric hud-accent-sky" data-channel="advance_ratio" title="Click to view 30s Advance Ratio J stripchart">
-          <span class="hud-metric-label">Advance J</span>
-          <span class="hud-metric-val" id="hud-advance-val">0.00</span>
+          <output class="hud-metric-val" id="hud-torque-val" aria-live="polite">0.000 Nm</output>
         </div>
 
         <div class="hud-metric" data-channel="rpm" title="Click to view 30s RPM stripchart">
           <span class="hud-metric-label">RPM</span>
-          <span class="hud-metric-val" id="hud-rpm-val">0 rpm</span>
-        </div>
-
-        <div class="hud-metric" data-channel="pitch" title="Click to view 30s Blade Pitch stripchart">
-          <span class="hud-metric-label">Pitch</span>
-          <span class="hud-metric-val" id="hud-pitch-val">0.0°</span>
-        </div>
-
-        <div class="hud-metric hud-accent-teal" data-channel="inflow" title="Click to view 30s Inflow Velocity stripchart">
-          <span class="hud-metric-label">Inflow Va</span>
-          <span class="hud-metric-val" id="hud-inflow-val">0.00 m/s</span>
-        </div>
-
-        <div class="hud-metric" data-channel="max_v" title="Click to view 30s Domain Max Velocity stripchart">
-          <span class="hud-metric-label">Max |v|</span>
-          <span class="hud-metric-val" id="hud-maxv-val">0.00 m/s</span>
+          <output class="hud-metric-val" id="hud-rpm-val" aria-live="polite">0 rpm</output>
         </div>
 
         <div class="hud-metric" data-channel="bus_v" title="Click to view 30s Bus Voltage stripchart">
           <span class="hud-metric-label">Bus V</span>
-          <span class="hud-metric-val" id="hud-busv-val">12.0 V</span>
+          <output class="hud-metric-val" id="hud-busv-val" aria-live="polite">12.0 V</output>
         </div>
 
         <div class="hud-metric" data-channel="current" title="Click to view 30s Current stripchart">
           <span class="hud-metric-label">Current</span>
-          <span class="hud-metric-val" id="hud-current-val">0.00 A</span>
+          <output class="hud-metric-val" id="hud-current-val" aria-live="polite">0.00 A</output>
         </div>
 
         <div class="hud-metric" data-channel="temp" title="Click to view 30s Motor Temp stripchart">
           <span class="hud-metric-label">Temp</span>
-          <span class="hud-metric-val" id="hud-temp-val">20.0 °C</span>
+          <output class="hud-metric-val" id="hud-temp-val" aria-live="polite">20.0 °C</output>
         </div>
 
-        <div class="hud-metric" data-channel="roll" id="hud-roll-metric" title="Predicted net roll rate at 1 m/s (Torque Ledger)">
+        <div class="hud-metric hud-metric-secondary hud-accent-violet" data-channel="power" title="Click to view 30s Electrical Power stripchart">
+          <span class="hud-metric-label">Power</span>
+          <output class="hud-metric-val" id="hud-power-val" aria-live="polite">0.0 W</output>
+        </div>
+
+        <div class="hud-metric hud-metric-secondary hud-accent-emerald" data-channel="efficiency" title="Click to view 30s Propulsive Efficiency stripchart">
+          <span class="hud-metric-label">Efficiency</span>
+          <output class="hud-metric-val" id="hud-efficiency-val" aria-live="polite">0.0 %</output>
+        </div>
+
+        <div class="hud-metric hud-metric-secondary hud-accent-sky" data-channel="advance_ratio" title="Click to view 30s Advance Ratio J stripchart">
+          <span class="hud-metric-label">Advance J</span>
+          <output class="hud-metric-val" id="hud-advance-val" aria-live="polite">0.00</output>
+        </div>
+
+        <div class="hud-metric hud-metric-secondary" data-channel="pitch" title="Click to view 30s Blade Pitch stripchart">
+          <span class="hud-metric-label">Pitch</span>
+          <output class="hud-metric-val" id="hud-pitch-val" aria-live="polite">0.0°</output>
+        </div>
+
+        <div class="hud-metric hud-metric-secondary hud-accent-teal" data-channel="inflow" title="Click to view 30s Inflow Velocity stripchart">
+          <span class="hud-metric-label">Inflow Va</span>
+          <output class="hud-metric-val" id="hud-inflow-val" aria-live="polite">0.00 m/s</output>
+        </div>
+
+        <div class="hud-metric hud-metric-secondary" data-channel="max_v" title="Click to view 30s Domain Max Velocity stripchart">
+          <span class="hud-metric-label">Max |v|</span>
+          <output class="hud-metric-val" id="hud-maxv-val" aria-live="polite">0.00 m/s</output>
+        </div>
+
+        <div class="hud-metric hud-metric-secondary" data-channel="roll" id="hud-roll-metric" title="Predicted net roll rate at 1 m/s (Torque Ledger)">
           <span class="hud-metric-label">Pred Roll</span>
-          <span class="hud-metric-val" id="hud-roll-val">1.8 °/m</span>
+          <output class="hud-metric-val" id="hud-roll-val" aria-live="polite">1.8 °/m</output>
         </div>
       </div>
 

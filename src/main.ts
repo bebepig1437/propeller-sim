@@ -369,6 +369,7 @@ export class App {
 
 
     this.renderer.onPropellerSelected = () => {
+      this.renderer.vehicle3D?.setSelected(false);
       this.inspector.setSelection({ type: 'thruster', index: 0 });
     };
     this.renderer.onPropellerPositionChanged = (zM) => {
@@ -404,6 +405,15 @@ export class App {
       const valEl = document.querySelector('#val-th-stator-inc');
       if (valEl) valEl.textContent = `${incDeg.toFixed(1)}°`;
     };
+    this.renderer.onStatorSlottedChanged = (slotted) => {
+      const selIdx = this.palette.selectedThruster;
+      if (this.propArray.thrusters[selIdx]) {
+        this.propArray.thrusters[selIdx].stator.config.vaneType = slotted ? 'slotted' : 'solid';
+      }
+      this.palette.slottedVane = slotted;
+      this.palette.render();
+      this.inspector.statorSlotted = slotted;
+    };
 
     const vehicle3D = this.renderer.attachVehicle3D(defaultConfig.vehicle);
     this.renderer.onVehicleSelected = () => {
@@ -438,6 +448,7 @@ export class App {
     this.palette = new SimPalette(layout.paletteEl, {
       onLoadVehicle: (vehicleId) => {
         console.log(`[Palette] Loaded vehicle: ${vehicleId}`);
+        this.renderer.vehicle3D?.setSelected(false);
         this.propArray.setupCandidateADefaults();
         this.palette.setThrusterCount(3, 0);
         this.inspector.propulsorCount = 3;
@@ -451,6 +462,7 @@ export class App {
         this.renderer.resetOrbitView();
       },
       onSelectThruster: (idx) => {
+        this.renderer.vehicle3D?.setSelected(false);
         this.inspector.setSelection({ type: 'thruster', index: idx });
         const unit = this.propArray.thrusters[idx];
         if (unit) {
@@ -467,6 +479,7 @@ export class App {
         this.renderer.prop3D?.setSelected(true);
       },
       onAddThruster: () => {
+        this.renderer.vehicle3D?.setSelected(false);
         this.propArray.addThruster();
         const newIdx = this.propArray.thrusters.length - 1;
         this.palette.setThrusterCount(this.propArray.thrusters.length, newIdx);
@@ -522,6 +535,10 @@ export class App {
       onSelectOperatingPoint: (key) => {
         this.applyPreset(key);
       }
+    });
+
+    layout.stageEl.querySelector('#btn-first-run-load')?.addEventListener('click', () => {
+      this.palette.loadVehicle('candidateA');
     });
 
 
