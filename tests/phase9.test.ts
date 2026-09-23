@@ -95,6 +95,14 @@ describe("Phase 9 — Ship, PWA, URL State & Validation Suite", () => {
       expect(partial.preset).toBe("cruise");
       expect(partial.pitch).toBeUndefined();
     });
+
+    it("handles malformed or out-of-range URL parameters without corruption", () => {
+      const malformed = parseSimStateFromUrl("?rpm=99999&throttle=abc&pitch=120&supply_v=999");
+      expect((malformed as any).rpm).toBe(10000);
+      expect((malformed as any).throttle).toBeUndefined();
+      expect(malformed.pitch).toBe(45);
+      expect(malformed.supplyV).toBe(24);
+    });
   });
 
   describe("3. Canvas Video Recorder Contract", () => {

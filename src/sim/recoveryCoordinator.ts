@@ -1,6 +1,7 @@
 
 
 export type RenderBackendType = 'WebGPU' | 'WebGL2' | 'CPU';
+import { DEBUG as debug } from '../core/config';
 
 export interface RecoveryCoordinatorOptions {
   onBackendChange?: (newBackend: RenderBackendType) => void;
@@ -57,19 +58,19 @@ export class RecoveryCoordinator {
   public handleTabBackground(): void {
     this.isTabHidden = true;
     this.isPaused = true;
-    console.log('[RecoveryCoordinator] Tab backgrounded: pausing RAF loop cleanly');
+    if (debug) console.log('[RecoveryCoordinator] Tab backgrounded: pausing RAF loop cleanly');
     this.onPauseCallback?.();
   }
 
   public handleTabForeground(): void {
     this.isTabHidden = false;
     this.isPaused = false;
-    console.log('[RecoveryCoordinator] Tab foregrounded: cleanly resuming RAF loop');
+    if (debug) console.log('[RecoveryCoordinator] Tab foregrounded: cleanly resuming RAF loop');
     this.onResumeCallback?.();
   }
 
   public async handleDeviceLoss(): Promise<RenderBackendType> {
-    console.warn(`[RecoveryCoordinator] Device loss triggered on ${this.currentBackend}`);
+    if (debug) console.warn(`[RecoveryCoordinator] Device loss triggered on ${this.currentBackend}`);
 
     if (this.currentBackend === 'WebGPU') {
       this.reinitAttempts++;
@@ -79,19 +80,19 @@ export class RecoveryCoordinator {
           try {
             recovered = await this.reinitProbe();
           } catch (err) {
-            console.warn('[RecoveryCoordinator] Reinit probe threw:', err);
+            if (debug) console.warn('[RecoveryCoordinator] Reinit probe threw:', err);
             recovered = false;
           }
         }
 
         if (recovered) {
-          console.log(`[RecoveryCoordinator] WebGPU reinitialized (${this.reinitAttempts}/${this.maxReinitAttempts})`);
+          if (debug) console.log(`[RecoveryCoordinator] WebGPU reinitialized (${this.reinitAttempts}/${this.maxReinitAttempts})`);
           this.currentBackend = 'WebGPU';
           this.onBackendChange?.('WebGPU');
           return 'WebGPU';
         }
 
-        console.warn(`[RecoveryCoordinator] WebGPU reinit failed (${this.reinitAttempts}/${this.maxReinitAttempts})`);
+        if (debug) console.warn(`[RecoveryCoordinator] WebGPU reinit failed (${this.reinitAttempts}/${this.maxReinitAttempts})`);
         if (this.reinitAttempts < this.maxReinitAttempts) {
 
           this.currentBackend = 'WebGPU';
@@ -99,14 +100,14 @@ export class RecoveryCoordinator {
         }
       }
 
-      console.warn('[RecoveryCoordinator] WebGPU reinit failed twice: falling back to WebGL2');
+      if (debug) console.warn('[RecoveryCoordinator] WebGPU reinit failed twice: falling back to WebGL2');
       this.currentBackend = 'WebGL2';
       this.onBackendChange?.('WebGL2');
       return 'WebGL2';
     }
 
     if (this.currentBackend === 'WebGL2') {
-      console.warn('[RecoveryCoordinator] WebGL2 context loss: falling back to CPU reference');
+      if (debug) console.warn('[RecoveryCoordinator] WebGL2 context loss: falling back to CPU reference');
       this.currentBackend = 'CPU';
       this.onBackendChange?.('CPU');
       return 'CPU';
