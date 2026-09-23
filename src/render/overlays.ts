@@ -8,8 +8,9 @@ import type { FluidGrid } from '../fluid/grid';
 export interface OverlayState {
   velocityVectors: boolean;
   streamlines: boolean;
-  pressureHeatmap: boolean;
+  dye: boolean;
   vorticity: boolean;
+  pressureHeatmap: boolean;
   particles: boolean;
   thrustArrows: boolean;
   torqueArrows: boolean;
@@ -21,8 +22,9 @@ export const DEFAULT_OVERLAY_STATE: OverlayState = {
   velocityVectors: true,
   thrustArrows: true,
   streamlines: false,
-  pressureHeatmap: false,
+  dye: false,
   vorticity: false,
+  pressureHeatmap: false,
   particles: false,
   torqueArrows: false,
   thermal: false,
@@ -32,8 +34,9 @@ export const DEFAULT_OVERLAY_STATE: OverlayState = {
 export const OVERLAY_KEYS = [
   'velocityVectors',
   'streamlines',
-  'pressureHeatmap',
+  'dye',
   'vorticity',
+  'pressureHeatmap',
   'particles',
   'thrustArrows',
   'torqueArrows',
@@ -49,6 +52,8 @@ export interface OverlayTunables {
   rollIndicatorGain: number;
 }
 
+export type OverlayConfig = Partial<OverlayTunables & { state?: Partial<OverlayState> }>;
+
 export const DEFAULT_OVERLAY_TUNABLES: OverlayTunables = {
   vectorStride: 32,
   vectorScale: 0.035,
@@ -61,15 +66,41 @@ export const MAX_STREAMLINES = 512;
 export const MAX_PARTICLES_TUNABLE = 4096;
 export const ROLL_NEEDLE_CLAMP_DEG = 45;
 
+const accentVarCache = new Map<string, number>();
+
 function readAccentVar(varName: string, fallback: number): number {
-  try {
-    if (typeof document !== 'undefined') {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-      if (raw.startsWith('#')) return parseInt(raw.slice(1), 16);
+  const read = (): number => {
+    try {
+      if (typeof document !== 'undefined') {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+        if (raw.startsWith('#')) return parseInt(raw.slice(1), 16);
+      }
+    } catch {
     }
-  } catch {
+    return fallback;
+  };
+
+  const apply = (value: number): number => {
+    if (value !== fallback && typeof console !== 'undefined') {
+      console.warn(`[overlays] accent ${varName} = ${value.toString(16)} differs from pinned fallback ${fallback.toString(16)}; CSS is the single source of truth`);
+    }
+    return value;
+  };
+
+  const pending = typeof document !== 'undefined' && document.readyState === 'loading';
+  if (pending) {
+    if (!accentVarCache.has(varName)) {
+      document.addEventListener('DOMContentLoaded', () => {
+        accentVarCache.set(varName, apply(read()));
+      }, { once: true });
+    }
+    return fallback;
   }
-  return fallback;
+
+  if (!accentVarCache.has(varName)) {
+    accentVarCache.set(varName, apply(read()));
+  }
+  return accentVarCache.get(varName)!;
 }
 
 function shiftColorHex(hex: number, satMul: number, lightAdd: number): number {
@@ -80,17 +111,23 @@ function shiftColorHex(hex: number, satMul: number, lightAdd: number): number {
   return c.getHex();
 }
 
-const ACCENT_THRUST = readAccentVar('--accent-thrust', 0x00f2ff);
-const ACCENT_TORQUE = readAccentVar('--accent-torque', 0xf59e0b);
+const ACCENT_THRUST = readAccentVar('--accent-thrust', 0xff7700);
+const ACCENT_TORQUE = readAccentVar('--accent-torque', 0xd946ef);
+const ACCENT_STATOR = readAccentVar('--accent-stator', 0xa85590);
 const ACCENT_HEAT = readAccentVar('--accent-heat', 0xef4444);
-const ACCENT_CURRENT = readAccentVar('--accent-current', 0xa855f7);
+const ACCENT_CURRENT = readAccentVar('--accent-current', 0x00f2ff);
+const ACCENT_VELOCITY = readAccentVar('--accent-velocity', 0x3b82f6);
+const ACCENT_DYE = readAccentVar('--accent-dye', 0x14b8a6);
 
 export const OVERLAY_COLORS = {
   thrust: ACCENT_THRUST,
   torque: ACCENT_TORQUE,
+  stator: ACCENT_STATOR,
   heat: ACCENT_HEAT,
   current: ACCENT_CURRENT,
-  torqueStator: shiftColorHex(ACCENT_TORQUE, 0.35, 0.0),
+  velocity: ACCENT_VELOCITY,
+  dye: ACCENT_DYE,
+  torqueStator: ACCENT_STATOR,
   torqueNet: shiftColorHex(ACCENT_TORQUE, 1.0, 0.15)
 } as const;
 
@@ -105,6 +142,7 @@ export interface OverlayUpdateContext {
   summary: VehiclePropulsionSummary;
   motorTempsC: number[];
   motorCurrentsA: number[];
+  isCutaway?: boolean;
 }
 
 export interface ThrustCurvePoint {
@@ -238,6 +276,11 @@ export class OverlaySystem {
     this.syncVisibility();
   }
 
+  public setCutaway(active: boolean): void {
+    this.isCutaway = active;
+    this.syncVisibility();
+  }
+
   public setVisible(key: keyof OverlayState, active: boolean): void {
     this.state[key] = active;
     this.syncVisibility();
@@ -269,6 +312,9 @@ export class OverlaySystem {
   public update(frameDt: number, ctx: OverlayUpdateContext): void {
     const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.activeCtx = ctx;
+    if (ctx.isCutaway !== undefined) {
+      this.isCutaway = ctx.isCutaway;
+    }
     this.syncVisibility();
 
     const advectionDt = Math.max(0, Math.min(0.05, ctx.physicsDt));
@@ -455,15 +501,17 @@ export class OverlaySystem {
     this.diffEl.appendChild(this.diffCanvas);
   }
 
+  private isCutaway = false;
+
   private syncVisibility(): void {
     this.velocityGroup.visible = this.state.velocityVectors;
     this.streamlineGroup.visible = this.state.streamlines;
-    this.vorticityGroup.visible = this.state.vorticity;
+    this.vorticityGroup.visible = this.state.vorticity && this.isCutaway;
     this.particleGroup.visible = this.state.particles;
     this.thrustGroup.visible = this.state.thrustArrows;
     this.torqueGroup.visible = this.state.torqueArrows;
-    this.thermalGroup.visible = this.state.thermal;
-    this.currentGroup.visible = this.state.currentFlow;
+    this.thermalGroup.visible = this.state.thermal && !this.isCutaway;
+    this.currentGroup.visible = this.state.currentFlow && !this.isCutaway;
   }
 
   public overlayMs = 0;
@@ -914,6 +962,15 @@ export class OverlaySystem {
     this.vehicleCapacity = 0;
   }
 
+  public getThrustArrowLength(index = 0): number {
+    const arrow = this.thrustArrows[index];
+    return arrow ? arrow.scale.z : 0;
+  }
+
+  public getVelocityArrowCount(): number {
+    return this.arrowInstanced.count;
+  }
+
   private updateThrustArrows(ctx: OverlayUpdateContext): void {
     const thrusters = ctx.summary.thrusters;
     this.ensureVehicleCapacity(thrusters.length);
@@ -928,7 +985,8 @@ export class OverlaySystem {
       );
 
       const posWorld = this.bodyPointToWorld(ctx.vehicle, t.unit.positionM[0], t.unit.positionM[1], t.unit.positionM[2], this.scratchV1);
-      const dirWorld = this.bodyDirToWorld(ctx.vehicle, t.forceVectorN[0], t.forceVectorN[1], t.forceVectorN[2], this.scratchV2);
+      const isReverse = t.forceVectorN[0] < 0 || t.netThrustN < 0;
+      const dirWorld = this.scratchV2.set(isReverse ? -1 : 1, 0, 0);
 
       this.hoverProxies[i].position.copy(posWorld);
       this.heatSpheres[i].position.copy(posWorld);
@@ -940,10 +998,16 @@ export class OverlaySystem {
           this.scratchV3.set(0, 0, 1),
           dirWorld.normalize()
         );
-        const len = Math.min(0.35, Math.max(0.02, mag * 0.05));
+        const scaleFactor = 0.075 / 4.73;
+        const len = mag * scaleFactor;
         arrow.scale.set(1, 1, len);
+        const headMesh = arrow.children[1] as THREE.Mesh;
+        if (headMesh) {
+          headMesh.scale.set(1, 1, len > 1e-4 ? 1 / len : 1);
+        }
       } else {
         arrow.visible = false;
+        arrow.scale.set(1, 1, 0);
       }
     }
     for (let i = thrusters.length; i < this.thrustArrows.length; i++) {
@@ -969,13 +1033,18 @@ export class OverlaySystem {
       propArc.scale.set(qPropScale, t.unit.handedness === 'CW' ? -qPropScale : qPropScale, qPropScale);
       propArc.visible = Math.abs(qProp) > 1e-5;
 
-      const qStator = t.statorResult.antiTorqueNm;
+      const qStator = (t.unit as any).statorAttached === false || !t.statorResult ? 0 : t.statorResult.antiTorqueNm;
       const statorArc = this.torqueStatorArcs[i];
-      const qStatorScale = Math.min(1.4, Math.max(0.12, Math.abs(qStator) * 2500));
-      statorArc.position.copy(posWorld);
-      statorArc.quaternion.copy(propArc.quaternion);
-      statorArc.scale.set(qStatorScale * 1.15, t.unit.handedness === 'CW' ? qStatorScale * 1.15 : -qStatorScale * 1.15, qStatorScale * 1.15);
-      statorArc.visible = Math.abs(qStator) > 1e-5;
+      if (qStator === 0 || Math.abs(qStator) < 1e-6) {
+        statorArc.visible = false;
+        statorArc.scale.set(0, 0, 0);
+      } else {
+        const qStatorScale = Math.min(1.4, Math.max(0.12, Math.abs(qStator) * 2500));
+        statorArc.position.copy(posWorld);
+        statorArc.quaternion.copy(propArc.quaternion);
+        statorArc.scale.set(qStatorScale * 1.15, t.unit.handedness === 'CW' ? qStatorScale * 1.15 : -qStatorScale * 1.15, qStatorScale * 1.15);
+        statorArc.visible = true;
+      }
     }
     for (let i = thrusters.length; i < this.torquePropArcs.length; i++) {
       this.torquePropArcs[i].visible = false;

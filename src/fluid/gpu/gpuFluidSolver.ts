@@ -593,6 +593,7 @@ export class GpuFluidSolver {
       viscosity: this.viscosity,
       vorticityStrength: this.vorticityStrength,
       pressureIterations: this.pressureIterations,
+      pressureMethod: this.pressureMethod,
       advectionScheme: this.advectionScheme,
       jetConfig: { ...this.jet.config }
     });

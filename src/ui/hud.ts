@@ -14,7 +14,8 @@ export type MetricChannel =
   | 'bus_v'
   | 'current'
   | 'temp'
-  | 'roll';
+  | 'roll'
+  | 'fps';
 
 interface PopoverChart {
   channel: MetricChannel;
@@ -87,93 +88,51 @@ export class SimHudStrip {
 
   private render(): void {
     this.container.innerHTML = `
-      <div class="hud-left">
-        <div class="hud-metric hud-accent-cyan" data-channel="thrust" title="Click to view 30s Thrust stripchart">
-          <span class="hud-metric-label">Thrust</span>
+      <div class="hud-strip">
+        <div class="hud-item hud-metric hud-accent-thrust" data-channel="thrust" title="Thrust (N)">
           <output class="hud-metric-val" id="hud-thrust-val" aria-live="polite">0.00 N</output>
         </div>
 
-        <div class="hud-metric hud-accent-amber" data-channel="torque" title="Click to view 30s Torque stripchart">
-          <span class="hud-metric-label">Torque</span>
+        <div class="hud-item hud-metric hud-accent-torque" data-channel="torque" title="Torque (mN·m)">
           <output class="hud-metric-val" id="hud-torque-val" aria-live="polite">0.000 Nm</output>
         </div>
 
-        <div class="hud-metric" data-channel="rpm" title="Click to view 30s RPM stripchart">
-          <span class="hud-metric-label">RPM</span>
+        <div class="hud-item hud-metric hud-accent-neutral" data-channel="rpm" title="RPM">
           <output class="hud-metric-val" id="hud-rpm-val" aria-live="polite">0 rpm</output>
         </div>
 
-        <div class="hud-metric" data-channel="bus_v" title="Click to view 30s Bus Voltage stripchart">
-          <span class="hud-metric-label">Bus V</span>
+        <div class="hud-item hud-metric hud-accent-neutral" data-channel="bus_v" title="Bus voltage (V)">
           <output class="hud-metric-val" id="hud-busv-val" aria-live="polite">12.0 V</output>
         </div>
 
-        <div class="hud-metric" data-channel="current" title="Click to view 30s Current stripchart">
-          <span class="hud-metric-label">Current</span>
+        <div class="hud-item hud-metric hud-accent-current" data-channel="current" title="Total current (A)">
           <output class="hud-metric-val" id="hud-current-val" aria-live="polite">0.00 A</output>
         </div>
 
-        <div class="hud-metric" data-channel="temp" title="Click to view 30s Motor Temp stripchart">
-          <span class="hud-metric-label">Temp</span>
+        <div class="hud-item hud-metric hud-accent-heat" data-channel="temp" title="Max motor temperature (°C)">
           <output class="hud-metric-val" id="hud-temp-val" aria-live="polite">20.0 °C</output>
         </div>
 
-        <div class="hud-metric hud-metric-secondary hud-accent-violet" data-channel="power" title="Click to view 30s Electrical Power stripchart">
-          <span class="hud-metric-label">Power</span>
-          <output class="hud-metric-val" id="hud-power-val" aria-live="polite">0.0 W</output>
-        </div>
-
-        <div class="hud-metric hud-metric-secondary hud-accent-emerald" data-channel="efficiency" title="Click to view 30s Propulsive Efficiency stripchart">
-          <span class="hud-metric-label">Efficiency</span>
-          <output class="hud-metric-val" id="hud-efficiency-val" aria-live="polite">0.0 %</output>
-        </div>
-
-        <div class="hud-metric hud-metric-secondary hud-accent-sky" data-channel="advance_ratio" title="Click to view 30s Advance Ratio J stripchart">
-          <span class="hud-metric-label">Advance J</span>
-          <output class="hud-metric-val" id="hud-advance-val" aria-live="polite">0.00</output>
-        </div>
-
-        <div class="hud-metric hud-metric-secondary" data-channel="pitch" title="Click to view 30s Blade Pitch stripchart">
-          <span class="hud-metric-label">Pitch</span>
-          <output class="hud-metric-val" id="hud-pitch-val" aria-live="polite">0.0°</output>
-        </div>
-
-        <div class="hud-metric hud-metric-secondary hud-accent-teal" data-channel="inflow" title="Click to view 30s Inflow Velocity stripchart">
-          <span class="hud-metric-label">Inflow Va</span>
-          <output class="hud-metric-val" id="hud-inflow-val" aria-live="polite">0.00 m/s</output>
-        </div>
-
-        <div class="hud-metric hud-metric-secondary" data-channel="max_v" title="Click to view 30s Domain Max Velocity stripchart">
-          <span class="hud-metric-label">Max |v|</span>
-          <output class="hud-metric-val" id="hud-maxv-val" aria-live="polite">0.00 m/s</output>
-        </div>
-
-        <div class="hud-metric hud-metric-secondary" data-channel="roll" id="hud-roll-metric" title="Predicted net roll rate at 1 m/s (Torque Ledger)">
-          <span class="hud-metric-label">Pred Roll</span>
-          <output class="hud-metric-val" id="hud-roll-val" aria-live="polite">1.8 °/m</output>
+        <div class="hud-item hud-fps-metric hud-accent-neutral" data-channel="fps" title="Frame rate (FPS)">
+          <output class="hud-metric-val" id="hud-fps-val" aria-live="polite">60.0</output>
         </div>
       </div>
 
-      <div class="hud-right">
-        <!-- Thermal Window Countdown -->
-        <div class="hud-burst-timer" id="hud-burst-timer-wrap" title="Time remaining in current thermal burst window">
-          <span class="hud-burst-label">BURST:</span>
-          <span class="hud-burst-val" id="hud-burst-val">18.0 s</span>
-        </div>
-
-        <!-- Spec Status Indicator -->
-        <div class="hud-spec-badge status-within-spec" id="hud-spec-status" title="Simulation operational limit check">
-          WITHIN SPEC
-        </div>
-
-        <div class="hud-perf-item">FPS: <span id="hud-fps-val">60.0</span></div>
-        <div class="hud-perf-item">SCALE: <span id="hud-scale-val">1.00×</span></div>
-        <div class="hud-perf-item">GPU: <span id="hud-gpu-ms-val">0.0 ms</span></div>
-        <div class="hud-perf-item">READBACK: <span id="hud-readback-val">0.0 ms</span></div>
-        <!-- Phase 8: shown ONLY when the render tier has degraded (WebGPU ->
-             WebGL2/CPU), so a silent fallback is never invisible. -->
-        <div class="hud-perf-item" id="hud-tier-item" style="display:none">TIER: <span id="hud-tier-val">WebGPU</span></div>
-        <div class="hud-perf-item">PRESET: <span id="hud-preset-val">Breakout</span></div>
+      <div class="hud-metric-secondary" style="display:none !important">
+        <output class="hud-metric-val" id="hud-power-val">0.0 W</output>
+        <output class="hud-metric-val" id="hud-efficiency-val">0.0 %</output>
+        <output class="hud-metric-val" id="hud-advance-val">0.00</output>
+        <output class="hud-metric-val" id="hud-pitch-val">0.0°</output>
+        <output class="hud-metric-val" id="hud-inflow-val">0.00 m/s</output>
+        <output class="hud-metric-val" id="hud-maxv-val">0.00 m/s</output>
+        <output class="hud-metric-val" id="hud-roll-val">1.8 °/m</output>
+        <span id="hud-burst-val">18.0 s</span>
+        <div id="hud-spec-status">WITHIN SPEC</div>
+        <span id="hud-scale-val">1.00×</span>
+        <span id="hud-gpu-ms-val">0.0 ms</span>
+        <span id="hud-readback-val">0.0 ms</span>
+        <div id="hud-tier-item" style="display:none"><span id="hud-tier-val">WebGPU</span></div>
+        <span id="hud-preset-val">Breakout</span>
       </div>
     `;
 
@@ -202,13 +161,31 @@ export class SimHudStrip {
     this.burstTimerEl = this.container.querySelector('#hud-burst-val') as HTMLElement;
     this.specStatusEl = this.container.querySelector('#hud-spec-status') as HTMLElement;
 
-    const metricElements = this.container.querySelectorAll('.hud-metric');
-    metricElements.forEach((el) => {
+    const items = this.container.querySelectorAll('.hud-item');
+    items.forEach((el) => {
       el.addEventListener('click', (e) => {
         const channel = (e.currentTarget as HTMLElement).dataset.channel as MetricChannel;
-        this.togglePopover(channel);
+        if (channel) this.togglePopover(channel);
       });
     });
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          this.closeAllPopovers();
+        }
+      });
+      document.addEventListener('pointerdown', (e) => {
+        const target = e.target as HTMLElement | null;
+        if (!target) return;
+        if (this.activePopovers.size === 0) return;
+        const insidePopover = target.closest('.stripchart-popover');
+        const insideItem = target.closest('.hud-item');
+        if (!insidePopover && !insideItem) {
+          this.closeAllPopovers();
+        }
+      });
+    }
   }
 
   public update(metrics: HudMetricsData, nowMs: number = performance.now()): void {
@@ -263,7 +240,8 @@ export class SimHudStrip {
       this.scaleEl.textContent = scale.toFixed(2) + "×";
     }
     if (this.gpuMsEl) {
-      this.gpuMsEl.textContent = `${metrics.gpuMs.toFixed(1)} ms`;
+      const gpuMs = metrics.gpuMs ?? 0.0;
+      this.gpuMsEl.textContent = `${gpuMs.toFixed(1)} ms`;
       if (metrics.overlayMs !== undefined && metrics.overlayMs > 0.5) {
         this.gpuMsEl.textContent += ` (+${metrics.overlayMs.toFixed(1)} ov)`;
       }
@@ -325,6 +303,7 @@ export class SimHudStrip {
       if (metrics.rollRatePrediction_deg_m !== undefined && Number.isFinite(metrics.rollRatePrediction_deg_m)) {
         this.recordSample('roll', metrics.rollRatePrediction_deg_m);
       }
+      this.recordSample('fps', metrics.fps);
 
       this.activePopovers.forEach((popover) => {
         this.renderPopoverCanvas(popover);
@@ -342,55 +321,63 @@ export class SimHudStrip {
     }
   }
 
+  public closeAllPopovers(): void {
+    this.activePopovers.forEach((p) => p.el.remove());
+    this.activePopovers.clear();
+  }
+
   public togglePopover(channel: MetricChannel): void {
-    if (this.activePopovers.has(channel)) {
-      const p = this.activePopovers.get(channel)!;
-      p.el.remove();
+    const existing = this.activePopovers.get(channel);
+    if (existing) {
+      existing.el.remove();
       this.activePopovers.delete(channel);
       return;
     }
+    this.closeAllPopovers();
 
     let title = 'Channel';
     let unit = '';
     let color = '#f0f6fc';
 
     switch (channel) {
-      case 'thrust': title = 'Thrust Force'; unit = 'N'; color = '#00f2ff'; break;
-      case 'torque': title = 'Torque'; unit = 'Nm'; color = '#f59e0b'; break;
-      case 'power': title = 'Electrical Power'; unit = 'W'; color = '#a855f7'; break;
-      case 'efficiency': title = 'Prop Efficiency'; unit = '%'; color = '#10b981'; break;
+      case 'thrust': title = 'Thrust'; unit = 'N'; color = '#ff7700'; break;
+      case 'torque': title = 'Torque'; unit = 'mN·m'; color = '#d946ef'; break;
+      case 'power': title = 'Power'; unit = 'W'; color = '#a855f7'; break;
+      case 'efficiency': title = 'Efficiency'; unit = '%'; color = '#10b981'; break;
       case 'advance_ratio': title = 'Advance Ratio (J)'; unit = ''; color = '#38bdf8'; break;
-      case 'rpm': title = 'Shaft Velocity'; unit = 'RPM'; color = '#f0f6fc'; break;
+      case 'rpm': title = 'RPM'; unit = 'rpm'; color = '#f0f6fc'; break;
       case 'pitch': title = 'Blade Pitch'; unit = '°'; color = '#f97316'; break;
-      case 'inflow': title = 'Inflow Speed'; unit = 'm/s'; color = '#14b8a6'; break;
-      case 'max_v': title = 'Domain Max Speed'; unit = 'm/s'; color = '#06b6d4'; break;
-      case 'bus_v': title = 'Tether Bus Voltage'; unit = 'V'; color = '#e2e8f0'; break;
-      case 'current': title = 'Total Current'; unit = 'A'; color = '#c084fc'; break;
-      case 'temp': title = 'Motor Temperature'; unit = '°C'; color = '#ef4444'; break;
-      case 'roll': title = 'Predicted Roll Rate'; unit = '°/m'; color = '#fbbf24'; break;
+      case 'inflow': title = 'Inflow Va'; unit = 'm/s'; color = '#14b8a6'; break;
+      case 'max_v': title = 'Max Velocity'; unit = 'm/s'; color = '#06b6d4'; break;
+      case 'bus_v': title = 'Bus Voltage'; unit = 'V'; color = '#f0f6fc'; break;
+      case 'current': title = 'Total Current'; unit = 'A'; color = '#00f2ff'; break;
+      case 'temp': title = 'Max Temperature'; unit = '°C'; color = '#ef4444'; break;
+      case 'roll': title = 'Predicted Roll'; unit = '°/m'; color = '#fbbf24'; break;
+      case 'fps': title = 'Frame Rate'; unit = 'fps'; color = '#f0f6fc'; break;
     }
 
     const popoverEl = document.createElement('div');
     popoverEl.className = 'stripchart-popover';
     popoverEl.innerHTML = `
       <div class="stripchart-header">
-        <span class="stripchart-title" style="color:${color};">${title} (30s)</span>
+        <span class="stripchart-title" style="color:${color}; font-family:var(--font-mono, monospace);">${title} (30s)</span>
         <div class="stripchart-actions">
-          <button class="stripchart-pin" title="Pin / Unpin this stripchart">📌</button>
           <button class="stripchart-close" title="Close stripchart">×</button>
         </div>
       </div>
       <canvas class="stripchart-canvas" width="240" height="54"></canvas>
     `;
 
-    const pinBtn = popoverEl.querySelector('.stripchart-pin') as HTMLButtonElement;
-    pinBtn.addEventListener('click', () => {
-      const p = this.activePopovers.get(channel);
-      if (p) {
-        p.pinned = !p.pinned;
-        if (p.pinned) pinBtn.classList.add('is-pinned'); else pinBtn.classList.remove('is-pinned');
-      }
-    });
+    const pinBtn = popoverEl.querySelector('.stripchart-pin') as HTMLButtonElement | null;
+    if (pinBtn) {
+      pinBtn.addEventListener('click', () => {
+        const p = this.activePopovers.get(channel);
+        if (p) {
+          p.pinned = !p.pinned;
+          if (p.pinned) pinBtn.classList.add('is-pinned'); else pinBtn.classList.remove('is-pinned');
+        }
+      });
+    }
 
     popoverEl.querySelector('.stripchart-close')?.addEventListener('click', () => {
       popoverEl.remove();

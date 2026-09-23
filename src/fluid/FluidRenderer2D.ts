@@ -94,7 +94,6 @@ export class FluidRenderer2D {
     }
 
     this.ctx.putImageData(this.imageData, 0, 0);
-    this.renderDiagnosticOverlay(grid);
   }
 
   public renderDiff(gridA: FluidGrid, gridB: FluidGrid): void {
@@ -130,81 +129,5 @@ export class FluidRenderer2D {
     if (mode === 'PRESSURE') return grid.pressure[idx];
     if (mode === 'VELOCITY') return Math.hypot(grid.u[idx], grid.v[idx]);
     return grid.dye[idx];
-  }
-
-  private renderDiagnosticOverlay(grid: FluidGrid): void {
-    const ctx = this.ctx;
-    if (!ctx || typeof ctx.fillText !== 'function') return;
-
-    try {
-      const W = this.canvas.width;
-      const H = this.canvas.height;
-
-      ctx.save();
-      ctx.font = '10px monospace';
-      ctx.fillStyle = '#38bdf8';
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
-      ctx.lineWidth = 1;
-
-      ctx.strokeRect(10, 10, W - 20, H - 20);
-
-      const xSteps = [0, Math.floor(grid.width * 0.25), Math.floor(grid.width * 0.5), Math.floor(grid.width * 0.75), grid.width];
-      xSteps.forEach(gx => {
-        const px = 10 + (gx / grid.width) * (W - 20);
-        ctx.beginPath();
-        ctx.moveTo(px, H - 10);
-        ctx.lineTo(px, H - 5);
-        ctx.stroke();
-        ctx.fillText(`${gx}`, px - 6, H - 2);
-      });
-
-      const ySteps = [0, Math.floor(grid.height * 0.5), grid.height];
-      ySteps.forEach(gy => {
-        const py = (H - 10) - (gy / grid.height) * (H - 20);
-        ctx.beginPath();
-        ctx.moveTo(5, py);
-        ctx.lineTo(10, py);
-        ctx.stroke();
-        ctx.fillText(`${gy}`, 1, py + 3);
-      });
-
-      const barX = W - 32;
-      const barY = 20;
-      const barW = 12;
-      const barH = 100;
-
-      ctx.strokeRect(barX, barY, barW, barH);
-      ctx.fillText(this.mode, barX - 10, barY - 4);
-
-      const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
-      if (this.mode === 'DYE') {
-        grad.addColorStop(0, 'rgba(3, 105, 161, 0.2)');
-        grad.addColorStop(0.5, '#00f2ff');
-        grad.addColorStop(1, '#ffffff');
-        ctx.fillText('1.0', barX - 22, barY + 8);
-        ctx.fillText('0.5', barX - 22, barY + barH * 0.5 + 4);
-        ctx.fillText('0.0', barX - 22, barY + barH);
-      } else if (this.mode === 'VELOCITY') {
-        grad.addColorStop(0, '#0000ff');
-        grad.addColorStop(0.5, '#00ffc8');
-        grad.addColorStop(1, '#ff0000');
-        ctx.fillText('2.5', barX - 22, barY + 8);
-        ctx.fillText('1.2', barX - 22, barY + barH * 0.5 + 4);
-        ctx.fillText('0.0', barX - 22, barY + barH);
-      } else {
-        grad.addColorStop(0, '#ff6600');
-        grad.addColorStop(0.5, 'rgba(0,0,0,0)');
-        grad.addColorStop(1, '#00ccff');
-        ctx.fillText('+max', barX - 28, barY + 8);
-        ctx.fillText('0', barX - 12, barY + barH * 0.5 + 4);
-        ctx.fillText('-max', barX - 28, barY + barH);
-      }
-
-      ctx.fillStyle = grad;
-      ctx.fillRect(barX, barY, barW, barH);
-      ctx.restore();
-    } catch {
-      // Ignore canvas drawing failure in headless mock context
-    }
   }
 }

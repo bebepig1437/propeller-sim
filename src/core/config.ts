@@ -184,7 +184,7 @@ export const defaultConfig: SimConfig = {
     compareMode: false,
     viscosity: 0.0001,
     vorticityStrength: 0.25,
-    pressureIterations: 30,
+    pressureIterations: 24,
     advectionScheme: 'semi-lagrangian',
     boundaryCondition: 'free-slip',
     inflowActive: true,

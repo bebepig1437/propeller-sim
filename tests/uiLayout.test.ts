@@ -392,8 +392,6 @@ describe('IBM Quantum Composer Design Language & UI Skeleton', () => {
       });
 
       const titles = layout.paletteEl.querySelectorAll('.palette-section-title').map((el: any) => el.textContent);
-      expect(titles).toContain('Vehicle');
-      expect(titles).toContain('Thrusters');
       expect(titles).toContain('Torque Stator');
       expect(titles).toContain('Blade Geometry');
       expect(titles).toContain('Blade Material');

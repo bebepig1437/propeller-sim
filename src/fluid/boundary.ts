@@ -179,21 +179,16 @@ export class BoundaryHandler {
     const p = grid.pressure;
 
     for (let y = 0; y < H; y++) {
-      p[y * W + 0] = p[y * W + 2];
-      p[y * W + 1] = p[y * W + 2];
+      p[y * W + 0] = p[y * W + 1];
       if (this.edges.right === 'OPEN_OUTFLOW') {
         p[y * W + W - 1] = 0;
-        p[y * W + W - 2] = 0;
       } else {
-        p[y * W + W - 1] = p[y * W + W - 3];
-        p[y * W + W - 2] = p[y * W + W - 3];
+        p[y * W + W - 1] = p[y * W + W - 2];
       }
     }
     for (let x = 0; x < W; x++) {
-      p[0 * W + x] = p[2 * W + x];
-      p[1 * W + x] = p[2 * W + x];
-      p[(H - 1) * W + x] = p[(H - 3) * W + x];
-      p[(H - 2) * W + x] = p[(H - 3) * W + x];
+      p[0 * W + x] = p[1 * W + x];
+      p[(H - 1) * W + x] = p[(H - 2) * W + x];
     }
   }
 

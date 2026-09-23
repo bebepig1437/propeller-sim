@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { WebGPURenderer } from 'three/webgpu';
-import { WaterSurface } from './surface';
 import { CausticTextureGenerator, applyUnderwaterOpticalProperties } from './water';
 import { Propeller3D } from '../prop/geometry';
 import { CANDIDATE_A_DESIGN } from '../prop/designs/index';
@@ -62,7 +61,6 @@ export class AppRenderer {
   public controls: OrbitControls;
   public backend: 'WebGPU' | 'WebGL2';
 
-  public waterSurface: WaterSurface;
   public caustics: CausticTextureGenerator;
   public prop3D?: Propeller3D;
   public sunLight!: THREE.DirectionalLight;
@@ -74,6 +72,14 @@ export class AppRenderer {
   private groundPlane: THREE.Mesh;
   private tankStructure: THREE.Group;
   private isDisposed = false;
+
+  public isCutaway = false;
+  private savedCameraPose = {
+    position: new THREE.Vector3(0.55, 0.32, 0.75),
+    target: new THREE.Vector3(0, 0, 0)
+  };
+  public cutawayAxisGroup: THREE.Group = new THREE.Group();
+  public silhouetteGroup: THREE.Group = new THREE.Group();
 
   public vehicle3D?: Vehicle3D;
 
@@ -153,15 +159,6 @@ export class AppRenderer {
     this.tankStructure = this.createWaterTunnelStructure();
     this.scene.add(this.tankStructure);
 
-    this.waterSurface = new WaterSurface({
-      size: 2.4,
-      elevation: 0.25,
-      amplitude: 0.002,
-      frequency: 2.5,
-      speed: 1.1
-    });
-    this.waterSurface.mesh.visible = false;
-    this.scene.add(this.waterSurface.mesh);
 
     this.prop3D = new Propeller3D({
       design: CANDIDATE_A_DESIGN,
@@ -171,6 +168,17 @@ export class AppRenderer {
     this.prop3D.group.position.set(0, 0, 0);
     this.scene.add(this.prop3D.group);
     this.setupInteraction();
+
+    this.cutawayAxisGroup.name = 'cutawayAxisGroup';
+    this.cutawayAxisGroup.visible = false;
+    this.scene.add(this.cutawayAxisGroup);
+
+    this.silhouetteGroup.name = 'silhouetteGroup';
+    this.silhouetteGroup.visible = false;
+    this.scene.add(this.silhouetteGroup);
+
+    this.buildCutawayAxes();
+    this.buildCutawaySilhouette();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', this.onResize);
@@ -288,10 +296,80 @@ export class AppRenderer {
     this.sunLight.target.updateMatrixWorld();
   }
 
+  private buildCutawayAxes(): void {
+    const group = this.cutawayAxisGroup;
+    const length = 2.4;
+    const height = 0.5;
+    const halfL = length / 2;
+    const halfH = height / 2;
+
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.6 });
+    const points: THREE.Vector3[] = [
+      new THREE.Vector3(-halfL, -halfH, 0),
+      new THREE.Vector3(halfL, -halfH, 0),
+      new THREE.Vector3(halfL, halfH, 0),
+      new THREE.Vector3(-halfL, halfH, 0),
+      new THREE.Vector3(-halfL, -halfH, 0)
+    ];
+    const borderGeo = new THREE.BufferGeometry().setFromPoints(points);
+    group.add(new THREE.Line(borderGeo, lineMat));
+
+    const tickMat = new THREE.LineBasicMaterial({ color: 0x3b82f6 });
+    const tickPoints: THREE.Vector3[] = [];
+    for (let x = -halfL; x <= halfL + 1e-4; x += 0.4) {
+      tickPoints.push(new THREE.Vector3(x, -halfH, 0), new THREE.Vector3(x, -halfH - 0.02, 0));
+    }
+    for (let y = -halfH; y <= halfH + 1e-4; y += 0.1) {
+      tickPoints.push(new THREE.Vector3(-halfL, y, 0), new THREE.Vector3(-halfL - 0.02, y, 0));
+    }
+    const tickGeo = new THREE.BufferGeometry().setFromPoints(tickPoints);
+    group.add(new THREE.LineSegments(tickGeo, tickMat));
+  }
+
+  private buildCutawaySilhouette(): void {
+    const group = this.silhouetteGroup;
+    const silhouetteMat = new THREE.MeshBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.85 });
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.06, 16), silhouetteMat);
+    hub.rotation.z = Math.PI / 2;
+    group.add(hub);
+
+    const discOutlineMat = new THREE.LineBasicMaterial({ color: 0xff7700, transparent: true, opacity: 0.8 });
+    const discPoints: THREE.Vector3[] = [
+      new THREE.Vector3(0, -0.042, 0),
+      new THREE.Vector3(0, 0.042, 0)
+    ];
+    const discGeo = new THREE.BufferGeometry().setFromPoints(discPoints);
+    group.add(new THREE.Line(discGeo, discOutlineMat));
+  }
+
+  public setCutaway(active: boolean): void {
+    if (this.isCutaway === active) return;
+    this.isCutaway = active;
+
+    if (active) {
+      this.savedCameraPose.position.copy(this.camera.position);
+      this.savedCameraPose.target.copy(this.controls.target);
+
+      this.camera.position.set(0.0, 0.0, 1.85);
+      this.controls.target.set(0.0, 0.0, 0.0);
+      this.controls.update();
+
+      this.tankStructure.visible = false;
+      this.cutawayAxisGroup.visible = true;
+      this.silhouetteGroup.visible = true;
+    } else {
+      this.camera.position.copy(this.savedCameraPose.position);
+      this.controls.target.copy(this.savedCameraPose.target);
+      this.controls.update();
+
+      this.tankStructure.visible = true;
+      this.cutawayAxisGroup.visible = false;
+      this.silhouetteGroup.visible = false;
+    }
+  }
+
   public setSideCutawayView(): void {
-    this.camera.position.set(0.0, 0.0, 1.85);
-    this.controls.target.set(0.0, 0.0, 0.0);
-    this.controls.update();
+    this.setCutaway(true);
   }
 
   public setFullTunnelView(): void {
@@ -529,16 +607,12 @@ export class AppRenderer {
   public render(
     time = performance.now() * 0.001,
     causticIntensity = 1.0,
-    fluidGrid?: FluidGrid,
-    dt = 1.0 / 60.0,
+    _fluidGrid?: FluidGrid,
+    _dt = 1.0 / 60.0,
     propAngle?: number,
     propRpm?: number
   ): void {
     if (this.isDisposed) return;
-
-    if (this.waterSurface.mesh.visible) {
-      this.waterSurface.update(time, dt, fluidGrid);
-    }
 
     this.caustics.update(time, causticIntensity);
 
@@ -565,7 +639,6 @@ export class AppRenderer {
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', this.onResize);
     }
-    this.waterSurface.dispose();
     this.caustics.dispose();
     this.prop3D?.dispose();
     this.vehicle3D?.dispose();
