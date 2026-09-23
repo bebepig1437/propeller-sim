@@ -1,19 +1,3 @@
-/**
- * Physics Tick Profiler Script
- *
- * Measures fine-grained timing for each stage of the end-to-end multi-physics pipeline:
- * Stage A: 2D Eulerian Fluid Core (Advection + Vorticity Confinement + Pressure Poisson Solve)
- * Stage B: Actuator Disc Inflow Sampling
- * Stage C: Continuous Inflow BEMT (Blade Element Momentum Theory)
- * Stage D: DC Motor & Tether Electrical Network (Mabuchi RC-280RA + umbilical voltage drop + thermal)
- * Stage E: Two-way Momentum & Swirl Injection into Fluid
- * Stage F: 3-Thruster Array + Stator Swirl Recovery
- * Stage G: 6-DOF Vehicle Rigid Body Dynamics Integration
- *
- * Usage:
- *   npx vitest run scripts/profile-physics-tick.ts
- *   or npm run profile
- */
 
 import { describe, it, expect } from "vitest";
 import { defaultConfig } from "../src/core/config";
@@ -47,7 +31,6 @@ export function runPhysicsTickProfiler(steps = 60, warmup = 10): StageTiming[] {
   const vehicle = new VehicleBody(defaultConfig.vehicle);
   const dt = 1.0 / 60.0;
 
-  // Warmup JIT & scratch buffers
   for (let i = 0; i < warmup; i++) {
     fluidSolver.step(dt);
     const va = coupler.sampleInflowVelocity(grid);
