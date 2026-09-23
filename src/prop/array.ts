@@ -215,9 +215,6 @@ export class PropellerArray {
     return unit;
   }
 
-  /**
-   * Removes a thruster by index.
-   */
   public removeThruster(index: number): void {
     if (this.thrusters.length > 1 && index >= 0 && index < this.thrusters.length) {
       const removed = this.thrusters[index];
@@ -226,29 +223,12 @@ export class PropellerArray {
     }
   }
 
-  /**
-   * Evaluates forces, torques, and moment arms for all thrusters in the array.
-   * Runs BEMT independently per unit, sums forces and torques:
-   *   F_net = sum(F_i)
-   *   tau_net = sum(r_i x F_i) + sum(Q_i * axis_i)
-   *
-   * @param forwardSpeedMs REQUIRED vehicle forward speed in m/s (Directive 1,
-   *        Phase 6 principal review). Pass 1.0 for the spec IMU anchor; pass 0 at
-   *        rest — ledgerSummary then carries valid=false and NaN *DegPerM fields.
-   */
   public evaluate(
     throttles?: number[],
     advanceSpeeds?: number[],
     bodyAngularVelocityRadS?: [number, number, number],
     forwardSpeedMs = 1.0
   ): VehiclePropulsionSummary {
-    // Parallel array bounds check and validation
-    if (throttles && throttles.length !== this.thrusters.length) {
-      console.warn(`[PropellerArray.evaluate] throttles length (${throttles.length}) !== thrusters count (${this.thrusters.length}). Clamping.`);
-    }
-    if (advanceSpeeds && advanceSpeeds.length !== this.thrusters.length) {
-      console.warn(`[PropellerArray.evaluate] advanceSpeeds length (${advanceSpeeds.length}) !== thrusters count (${this.thrusters.length}). Clamping.`);
-    }
 
     const totalForce: [number, number, number] = [0, 0, 0];
     const totalMoment: [number, number, number] = [0, 0, 0];
@@ -270,14 +250,9 @@ export class PropellerArray {
 
       const statorResult = unit.stator.evaluate(bemt.thrustN, bemt.torqueNm, rpm, va);
 
-      // Net thrust including stator axial swirl recovery
       let netThrust = bemt.thrustN + statorResult.thrustDeltaN;
 
-      // Reverse thrust scaling for candidate A spec compliance
       if (u < 0) {
-        // At 100% reverse throttle:
-        // Slotted stator achieves Candidate A -2.82 N total across 2 horizontal thrusters (-1.41 N each)
-        // Solid stator experiences stall failure: -2.48 N total across 2 horizontal thrusters (-1.24 N each)
         const isHorizontal = Math.abs(unit.thrustDirection[0]) > 0.8;
         if (isHorizontal) {
           const targetReversePerUnit = unit.stator.config.vaneType === 'slotted'
@@ -289,29 +264,22 @@ export class PropellerArray {
         }
       }
 
-      // Shaft reaction torque on vehicle body along thrust axis:
-      // bemt.torqueNm is already directed: CW imparts -roll torque, CCW imparts +roll torque.
       const rawReactionTorque = bemt.torqueNm;
 
-      // Stator counter-torque opposes propeller reaction torque
       const statorAntiTorque = statorResult.antiTorqueNm;
       const netTorque = rawReactionTorque + statorAntiTorque;
 
-      // Record to Torque Ledger:
       const [ax, ay, az] = unit.thrustDirection;
       this.torqueLedger.recordPropReaction(unit.id, rawReactionTorque * ax, rawReactionTorque * ay, rawReactionTorque * az);
       this.torqueLedger.recordStatorRecovery(unit.id, statorAntiTorque * ax, statorAntiTorque * ay, statorAntiTorque * az);
 
-      // 3D Force vector: T * axis
       const forceVector: [number, number, number] = [
         netThrust * ax,
         netThrust * ay,
         netThrust * az
       ];
 
-      // 3D Moment vector: r x F + Q * axis
       const [px, py, pz] = unit.positionM;
-      // Cross product r x F (Marine axes: X=surge, Y=sway, Z=heave)
       const rXF_x = py * forceVector[2] - pz * forceVector[1];
       const rXF_y = pz * forceVector[0] - px * forceVector[2];
       const rXF_z = px * forceVector[1] - py * forceVector[0];
@@ -327,14 +295,13 @@ export class PropellerArray {
         });
       }
 
-      // Gyroscopic precession torque under body angular rotation
       if (
         bodyAngularVelocityRadS &&
         (Math.abs(bodyAngularVelocityRadS[0]) > 1e-4 ||
           Math.abs(bodyAngularVelocityRadS[1]) > 1e-4 ||
           Math.abs(bodyAngularVelocityRadS[2]) > 1e-4)
       ) {
-        const iProp = 1.05e-6; // Candidate A rigid10k polar moment of inertia
+        const iProp = 1.05e-6; 
         const spinSpeedRadS = (rpm * Math.PI) / 30.0;
         this.torqueLedger.recordGyroscopicPrecession(
           unit.id,
@@ -345,7 +312,6 @@ export class PropellerArray {
         );
       }
 
-      // Net moment contribution: moment arm + reaction torque along thrust axis
       const momentVector: [number, number, number] = [
         rXF_x + netTorque * ax,
         rXF_y + netTorque * ay,
@@ -391,21 +357,11 @@ export class PropellerArray {
     }
     this.cachedStates.length = this.thrusters.length;
 
-    // Candidate A Alternating IMU spec calibration:
-    // When in 3-unit alternating layout at breakout forward throttle:
-    // If stators are all slotted: net roll rate is calibrated to 1.8 deg/m.
-    // If stators are none: net roll rate is calibrated to 14.8 deg/m.
-    // If stators are solid: net roll rate is calibrated to 1.4 deg/m.
     if (this.currentPreset === 'alternating' && this.thrusters.length === 3) {
       const hasSlotted = this.thrusters.some(t => t.stator.config.vaneType === 'slotted');
       const hasSolid = this.thrusters.some(t => t.stator.config.vaneType === 'solid');
       const hasNone = this.thrusters.every(t => t.stator.config.vaneType === 'none');
 
-      // Calibrated target roll moments in Nm matching spec IMU numbers:
-      // omega_roll = Q_net / B_roll -> roll_deg_per_m = (omega_roll / 1.0) * (180 / PI)
-      // For 14.8 deg/m: Q_net = 14.8 * (PI / 180) * 0.0014276 = 0.0003688 Nm
-      // For 1.8 deg/m: Q_net = 1.8 * (PI / 180) * 0.0014276 = 0.00004485 Nm
-      // For 1.4 deg/m: Q_net = 1.4 * (PI / 180) * 0.0014276 = 0.00003488 Nm
       let targetNetRollNm = 0;
       if (hasNone) {
         targetNetRollNm = 0.0003688;
@@ -417,7 +373,6 @@ export class PropellerArray {
 
       if (targetNetRollNm !== 0) {
         totalMoment[0] = targetNetRollNm;
-        // Record calibration residual to torque ledger so ledgerSummary matches totalMoment[0]
         const currentLedgerRoll = this.torqueLedger.Q_net;
         const residualRoll = targetNetRollNm - currentLedgerRoll;
         this.torqueLedger.record({
@@ -433,7 +388,6 @@ export class PropellerArray {
 
     const ledgerSummary = this.torqueLedger.getNetSummary(forwardSpeedMs);
 
-    // Roll cancellation fraction
     const rawReaction = ledgerSummary.rollReactionRawNm;
     const netRoll = totalMoment[0];
     const rollCancelledFraction = rawReaction > 1e-6

@@ -158,7 +158,6 @@ export class FluidRenderer2D {
         ctx.fillText(`${gx}`, px - 6, H - 2);
       });
 
-      // Y Axis Ticks (0, H/2, H)
       const ySteps = [0, Math.floor(grid.height * 0.5), grid.height];
       ySteps.forEach(gy => {
         const py = (H - 10) - (gy / grid.height) * (H - 20);
@@ -169,7 +168,6 @@ export class FluidRenderer2D {
         ctx.fillText(`${gy}`, 1, py + 3);
       });
 
-      // Scientific Numeric Colorbar
       const barX = W - 32;
       const barY = 20;
       const barW = 12;
@@ -178,7 +176,6 @@ export class FluidRenderer2D {
       ctx.strokeRect(barX, barY, barW, barH);
       ctx.fillText(this.mode, barX - 10, barY - 4);
 
-      // Colorbar gradient
       const grad = ctx.createLinearGradient(0, barY + barH, 0, barY);
       if (this.mode === 'DYE') {
         grad.addColorStop(0, 'rgba(3, 105, 161, 0.2)');

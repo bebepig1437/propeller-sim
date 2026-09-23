@@ -277,7 +277,6 @@ function parseHtml(html: string, parent: MockNode | null = null): MockNode[] {
   return nodes;
 }
 
-// Setup global mock document if running in node
 if (typeof document === 'undefined') {
   const mockDoc = {
     createElement: (tag: string) => new MockNode(tag),
@@ -331,35 +330,30 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
 
       const [breakout, heavyLift, cruise, fullDive, reverseStation] = DEFAULT_PRESETS;
 
-      // Breakout Burst: 100% throttle, +4.73 N, 1.41 A, 18s timer
       expect(breakout.name).toBe('Breakout Burst');
       expect(breakout.throttle).toBe(1.0);
       expect(breakout.thrust_N).toBe(4.73);
       expect(breakout.current_A).toBe(1.41);
       expect(breakout.burst_s).toBe(18);
 
-      // Nominal Heavy Lift: 88% throttle, +3.99 N, 1.25 A, 50s timer
       expect(heavyLift.name).toBe('Nominal Heavy Lift');
       expect(heavyLift.throttle).toBeCloseTo(0.881, 3);
       expect(heavyLift.thrust_N).toBe(3.99);
       expect(heavyLift.current_A).toBe(1.25);
       expect(heavyLift.burst_s).toBe(50);
 
-      // Continuous Cruise: 67% throttle, +2.49 N, 0.85 A, unlimited
       expect(cruise.name).toBe('Continuous Cruise');
       expect(cruise.throttle).toBeCloseTo(0.670, 3);
       expect(cruise.thrust_N).toBe(2.49);
       expect(cruise.current_A).toBe(0.85);
       expect(cruise.burst_s).toBeNull();
 
-      // Controlled Full Dive: -84% throttle, -2.82 N, 1.18 A, 65s timer
       expect(fullDive.name).toBe('Controlled Full Dive');
       expect(fullDive.throttle).toBeCloseTo(-0.840, 3);
       expect(fullDive.thrust_N).toBe(-2.82);
       expect(fullDive.current_A).toBe(1.18);
       expect(fullDive.burst_s).toBe(65);
 
-      // Reverse Station: -48% throttle, -0.93 N, 0.51 A, unlimited
       expect(reverseStation.name).toBe('Reverse Station');
       expect(reverseStation.throttle).toBeCloseTo(-0.480, 3);
       expect(reverseStation.thrust_N).toBe(-0.93);
@@ -393,7 +387,6 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
       expect(runBtn).not.toBeNull();
       expect(runBtn.classList.contains('state-idle')).toBe(true);
 
-      // Click to RUN
       runBtn.click();
       expect(onRunToggle).toHaveBeenCalledWith('running');
       expect(header.getRunState()).toBe('running');
@@ -451,19 +444,15 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
 
       expect(layout.stagePopoversEl.children.length).toBe(0);
 
-      // Open Thrust
       hud.togglePopover('thrust');
       expect(layout.stagePopoversEl.children.length).toBe(1);
 
-      // Open Torque
       hud.togglePopover('torque');
       expect(layout.stagePopoversEl.children.length).toBe(2);
 
-      // Open Efficiency
       hud.togglePopover('efficiency');
       expect(layout.stagePopoversEl.children.length).toBe(3);
 
-      // Verify pin button on the popover
       const popover = layout.stagePopoversEl.children[0] as HTMLElement;
       const pinBtn = popover.querySelector('.stripchart-pin') as HTMLButtonElement;
       expect(pinBtn).not.toBeNull();
@@ -506,15 +495,12 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
       const csv = recorder.generateCsv();
       const lines = csv.split('\n');
 
-      expect(lines.length).toBe(2); // Header + 1 row
+      expect(lines.length).toBe(2); 
       const header = lines[0];
 
-      // Verifies all required columns per prompt:
-      // t, dt, fps
       expect(header).toContain('t_s');
       expect(header).toContain('dt_s');
       expect(header).toContain('fps');
-      // Per-unit: rpm, pitch, thrust, torque, current, V_term, T_motor
       expect(header).toContain('u0_rpm');
       expect(header).toContain('u0_pitch_deg');
       expect(header).toContain('u0_thrust_N');
@@ -522,26 +508,21 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
       expect(header).toContain('u0_current_A');
       expect(header).toContain('u0_vterm_V');
       expect(header).toContain('u0_tmotor_C');
-      // Bus: V_bus, I_total, P_total
       expect(header).toContain('v_bus_V');
       expect(header).toContain('i_total_A');
       expect(header).toContain('p_total_W');
-      // Vehicle: pos, vel, quat, omega, roll_dev_per_m
       expect(header).toContain('pos_x_m');
       expect(header).toContain('vel_y_ms');
       expect(header).toContain('quat_w');
       expect(header).toContain('omega_p_rads');
       expect(header).toContain('roll_dev_deg_per_m');
-      // Fluid: max |v|, mean |v|, max vorticity
       expect(header).toContain('fluid_max_v_ms');
       expect(header).toContain('fluid_mean_v_ms');
       expect(header).toContain('fluid_max_vorticity_s');
-      // Diagnostics: pressure iters, residual, per-pass GPU ms
       expect(header).toContain('pressure_iters');
       expect(header).toContain('pressure_residual');
       expect(header).toContain('gpu_total_ms');
 
-      // Verifies 100% row matches Candidate A spec: +4.73 N, 1.41 A, 10.82 V
       const dataRow = lines[1];
       expect(dataRow).toContain('1.410');
       expect(dataRow).toContain('10.82');
@@ -596,7 +577,7 @@ describe('Phase 7 — UI, Telemetry, and Candidate A Presets', () => {
       expect(trajectory.length).toBeGreaterThan(50);
       const finalPoint = trajectory[trajectory.length - 1];
       const err = Math.abs(finalPoint.vSim - finalPoint.vRef) / finalPoint.vRef;
-      expect(err).toBeLessThan(0.02); // < 2% error
+      expect(err).toBeLessThan(0.02); 
     });
   });
 });

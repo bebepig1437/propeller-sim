@@ -69,8 +69,6 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
     console.log(`[BEMT J=0.40 Validation] Integrated Kt = ${res.kt.toFixed(4)} (ref: ${ktRef}, error: ${ktErr.toFixed(2)}%, tol: 15%)`);
     console.log(`[BEMT J=0.40 Validation] Integrated eta = ${res.efficiency.toFixed(4)} (ref: ${etaRef}, error: ${etaErr.toFixed(2)}%, tol: 10%)`);
 
-    // Directive 3 tolerance requirements:
-    // 15% on integrated Kt, 10% on eta
     expect(ktErr).toBeLessThan(15.0);
     expect(etaErr).toBeLessThan(10.0);
 
@@ -78,7 +76,6 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
     const Rhub = 0.008 / 2.0;
     const dr = (R - Rhub) / 20;
 
-    // Station-by-station validation with 15% tolerance on inner span (r/R < 0.3) and 25% on outer span
     for (let i = 0; i < res.elements.length; i++) {
       const elem = res.elements[i];
       const ref = refStations[i];
@@ -94,7 +91,6 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
         console.log(`[Inner Span Station ${i}] r/R = ${elem.rOverR.toFixed(3)} | sim dT/dr = ${sim_dT_dr.toFixed(2)}, ref = ${ref.dT_dr.toFixed(2)} | error = ${percentDiff.toFixed(2)}% (tol: 15%)`);
       }
 
-      // Assert station by station (failing loudly with station index if hub loss or tip loss is wrong)
       expect(
         percentDiff,
         `Station ${i} (r/R=${elem.rOverR.toFixed(3)}) dT/dr mismatch: sim=${sim_dT_dr.toFixed(2)}, ref=${ref.dT_dr.toFixed(2)} (diff=${percentDiff.toFixed(1)}%, tol=${stationTol}%)`
@@ -104,10 +100,9 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
 
   it('asserts continuity across reverse-flow transition band: |dT/dr| and |dQ/dr| change < 1% per 0.001 m/s step', () => {
     const rpm = 4140;
-    const bandHalf = REVERSE_FLOW_BLEND_BAND_MS; // 0.05 m/s
-    const stepSize = 0.001; // 0.001 m/s
+    const bandHalf = REVERSE_FLOW_BLEND_BAND_MS; 
+    const stepSize = 0.001; 
 
-    // Test transition across [-0.05 m/s, +0.05 m/s]
     const numSteps = Math.floor((2 * bandHalf) / stepSize);
     let prevElem: { dT: number; dQ: number } | null = null;
 
@@ -120,7 +115,6 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
         numElements: 20
       });
 
-      // Mid-span station 10
       const midStation = res.elements[10];
       if (prevElem !== null) {
         const deltaT = Math.abs(midStation.dT - prevElem.dT);
@@ -131,7 +125,6 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
         const meanQ = Math.max(0.0001, (Math.abs(midStation.dQ) + Math.abs(prevElem.dQ)) * 0.5);
         const pctChangeQ = (deltaQ / meanQ) * 100.0;
 
-        // Change must be less than 1% per 0.001 m/s step
         expect(
           pctChangeT,
           `Discontinuity detected at vInflow=${vInflow.toFixed(3)} m/s: dT changed by ${pctChangeT.toFixed(3)}% in 0.001 m/s step`
@@ -164,11 +157,9 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
       expect(Number.isFinite(curr.torqueNm)).toBe(true);
 
       const deltaV = testSpeeds[i] - testSpeeds[i - 1];
-      // Local gradient |(T_curr - T_prev) / T_mean| normalized by deltaV
       const meanT = (Math.abs(curr.thrustN) + Math.abs(prev.thrustN)) * 0.5;
       const relJump = Math.abs(curr.thrustN - prev.thrustN) / meanT;
 
-      // Inflow change of 0.03 m/s should yield smooth continuous force change (< 5% jump per 0.03 m/s at 4140 RPM)
       expect(
         relJump,
         `Force jumped by ${(relJump * 100).toFixed(2)}% between U_inf=${testSpeeds[i-1]} and ${testSpeeds[i]}`

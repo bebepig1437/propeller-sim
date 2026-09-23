@@ -862,6 +862,8 @@ details.inspector-advanced[open] summary {
   font-size: 12px;
   font-weight: 600;
   text-align: right;
+  min-width: 58px;
+  display: inline-block;
   color: var(--text-primary);
 }
 

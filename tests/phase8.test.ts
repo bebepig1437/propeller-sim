@@ -222,7 +222,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
   describe('2. Multigrid Pressure Solve V-Cycle (< 4ms target)', () => {
     it('executes V-Cycle (restrict -> coarse solve -> prolongate -> correct) and solves in < 4ms', () => {
       const grid = new FluidGrid({ width: 256, height: 128 });
-      // Inject synthetic non-zero divergence field
       for (let y = 30; y < 90; y++) {
         for (let x = 60; x < 180; x++) {
           grid.u[y * 256 + x] = 2.5 * Math.sin(x * 0.1) * Math.cos(y * 0.1);
@@ -231,15 +230,10 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       }
       computeDivergence(grid);
 
-      // Warmup JIT
       for (let i = 0; i < 10; i++) {
         solvePressureMultigrid(grid, 1);
       }
 
-      // Best-of-3: a single wall-clock sample is dominated by scheduler noise on a
-      // loaded machine (this assertion was observed at 8.4 ms while a heavyweight
-      // suite ran in parallel, versus 1.5 ms when measured alone). The minimum is
-      // the least noise-contaminated estimate of the V-cycle's real cost.
       const samplesMs: number[] = [];
       let result = solvePressureMultigrid(grid, 1);
       for (let i = 0; i < 3; i++) {
@@ -250,7 +244,7 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       const durationMs = Math.min(...samplesMs);
 
       console.log(`[Multigrid V-Cycle] 256x128 V-cycle duration: ${durationMs.toFixed(3)} ms (samples: ${samplesMs.map(v => v.toFixed(3)).join(', ')} ms)`);
-      expect(durationMs).toBeLessThan(4.0); // Target < 4ms
+      expect(durationMs).toBeLessThan(4.0); 
       expect(result.iterationsRun).toBeGreaterThan(0);
       expect(result.finalResidual).toBeDefined();
     });
@@ -280,7 +274,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       expect(controller.currentWidth).toBe(1024);
       expect(controller.currentHeight).toBe(512);
 
-      // Simulate frame time spike > 18ms
       for (let i = 0; i < 5; i++) {
         controller.recordFrameTime(25.0);
       }
@@ -290,7 +283,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       expect(controller.currentHeight).toBe(256);
       expect(recordedScale).toBe(0.5);
 
-      // Further spike drops to 0.25
       for (let i = 0; i < 5; i++) {
         controller.recordFrameTime(25.0);
       }
@@ -298,7 +290,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       expect(controller.scaleLabel).toBe('0.25×');
       expect(controller.currentWidth).toBe(256);
 
-      // Headroom returns (< 12ms)
       for (let i = 0; i < 20; i++) {
         controller.recordFrameTime(8.0);
       }
@@ -310,7 +301,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       const gridHigh = new FluidGrid({ width: 512, height: 256 });
       const gridLow = new FluidGrid({ width: 256, height: 128 });
 
-      // Create elevation in high res grid
       for (let x = 0; x < 512; x++) {
         gridHigh.v[(256 - 2) * 512 + x] = 1.5;
       }
@@ -318,16 +308,13 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       const highEnergy = water.getHeightfieldEnergy();
       expect(highEnergy).toBeGreaterThan(0);
 
-      // Transition to low res grid (resolution drop)
       water.update(0.12, 1 / 60, gridLow);
       expect(water.crossfadeRemainingSec).toBeGreaterThan(0);
       expect(water.crossfadeRemainingSec).toBeLessThanOrEqual(0.250);
 
-      // Advance 125ms (halfway through cross-fade)
       water.update(0.24, 0.125, gridLow);
       expect(water.crossfadeRemainingSec).toBeGreaterThan(0);
 
-      // Complete 250ms cross-fade
       water.update(0.38, 0.150, gridLow);
       expect(water.crossfadeRemainingSec).toBe(0);
     });
@@ -368,7 +355,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       const readbackEl = container.querySelector('#hud-readback-val');
       expect(readbackEl?.textContent).toBe('0.8 ms');
 
-      // A silent tier degradation must be visible, not inferred from the console.
       const tierEl = container.querySelector('#hud-tier-val');
       expect(tierEl?.textContent).toBe('CPU');
     });
@@ -399,7 +385,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       expect(controller.restoreThresholdMs).toBe(12.0);
       expect(controller.consecutiveDropFrames).toBe(10);
       expect(controller.consecutiveRestoreFrames).toBe(60);
-      // Hysteresis requires a strictly dead band between restore and drop.
       expect(controller.restoreThresholdMs).toBeLessThan(controller.dropThresholdMs);
     });
 
@@ -408,8 +393,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       let transitions = 0;
       controller.onResolutionChange = () => { transitions++; };
 
-      // 10 simulated minutes, alternating 14 ms / 16 ms every 20 s. Both values sit
-      // between restore (12.0) and drop (17.5), so a correct controller never moves.
       const frames = 60 * 60 * 10;
       const framesPerPhase = 60 * 20;
       for (let i = 0; i < frames; i++) {
@@ -426,20 +409,16 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       let transitions = 0;
       controller.onResolutionChange = () => { transitions++; };
 
-      // 60 s of sustained overload: degrade 1.0 -> 0.5 -> 0.25, then stay put.
       for (let i = 0; i < 60 * 60; i++) controller.recordFrameTime(25.0);
       expect(controller.currentScale).toBe(0.25);
       const afterOverload = transitions;
       expect(afterOverload).toBe(2);
 
-      // 60 s of sustained headroom: restore 0.25 -> 0.5 -> 1.0, then stay put.
       for (let i = 0; i < 60 * 60; i++) controller.recordFrameTime(8.0);
       expect(controller.currentScale).toBe(1.0);
       const afterRecovery = transitions;
       expect(afterRecovery).toBe(4);
 
-      // The remaining 8 minutes of steady headroom must produce ZERO further
-      // transitions — this is the limit cycle the 10-minute doc window exists for.
       for (let i = 0; i < 60 * 60 * 8; i++) controller.recordFrameTime(8.0);
       expect(transitions).toBe(afterRecovery);
       expect(controller.currentScale).toBe(1.0);
@@ -451,7 +430,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       const upsampler = new TemporalUpsampler({ targetWidth: 512, targetHeight: 256, historyWeight: 0.8 });
       const grid = new FluidGrid({ width: 256, height: 128 });
 
-      // Add a localized dye patch and uniform forward velocity
       const cx = 128, cy = 64;
       for (let y = cy - 10; y <= cy + 10; y++) {
         for (let x = cx - 10; x <= cx + 10; x++) {
@@ -460,12 +438,10 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
         }
       }
 
-      // Frame 1: Initial reconstruction
       const frame1 = upsampler.upsample(grid, grid.dye, 1 / 60);
       expect(frame1.length).toBe(512 * 256);
       expect(frame1[128 * 512 + 256]).toBeGreaterThan(0.5);
 
-      // Frame 2: Velocity advection forward
       const frame2 = upsampler.upsample(grid, grid.dye, 1 / 60);
       expect(frame2.length).toBe(512 * 256);
       expect(frame2[128 * 512 + 256]).toBeGreaterThan(0.5);
@@ -483,22 +459,18 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
 
       expect(coordinator.currentBackend).toBe('WebGPU');
 
-      // Incident 1: Attempt 1 reinit
       let res1 = await coordinator.handleDeviceLoss();
       expect(res1).toBe('WebGPU');
       expect(coordinator.reinitAttempts).toBe(1);
 
-      // Incident 2: Attempt 2 reinit
       let res2 = await coordinator.handleDeviceLoss();
       expect(res2).toBe('WebGPU');
       expect(coordinator.reinitAttempts).toBe(2);
 
-      // Incident 3: Reinit failed twice -> fall back to WebGL2
       let res3 = await coordinator.handleDeviceLoss();
       expect(res3).toBe('WebGL2');
       expect(activeBackend).toBe('WebGL2');
 
-      // Incident 4: WebGL2 context loss -> fall back to CPU
       let res4 = await coordinator.handleDeviceLoss();
       expect(res4).toBe('CPU');
       expect(activeBackend).toBe('CPU');
@@ -529,8 +501,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
     });
 
     it('reports a tier consistent with the compute path it will actually take', () => {
-      // No renderer, so no compute device: claiming 'WebGPU' here is exactly the
-      // silent-CPU-fallback bug class (AGENTS.md rule 8).
       const solver = new GpuFluidSolver({ gridOptions: { width: 128, height: 64 } });
       expect(solver.isGpuAccelerated).toBe(false);
       expect(solver.renderTier).toBe('WebGL2');
@@ -538,9 +508,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
     });
 
     it('drives the CPU tier end-to-end: coordinator tiers reach the solver and the CPU path keeps producing finite fields', async () => {
-      // Configured to the Phase 1/2 incompressibility oracle conditions so the
-      // fallback path can be held to the same documented bound as the reference
-      // solver (tests/fluid.test.ts), rather than an invented threshold.
       const solver = new GpuFluidSolver({
         gridOptions: { width: 256, height: 128 },
         pressureIterations: 40,
@@ -551,35 +518,26 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       const coordinator = new RecoveryCoordinator({
         onBackendChange: (backend) => {
           observations.push(backend);
-          // This is the wiring boundary the review flagged: the coordinator's
-          // decision must reach the solver, not just a console.log.
           solver.setBackend(backend);
           expect(solver.renderTier).toBe(backend);
           expect(solver.backend).toBe(backend === 'WebGPU' ? 'gpu' : 'cpu');
         },
-        // A genuine probe: with no compute device it must report failure rather
-        // than let a counter decide the tier.
         reinitProbe: () => solver.reinitGpuPipeline()
       });
 
-      // Incident 1: reinit probe fails while the attempt budget remains, so the
-      // coordinator stays on the WebGPU tier and retries on the next event.
       expect(await coordinator.handleDeviceLoss()).toBe('WebGPU');
       expect(coordinator.reinitAttempts).toBe(1);
       expect(observations).toEqual([]);
 
-      // Incident 2: second failed attempt exhausts the budget -> WebGL2.
       expect(await coordinator.handleDeviceLoss()).toBe('WebGL2');
       expect(coordinator.reinitAttempts).toBe(2);
       expect(solver.renderTier).toBe('WebGL2');
 
-      // Incident 3: WebGL2 context lost -> CPU reference tier.
       expect(await coordinator.handleDeviceLoss()).toBe('CPU');
       expect(solver.renderTier).toBe('CPU');
       expect(solver.isGpuAccelerated).toBe(false);
       expect(observations).toEqual(['WebGL2', 'CPU']);
 
-      // ...and the CPU tier must RUN, not throw and not flatline.
       let lastDivergence = Number.POSITIVE_INFINITY;
       for (let i = 0; i < 60; i++) {
         const metrics = solver.step(1 / 60);
@@ -591,12 +549,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
 
       console.log(`[Phase 8 CPU tier] steady-inflow max |divergence| after projection: ${lastDivergence.toExponential(4)}`);
 
-      // Bounded, not "converged": the Phase 1/2 oracle's < 1e-3 is asserted at
-      // 64x32 with 40 Jacobi sweeps in tests/fluid.test.ts. The same iteration
-      // count does NOT reach 1e-3 at 256x128 (~2.1 here), so the fallback path is
-      // held to stability (finite and bounded, no divergence blow-up) rather than
-      // borrowing a bound that was never valid at this resolution. Flagged as an
-      // open item in docs/PHASE8_MANUAL_VERIFICATION.md.
       expect(Number.isFinite(lastDivergence)).toBe(true);
       expect(solver.metrics.maxDivergence).toBeLessThan(10.0);
       expect(getMaxDivergence(solver.grid)).toBeLessThan(10.0);
@@ -657,9 +609,6 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
     });
   });
 
-  // The doc's acceptance is "zero memory leakage over 10 minutes". The 60 s audit
-  // above is a smoke test: it cannot see a 100 KB/minute leak, which is precisely
-  // what a 10-minute run is for. Gated so the default run (and CI) stays fast.
   describe.skipIf(!LONG_RUN_ENABLED)('8. Extended 10-Minute Stability Gate (PHASE8_LONG=1)', () => {
     it('executes 36,000 frames (10 minutes) of hot loop with zero positive heap slope', { timeout: 900_000 }, () => {
       const harness = createHotLoopHarness();
@@ -668,7 +617,7 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       if (typeof (global as any).gc === 'function') (global as any).gc();
       const heapBefore = process.memoryUsage().heapUsed;
 
-      const sampleEvery = LONG_RUN_FRAMES / 10; // one sample per simulated minute
+      const sampleEvery = LONG_RUN_FRAMES / 10; 
       const minuteSamplesMb: number[] = [];
       let lastMetrics = harness.step();
 
@@ -686,14 +635,10 @@ describe('Phase 8 — Performance & Robustness Suite', () => {
       console.log(`[Phase 8 10-min Audit] heap growth over ${LONG_RUN_FRAMES} frames: ${growthMb.toFixed(4)} MB (${kbPerThousandFrames.toFixed(2)} KB / 1000 frames)`);
       console.log(`[Phase 8 10-min Audit] per-minute heap delta (MB): ${minuteSamplesMb.map(v => v.toFixed(3)).join(', ')}`);
 
-      // The loop must still be producing live telemetry after 10 minutes.
       expect(lastMetrics).toBe(harness.gpuSolver.metrics);
       expect(Number.isFinite(lastMetrics.stepTimeMs)).toBe(true);
       expect(Number.isFinite(lastMetrics.maxDivergence)).toBe(true);
 
-      // Ceiling: 1.0 MB over 36,000 frames. A flat slope should land far under
-      // this; a real per-frame allocation would blow past it by orders of
-      // magnitude. Tighten only against a measured baseline.
       if (typeof (global as any).gc === 'function') {
         expect(growthMb).toBeLessThan(1.0);
       }

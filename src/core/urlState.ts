@@ -41,6 +41,45 @@ export function serializeSimStateToUrl(state: SimUrlState, baseUrl?: string): st
   return url.toString();
 }
 
+function clampNumber(val: unknown, min: number, max: number): number | undefined {
+  if (typeof val === "string") {
+    const num = parseFloat(val);
+    if (!Number.isFinite(num)) return undefined;
+    return Math.max(min, Math.min(max, num));
+  }
+  if (typeof val === "number" && Number.isFinite(val)) {
+    return Math.max(min, Math.min(max, val));
+  }
+  return undefined;
+}
+
+export function sanitizeSimUrlState(state: SimUrlState): SimUrlState {
+  const clean: SimUrlState = { ...state };
+  if (clean.pitch !== undefined) {
+    clean.pitch = clampNumber(clean.pitch, -45, 45);
+  }
+  if (clean.supplyV !== undefined) {
+    clean.supplyV = clampNumber(clean.supplyV, 0, 24);
+  }
+  if (clean.tetherFt !== undefined) {
+    clean.tetherFt = clampNumber(clean.tetherFt, 0, 100);
+  }
+  if (clean.tetherAwg !== undefined) {
+    const awg = clampNumber(clean.tetherAwg, 10, 30);
+    clean.tetherAwg = awg !== undefined ? Math.round(awg) : undefined;
+  }
+  if (clean.statorAngle !== undefined) {
+    clean.statorAngle = clampNumber(clean.statorAngle, -30, 30);
+  }
+  if ((clean as any).rpm !== undefined) {
+    (clean as any).rpm = clampNumber((clean as any).rpm, -10000, 10000);
+  }
+  if ((clean as any).throttle !== undefined) {
+    (clean as any).throttle = clampNumber((clean as any).throttle, -1, 1);
+  }
+  return clean;
+}
+
 export function parseSimStateFromUrl(searchOrUrl?: string): SimUrlState {
   let search = "";
   if (searchOrUrl !== undefined) {
@@ -61,7 +100,7 @@ export function parseSimStateFromUrl(searchOrUrl?: string): SimUrlState {
         ? atob(stateEncoded)
         : (globalThis as any).Buffer?.from(stateEncoded, "base64").toString("utf-8");
       if (decodedJson) {
-        return JSON.parse(decodedJson) as SimUrlState;
+        return sanitizeSimUrlState(JSON.parse(decodedJson) as SimUrlState);
       }
     } catch {
       return {};
@@ -75,8 +114,8 @@ export function parseSimStateFromUrl(searchOrUrl?: string): SimUrlState {
   if (vehicle) state.vehicle = vehicle;
   const pitch = params.get("pitch");
   if (pitch) {
-    const val = parseFloat(pitch);
-    if (!isNaN(val)) state.pitch = val;
+    const val = clampNumber(pitch, -45, 45);
+    if (val !== undefined) state.pitch = val;
   }
   const handedness = params.get("handedness");
   if (handedness === "CW" || handedness === "CCW") state.handedness = handedness;
@@ -84,25 +123,35 @@ export function parseSimStateFromUrl(searchOrUrl?: string): SimUrlState {
   if (stator === "slotted" || stator === "solid" || stator === "none") state.stator = stator;
   const statorAngle = params.get("stator_angle");
   if (statorAngle) {
-    const val = parseFloat(statorAngle);
-    if (!isNaN(val)) state.statorAngle = val;
+    const val = clampNumber(statorAngle, -30, 30);
+    if (val !== undefined) state.statorAngle = val;
   }
   const statorType = params.get("stator_type");
   if (statorType === "slotted" || statorType === "solid" || statorType === "none") state.statorType = statorType;
   const supplyV = params.get("supply_v");
   if (supplyV) {
-    const val = parseFloat(supplyV);
-    if (!isNaN(val)) state.supplyV = val;
+    const val = clampNumber(supplyV, 0, 24);
+    if (val !== undefined) state.supplyV = val;
   }
   const tetherFt = params.get("tether_ft");
   if (tetherFt) {
-    const val = parseFloat(tetherFt);
-    if (!isNaN(val)) state.tetherFt = val;
+    const val = clampNumber(tetherFt, 0, 100);
+    if (val !== undefined) state.tetherFt = val;
   }
   const tetherAwg = params.get("tether_awg");
   if (tetherAwg) {
-    const val = parseInt(tetherAwg, 10);
-    if (!isNaN(val)) state.tetherAwg = val;
+    const val = clampNumber(tetherAwg, 10, 30);
+    if (val !== undefined) state.tetherAwg = Math.round(val);
+  }
+  const rpm = params.get("rpm");
+  if (rpm) {
+    const val = clampNumber(rpm, -10000, 10000);
+    if (val !== undefined) (state as any).rpm = val;
+  }
+  const throttle = params.get("throttle");
+  if (throttle) {
+    const val = clampNumber(throttle, -1, 1);
+    if (val !== undefined) (state as any).throttle = val;
   }
   return state;
 }

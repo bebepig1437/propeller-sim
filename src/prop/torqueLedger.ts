@@ -92,9 +92,6 @@ export class TorqueLedger {
     }
   }
 
-  /**
-   * Helper to record propeller reaction torque.
-   */
   public recordPropReaction(sourceId: string, rollNm: number, pitchNm: number = 0, yawNm: number = 0): void {
     this.record({
       sourceId,
@@ -106,9 +103,6 @@ export class TorqueLedger {
     });
   }
 
-  /**
-   * Helper to record stator counter-torque.
-   */
   public recordStatorRecovery(sourceId: string, rollNm: number, pitchNm: number = 0, yawNm: number = 0): void {
     this.record({
       sourceId,
@@ -120,10 +114,6 @@ export class TorqueLedger {
     });
   }
 
-  /**
-   * Computes gyroscopic precession torque:
-   * tau_gyro = omega_body x (I_prop * Omega_prop)
-   */
   public recordGyroscopicPrecession(
     sourceId: string,
     bodyAngularVelocityRadS: [number, number, number],
@@ -134,13 +124,11 @@ export class TorqueLedger {
     const [wx, wy, wz] = bodyAngularVelocityRadS;
     const [ax, ay, az] = rotorSpinAxis;
 
-    // Angular momentum of spinning rotor: H = I * Omega * axis
     const hMag = iPropKgM2 * rotorSpinSpeedRadS;
     const hx = ax * hMag;
     const hy = ay * hMag;
     const hz = az * hMag;
 
-    // tau_gyro = - (omega_body x H) (reaction torque on vehicle hull)
     const tauX = -(wy * hz - wz * hy);
     const tauY = -(wz * hx - wx * hz);
     const tauZ = -(wx * hy - wy * hx);
@@ -155,9 +143,6 @@ export class TorqueLedger {
     });
   }
 
-  /**
-   * Sum of reaction torques from all propellers (Q_prop_total).
-   */
   public get Q_prop_total(): number {
     let q = 0;
     for (const e of this.entriesMap.values()) {
@@ -168,9 +153,6 @@ export class TorqueLedger {
     return q;
   }
 
-  /**
-   * Sum of counter-torques from all stator vanes (Q_stator_total).
-   */
   public get Q_stator_total(): number {
     let q = 0;
     for (const e of this.entriesMap.values()) {
@@ -181,9 +163,6 @@ export class TorqueLedger {
     return q;
   }
 
-  /**
-   * Net reaction and recovery torque: Q_net = sum of all roll torque sources.
-   */
   public get Q_net(): number {
     let roll = 0;
     for (const e of this.entriesMap.values()) {
@@ -192,64 +171,32 @@ export class TorqueLedger {
     return roll;
   }
 
-  /**
-   * Unopposed initial angular roll acceleration (rad/s^2):
-   * alpha_roll = Q_net / (I_vehicle + I_added_mass)
-   */
   public get unopposedRollAccelRadS2(): number {
     const inertia = Math.max(1e-7, this.effectiveRollInertiaKgM2);
     return this.Q_net / inertia;
   }
 
-  /**
-   * Predicted steady-state terminal roll rate (rad/s) accounting for hydrodynamic rotational drag:
-   * omega_terminal = Q_net / B_roll
-   */
   public get omega_terminal_roll(): number {
     const damping = Math.max(1e-7, this.rollDampingNmPerRadS);
     return this.Q_net / damping;
   }
 
-  /**
-   * Backward compatibility alias for terminal roll rate in rad/s.
-   */
   public get omega_roll(): number {
     return this.omega_terminal_roll;
   }
 
-  /**
-   * Terminal roll rate in deg/m at standard forward speed U = 1.0 m/s:
-   * deg/m = (omega_terminal / 1.0) * (180 / PI)
-   */
   public get terminalRollRateDegPerM_at_1ms(): number {
     return (Math.abs(this.omega_terminal_roll) / 1.0) * (180.0 / Math.PI);
   }
 
-  /**
-   * Backward compatibility alias for terminal roll rate in deg/m at 1 m/s.
-   */
   public get terminalRollRateDegPerM(): number {
     return this.terminalRollRateDegPerM_at_1ms;
   }
 
-  /**
-   * Backward compatibility alias for predicted roll rate in deg/m.
-   */
   public get predictedRollRateDegPerM(): number {
     return this.terminalRollRateDegPerM_at_1ms;
   }
 
-  /**
-   * Summarizes net torques, ledger breakdowns, and roll cancellation metrics.
-   * Mutates and returns a stable NetTorqueSummary object (zero allocations).
-   *
-   * @param forwardSpeedMs REQUIRED vehicle forward speed in m/s. Pass 1.0 for the
-   *        spec IMU anchor (U = 1.0 m/s); pass the live vehicle U elsewhere.
-   *        At-rest callers MUST pass 0 explicitly — this returns an invalid summary
-   *        (terminalRollRateDegPerM_at_1ms = NaN, valid = false) rather than silently
-   *        substituting a speed, because the crossflow-damping roll rate diverges as U → 0.
-   *        (Directive 1, Phase 6 principal review: no implicit 1 m/s default.)
-   */
   public getNetSummary(forwardSpeedMs: number): NetTorqueSummary {
     let roll = 0;
     let pitch = 0;
@@ -291,12 +238,8 @@ export class TorqueLedger {
     const damping = Math.max(1e-7, this.rollDampingNmPerRadS);
     const omegaTerminal = qNet / damping;
 
-    // Anchor value evaluated at U = 1.0 m/s matching Candidate A spec
     const terminalDegPerM_at_1ms = (Math.abs(omegaTerminal) / 1.0) * (180.0 / Math.PI);
 
-    // At-rest guard (explicit 0): roll-rate prediction is undefined because
-    // crossflow roll damping vanishes as U → 0. Surface an invalid summary
-    // instead of a silently speed-anchored number.
     let rollCancellationEfficiencyPct = 100.0;
     if (rollReactionRaw > 1e-6) {
       rollCancellationEfficiencyPct = Math.max(
@@ -329,9 +272,6 @@ export class TorqueLedger {
       return s;
     }
 
-    // Roll rate scaled with forward speed U:
-    // With cross-flow roll damping scaling as B_roll(U) = B_roll * (U / U_ref),
-    // deg/m = (omega_terminal(U) / U) * (180 / PI) = (Q_net / (B_roll * U^2)) * (180 / PI).
     const uEffective = forwardSpeedMs;
     const degPerM_at_U = (Math.abs(omegaTerminal) / uEffective) * (180.0 / Math.PI) * (1.0 / uEffective);
     s.rollNm = roll;

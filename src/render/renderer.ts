@@ -6,7 +6,7 @@ import { CausticTextureGenerator, applyUnderwaterOpticalProperties } from './wat
 import { Propeller3D } from '../prop/geometry';
 import { CANDIDATE_A_DESIGN } from '../prop/designs/index';
 import type { FluidGrid } from '../fluid/grid';
-import type { SimConfig } from '../core/config';
+import { DEBUG as debug, type SimConfig } from '../core/config';
 import { Vehicle3D, pointerToHorizontalPlane } from './vehicle3d';
 
 export interface RendererInitResult {
@@ -340,7 +340,7 @@ export class AppRenderer {
         renderer = new WebGPURenderer({ antialias: true, powerPreference: 'high-performance' });
         backend = 'WebGPU';
       } catch (err) {
-        console.warn('[Renderer] WebGPU initialization failed, falling back to WebGL2:', err);
+        if (debug) console.warn('[Renderer] WebGPU initialization failed, falling back to WebGL2:', err);
         renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
         backend = 'WebGL2';
       }

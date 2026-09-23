@@ -241,17 +241,12 @@ describe('Phase 6 — OverlaySystem', () => {
 
     console.log(`Measured 600-frame heap growth: ${growthMb.toFixed(3)} MB`);
 
-    // Assert retained heap growth:
-    // With explicit GC exposed (NODE_OPTIONS="--expose-gc" via npm test), assert retained growth < 1.0 MB (Directive 7).
-    // In standalone runners without exposed GC, V8 young generation nursery accumulates ~2.5 MB before scavenging,
-    // so verify that uncollected transient nursery overhead remains strictly bounded (< 4.0 MB).
     const maxAllowedMb = typeof (global as any).gc === 'function' ? 1.0 : 4.0;
     expect(growthMb).toBeLessThan(maxAllowedMb);
     system.dispose();
   });
 });
 
-/** Counts every Object3D in the subtree. */
 function countThreeObjects(root: THREE.Object3D): number {
   let n = 1;
   for (const child of root.children) n += countThreeObjects(child);

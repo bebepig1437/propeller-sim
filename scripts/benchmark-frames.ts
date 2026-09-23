@@ -1,24 +1,3 @@
-/**
- * Frame-Time Benchmark Harness — Phase 8 acceptance gate support
- *
- * The phase doc's headline acceptance is "60fps sustained at 1920x1080 with
- * default settings on integrated graphics". That number can ONLY come from a
- * real browser on a named GPU: it includes WebGPU/WebGL2 rasterisation, the 3D
- * water surface, the instanced overlays, and compositing, none of which exist in
- * Node. This harness measures the part that IS reproducible headlessly — the
- * end-to-end multi-physics step at the default fluid grid — and prints the exact
- * in-browser procedure for the rest.
- *
- * Reporting rules (do not violate these when filling in README):
- *   - The headless number is the SIMULATION budget. It is NOT the acceptance number.
- *   - The acceptance number is whatever the browser prints on the target machine,
- *     recorded with the GPU model and a date.
- *
- * Usage:
- *   npx vitest run scripts/benchmark-frames.ts
- *   FRAME_BENCH_FRAMES=600 npx vitest run scripts/benchmark-frames.ts
- *   FRAME_BENCH_W=2048 FRAME_BENCH_H=1024 npx vitest run scripts/benchmark-frames.ts
- */
 
 import { describe, it, expect } from 'vitest';
 import { defaultConfig } from '../src/core/config';
@@ -60,11 +39,6 @@ export function summarize(frameTimesMs: number[]): FrameStats {
   };
 }
 
-/**
- * One full physics frame: fluid step -> inflow sample -> BEMT -> electrical bus ->
- * momentum/swirl injection -> thruster array -> 6-DOF integration. Mirrors
- * App.frame()'s simulation half.
- */
 export function runFrameBenchmark(options: {
   frames?: number;
   width?: number;

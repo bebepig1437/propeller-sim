@@ -460,7 +460,6 @@ export class SimInspector {
       this.callbacks.onHandednessToggle?.(idx);
     });
 
-    // Stator event handlers
     this.container.querySelector('#btn-th-stator-toggle')?.addEventListener('click', () => {
       this.statorAttached = !this.statorAttached;
       this.renderThrusterSettings(idx);
@@ -490,12 +489,6 @@ export class SimInspector {
     });
   }
 
-  /**
-   * Live Phase 6b vehicle telemetry. Called every frame from the app; a no-op
-   * unless the vehicle panel is the active selection and the DOM is mounted.
-   * Position / velocity / attitude / buoyancy live HERE (not in the HUD strip),
-   * which stays focused on the at-a-glance propulsion numbers.
-   */
   public setVehicleTelemetry(view: VehicleTelemetryView | null): void {
     this.vehicleView = view;
     if (!view || this.currentSelection.type !== 'vehicle') return;

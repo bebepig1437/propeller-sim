@@ -1,3 +1,5 @@
+export const DEBUG = false;
+
 export interface RotorMountTuning {
   id: string;
   surgeM: number;

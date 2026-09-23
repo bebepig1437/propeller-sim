@@ -1,6 +1,7 @@
 
 
 import type { HudMetricsData } from '../types/telemetry';
+import { DEBUG as debug } from '../core/config';
 
 export interface SimulationWorkerBridgeOptions {
   canvas: HTMLCanvasElement;
@@ -26,7 +27,7 @@ export class SimulationWorkerBridge {
     const hasOffscreen = typeof this.canvas !== 'undefined' && typeof (this.canvas as any).transferControlToOffscreen === 'function';
 
     if (!hasWorker || !hasOffscreen) {
-      console.log('[WorkerBridge] OffscreenCanvas or Worker not supported; running in-thread');
+      if (debug) console.log('[WorkerBridge] OffscreenCanvas or Worker not supported; running in-thread');
       this.isWorkerActive = false;
       return false;
     }
@@ -61,10 +62,10 @@ export class SimulationWorkerBridge {
       );
 
       this.isWorkerActive = true;
-      console.log('[WorkerBridge] Successfully transferred OffscreenCanvas to Web Worker');
+      if (debug) console.log('[WorkerBridge] Successfully transferred OffscreenCanvas to Web Worker');
       return true;
     } catch (err) {
-      console.warn('[WorkerBridge] Failed to transfer canvas to Worker, falling back to in-thread:', err);
+      if (debug) console.warn('[WorkerBridge] Failed to transfer canvas to Worker, falling back to in-thread:', err);
       this.isWorkerActive = false;
       return false;
     }

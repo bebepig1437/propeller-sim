@@ -10,6 +10,7 @@ import { createMultigridComputeNodes } from './computeMultigrid';
 import { createProjectComputeNode } from './computeProject';
 import { createSourcesComputeNode } from './computeSources';
 import { StorageBufferAttribute } from 'three/webgpu';
+import { DEBUG as debug } from '../../core/config';
 
 export interface GpuPassTimings {
   submitMs: number;
@@ -400,7 +401,7 @@ export class GpuFluidSolver {
       this.cpuFallback.metrics.totalDyeMass = this.cpuFallback.computeTotalDyeMass();
       return this.cpuFallback.metrics;
     } catch (err) {
-      console.warn('[GpuFluidSolver] WebGPU compute error, falling back to CPU:', err);
+      if (debug) console.warn('[GpuFluidSolver] WebGPU compute error, falling back to CPU:', err);
       this.isGpuAccelerated = false;
       return this.stepCpuWithProfiling(dt);
     }
@@ -644,7 +645,7 @@ export class GpuFluidSolver {
     try {
       this.initBuffersAndComputeNodes(this.width, this.height);
     } catch (err) {
-      console.warn("[GpuFluidSolver] GPU pipeline reinitialization failed:", err);
+      if (debug) console.warn("[GpuFluidSolver] GPU pipeline reinitialization failed:", err);
       return false;
     }
 
@@ -661,10 +662,10 @@ export class GpuFluidSolver {
 
   public async handleDeviceLoss(): Promise<"reinit" | "webgl2" | "cpu"> {
     this.deviceLossCount++;
-    console.warn(`[GpuFluidSolver] Device loss event #${this.deviceLossCount}`);
+    if (debug) console.warn(`[GpuFluidSolver] Device loss event #${this.deviceLossCount}`);
     if (this.deviceLossCount <= 2) {
       if (this.reinitGpuPipeline()) return "reinit";
-      console.warn("[GpuFluidSolver] GPU pipeline reinit did not re-arm compute; stepping down a tier");
+      if (debug) console.warn("[GpuFluidSolver] GPU pipeline reinit did not re-arm compute; stepping down a tier");
     }
     if (this.deviceLossCount > 3) {
       this.setBackend("CPU");

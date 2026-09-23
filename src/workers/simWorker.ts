@@ -1,7 +1,7 @@
 
 
 import * as THREE from 'three';
-import { defaultConfig } from '../core/config';
+import { defaultConfig, DEBUG as debug } from '../core/config';
 import { FluidSolver } from '../fluid/FluidSolver';
 import { solveBEMT } from '../prop/bemt';
 import { PowerBus } from '../power/bus';
@@ -76,7 +76,7 @@ function initEngine(msg: WorkerInitMessage): void {
     renderer.setSize(msg.width, msg.height, false);
     renderer.setPixelRatio(msg.dpr);
   } catch (err) {
-    console.warn('[SimWorker] WebGLRenderer init on OffscreenCanvas failed:', err);
+    if (debug) console.warn('[SimWorker] WebGLRenderer init on OffscreenCanvas failed:', err);
   }
 
   scene = new THREE.Scene();

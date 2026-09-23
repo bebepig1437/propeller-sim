@@ -108,7 +108,7 @@ export function tickThermalBurst(state: PresetRuntimeState, dtS: number): boolea
     const justExpired = !state.specViolationLatched;
     state.specViolationLatched = true;
     if (justExpired) {
-      console.warn(`[Thermal Burst] ${state.presetName} window expired after ${state.burstRunTimeS.toFixed(2)} s — spec limit violation latched`);
+      console.warn(`[debug] [Thermal Burst] ${state.presetName} window expired after ${state.burstRunTimeS.toFixed(2)} s — spec limit violation latched`);
     }
     return justExpired;
   }

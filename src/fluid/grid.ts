@@ -85,9 +85,6 @@ export class FluidGrid {
     return field[y * this.width + x];
   }
 
-  /**
-   * Set scalar value in a buffer at (x, y) with bounds checking.
-   */
   public set(field: Float32Array, x: number, y: number, value: number): void {
     if (!this.inBounds(x, y)) {
       throw new RangeError(
@@ -139,15 +136,10 @@ export class FluidGrid {
     this.curl.fill(0);
   }
 
-  /**
-   * Fast bilinear interpolation of scalar field at continuous coordinates (x, y)
-   * in grid space [0, width-1] x [0, height-1]. Clamped to boundaries.
-   */
   public sampleBilinear(field: Float32Array, x: number, y: number): number {
     const W = this.width;
     const H = this.height;
 
-    // Clamp coordinates
     const cx = Math.max(0.5, Math.min(W - 1.5, x));
     const cy = Math.max(0.5, Math.min(H - 1.5, y));
 
@@ -172,9 +164,6 @@ export class FluidGrid {
     );
   }
 
-  /**
-   * Deep copies all active scalar and vector buffers from source grid.
-   */
   public copyFrom(source: FluidGrid): void {
     if (this.size !== source.size) return;
     this.u.set(source.u);
