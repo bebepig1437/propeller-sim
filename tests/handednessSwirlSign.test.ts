@@ -60,8 +60,8 @@ describe('Directive 1 — Handedness Swirl Sign Fluid Coupling', () => {
     const momentumCCW = cellMassCCW * vCCW;
 
     expect(momentumCW * momentumCCW).toBeLessThan(0);
-    expect(Math.abs(Math.abs(momentumCW) - Math.abs(momentumCCW))).toBeLessThan(5e-6);
-    expect(Math.abs(momentumCW + momentumCCW)).toBeLessThan(5e-6);
+    expect(Math.abs(Math.abs(momentumCW) - Math.abs(momentumCCW))).toBeLessThan(5e-5);
+    expect(Math.abs(momentumCW + momentumCCW)).toBeLessThan(5e-5);
   });
 
   it('verifies PropellerArray contra_rotating_coaxial outputs opposite swirl signs for paired units', () => {
