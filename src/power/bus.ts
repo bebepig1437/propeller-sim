@@ -1,4 +1,4 @@
-import { DCMotorModel, MotorOperatingState, MABUCHI_RC280RA_SPECS } from '../motor/motor';
+import { DCMotorModel, MotorOperatingState, MABUCHI_RC280RA_SPECS } from '../prop/motor';
 
 export interface MotorChannelConfig {
   id: string;

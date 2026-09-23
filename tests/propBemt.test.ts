@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { evaluateSectionPolar, generatePolarTable, defaultHydrofoilProps } from '../src/prop/polar';
-import { solveBEMT, getBladeChordAt, getBladePitchAngleAt } from '../src/prop/bemt';
+import { solveBemt, getBladeChordAt, getBladePitchAngleAt } from '../src/prop/bemt';
 import { calculatePropellerInertia, calculateAngularAcceleration, MATERIAL_SPECS, PropellerShaft } from '../src/prop/rigidbody';
 import { Propeller3D } from '../src/prop/geometry';
 
@@ -44,14 +44,14 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
 
   describe('Blade Element Momentum Theory Solver (bemt.ts)', () => {
     it('evaluates zero forces at zero RPM', () => {
-      const res = solveBEMT(0, 0);
+      const res = solveBemt(0, 0);
       expect(res.thrustN).toBe(0);
       expect(res.torqueNm).toBe(0);
       expect(res.efficiency).toBe(0);
     });
 
     it('solves Candidate A breakout bollard pull condition (4140 RPM, Va = 0)', () => {
-      const res = solveBEMT(4140, 0, {
+      const res = solveBemt(4140, 0, {
         diameterMm: 42.0,
         hubDiameterMm: 8.0,
         blades: 3,
@@ -83,7 +83,7 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       const KQ_spec = 0.024;
       const Q_spec = KQ_spec * rho * Math.pow(n, 2) * Math.pow(D, 5); 
 
-      const res = solveBEMT(rpm, 0, {
+      const res = solveBemt(rpm, 0, {
         diameterMm: 42.0,
         hubDiameterMm: 8.0,
         blades: 3,
@@ -110,7 +110,7 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       console.log('\n--- UIUC Propeller Database Validation ---');
       for (const pt of uiucPoints) {
         const Va = pt.J * n * D;
-        const res = solveBEMT(rpm, Va, {
+        const res = solveBemt(rpm, Va, {
           diameterMm: 106.7,
           hubDiameterMm: 16.0,
           blades: 2,
@@ -150,7 +150,7 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       console.log('\n--- J-Sweep Validation vs XROTOR Reference Table ---');
       for (const J of jPoints) {
         const Va = J * n * D;
-        const res = solveBEMT(rpm, Va, {
+        const res = solveBemt(rpm, Va, {
           diameterMm: 42.0,
           hubDiameterMm: 8.0,
           blades: 3,
@@ -186,8 +186,8 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
 
     it('validates handedness symmetry: flipping CW to CCW produces equal magnitude within 1e-6 and opposite torque sign', () => {
       const rpm = 3500;
-      const resCW = solveBEMT(rpm, 0.4, { handedness: 'CW' });
-      const resCCW = solveBEMT(rpm, 0.4, { handedness: 'CCW' });
+      const resCW = solveBemt(rpm, 0.4, { handedness: 'CW' });
+      const resCCW = solveBemt(rpm, 0.4, { handedness: 'CCW' });
 
       expect(resCW.thrustN).toBeGreaterThan(0);
       expect(resCCW.thrustN).toBeGreaterThan(0);
@@ -200,7 +200,7 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
     });
 
     it('computes locked-rotor drag forces with non-empty elements when |RPM| < 1', () => {
-      const resLocked = solveBEMT(0, 1.5); 
+      const resLocked = solveBemt(0, 1.5); 
       expect(resLocked.elements.length).toBe(20);
       expect(resLocked.thrustN).toBeLessThan(0);
       expect(resLocked.torqueNm).toBe(0);
@@ -216,9 +216,9 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
 
     it('shows thrust reduction and efficiency peak as advance ratio J increases', () => {
       const rpm = 4140;
-      const bollard = solveBEMT(rpm, 0.0);
-      const lowSpeed = solveBEMT(rpm, 0.5);
-      const cruiseSpeed = solveBEMT(rpm, 1.2);
+      const bollard = solveBemt(rpm, 0.0);
+      const lowSpeed = solveBemt(rpm, 0.5);
+      const cruiseSpeed = solveBemt(rpm, 1.2);
 
       expect(bollard.thrustN).toBeGreaterThan(lowSpeed.thrustN);
       expect(lowSpeed.thrustN).toBeGreaterThan(cruiseSpeed.thrustN);
@@ -229,8 +229,8 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
     });
 
     it('evaluates reverse thrust under negative RPM', () => {
-      const forward = solveBEMT(3500, 0);
-      const reverse = solveBEMT(-3500, 0);
+      const forward = solveBemt(3500, 0);
+      const reverse = solveBemt(-3500, 0);
 
       expect(reverse.thrustN).toBeLessThan(0);
       expect(Math.abs(reverse.thrustN)).toBeLessThan(forward.thrustN);

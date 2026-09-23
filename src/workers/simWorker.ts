@@ -3,13 +3,13 @@
 import * as THREE from 'three';
 import { defaultConfig, DEBUG as debug } from '../core/config';
 import { FluidSolver } from '../fluid/FluidSolver';
-import { solveBEMT } from '../prop/bemt';
+import { solveBemt } from '../prop/bemt';
 import { PowerBus } from '../power/bus';
 import { ActuatorDiscCoupler } from '../prop/coupling';
 import { PropellerArray } from '../prop/array';
 import { VehicleBody } from '../vehicle/body';
 import { stepVehicleRigidBody } from '../vehicle/integrator';
-import { SimClock } from '../sim/clock';
+import { SimClock } from '../core/clock';
 import type { HudMetricsData } from '../types/telemetry';
 
 export interface WorkerInitMessage {
@@ -137,7 +137,7 @@ function stepAndRender(nowMs: number): void {
     const v = vehicle;
     clock.tick(nowMs, (dt) => {
       const va = c.sampleInflowVelocity(f.grid);
-      const bemt = solveBEMT(activeRpm * activeThrottle, va);
+      const bemt = solveBemt(activeRpm * activeThrottle, va);
       b.solveBusNetwork([activeThrottle, 0, 0], [() => Math.abs(bemt.torqueNm), () => 0, () => 0]);
       b.stepThermal(dt);
       c.injectCouplingForces(f.grid, bemt, dt);

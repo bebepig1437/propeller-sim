@@ -144,22 +144,17 @@ All internal computation engines must compute strictly in standard SI units. Con
 3. **Renderer Fallback**: `WebGPURenderer` is the primary target with automated fallback to `WebGLRenderer` on unsupported clients.
 4. **Vehicle state is authoritative in `src/vehicle/body.ts`**: the 3D stage (`src/render/vehicle3d.ts`) mirrors that pose and reports direct-manipulation edits *back* through callbacks. The stage never owns physics state; the physics body never reads from the scene graph. Stage direct manipulation writes position and yaw only — pitch and roll are owned by the buoyancy model.
 
-5. **Shipped module layout (documented deviation from the phase doc's Phase 0 sketch).**
-   The phase document sketches `src/prop/motor.ts` and `src/fluid/sources.ts`. Neither
-   path exists; the shipped tree is authoritative:
-   - **`src/motor/motor.ts`** — the electromechanical DC motor model (`DCMotorModel`,
-     `MABUCHI_RC280A_SPECS`), imported by `src/power/bus.ts`. It is an electrical machine
-     model, not a hydrodynamic one, so it does not live under `src/prop/`.
-   - **`src/prop/coupling.ts`** — `ActuatorDiscCoupler`: the legacy single-prop actuator-disc
-     momentum/velocity injection.
-   - **`src/vehicle/coupling.ts`** — `VehicleFluidCoupler`: the 6-DOF vehicle↔fluid loop.
-     **The two couplers are not interchangeable.** §10.7's advance-speed convention
-     $V_a = (\vec{v}_{disk} - \vec{v}_{fluid})\cdot\hat{a}$ applies to the *vehicle* one only;
-     mixing the two silently inverts the sign of the coupling.
-   - **No `src/fluid/sources.ts`** — inflow/plume sources are `FluidSolver.jet`, rendered by
-     `src/fluid/FluidRenderer2D.ts`.
-   - Phase 8 added `src/sim/` (clock, interpolation, adaptive resolution, recovery),
-     `src/workers/`, `src/scene/`, `src/config/`, `src/types/`, and `src/validation.ts`.
+5. **Canonical Module Layout (Zero Dual-Path Shims or Aliases).**
+   Every functional module lives at a single authoritative path without re-export shims or dual-path aliases:
+   - **`src/prop/motor.ts`** — the canonical electromechanical DC motor model (`DCMotorModel`, `MABUCHI_RC280A_SPECS`). `src/motor/` has been pruned.
+   - **`src/core/clock.ts`** — the single canonical simulation clock (`SimulationClock`). `src/sim/clock.ts` has been pruned.
+   - **`src/prop/bemt.ts`** — exports single canonical `solveBemt`. Dual-path `solveBEMT` alias is eliminated.
+   - **`src/fluid/pressure.ts`** — exports canonical `solvePressure`, `solvePressurePoisson`, `solvePressureMultigrid`. Dual-path aliases are eliminated.
+   - **`src/fluid/grid.ts`** — `FluidGrid` directly embeds `solid: Uint8Array`. Intersection workarounds are eliminated.
+   - **`src/prop/coupling.ts`** — `ActuatorDiscCoupler`: single-prop actuator-disc momentum/velocity injection.
+   - **`src/vehicle/coupling.ts`** — `VehicleFluidCoupler`: 6-DOF vehicle↔fluid loop.
+   - **`src/fluid/sources.ts`** — inflow/plume sources (`InflowJet`).
+   - `src/sim/` contains interpolation, adaptive resolution, and recovery modules.
 
 ---
 

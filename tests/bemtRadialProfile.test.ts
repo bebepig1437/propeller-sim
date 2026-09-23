@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { solveBEMT, REVERSE_FLOW_BLEND_BAND_MS } from '../src/prop/bemt';
+import { solveBemt, REVERSE_FLOW_BLEND_BAND_MS } from '../src/prop/bemt';
 
 interface ReferenceStation {
   station: number;
@@ -50,7 +50,7 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
     const J = 0.40;
     const Va = J * n * D; 
 
-    const res = solveBEMT(rpm, Va, {
+    const res = solveBemt(rpm, Va, {
       diameterMm: 42.0,
       hubDiameterMm: 8.0,
       blades: 3,
@@ -108,7 +108,7 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
 
     for (let s = 0; s <= numSteps; s++) {
       const vInflow = -bandHalf + s * stepSize;
-      const res = solveBEMT(rpm, vInflow, {
+      const res = solveBemt(rpm, vInflow, {
         diameterMm: 42.0,
         hubDiameterMm: 8.0,
         blades: 3,
@@ -143,7 +143,7 @@ describe('Directive 3 — BEMT Radial Profile & Hub Loss Verification', () => {
   it('validates no force discontinuity > 5% across U_inf sweep at 0.02, 0.05, 0.08 m/s', () => {
     const rpm = 4140;
     const testSpeeds = [0.02, 0.05, 0.08];
-    const results = testSpeeds.map(v => solveBEMT(rpm, v, {
+    const results = testSpeeds.map(v => solveBemt(rpm, v, {
       diameterMm: 42.0,
       hubDiameterMm: 8.0,
       blades: 3,

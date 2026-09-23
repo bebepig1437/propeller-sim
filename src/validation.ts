@@ -1,4 +1,4 @@
-import { solveBEMT } from "./prop/bemt";
+import { solveBemt } from "./prop/bemt";
 import { getPropDesign } from "./prop/designs/index";
 import { calculateTetherState } from "./power/tether";
 import { defaultConfig } from "./core/config";
@@ -61,7 +61,7 @@ export const MASTER_VALIDATION_LEDGER: MasterValidationRow[] = [
 
 export function computeSimThrust(rpm: number, throttle: number): number {
   const design = getPropDesign("candidateA");
-  const bemt = solveBEMT(Math.abs(rpm), 0.0, {
+  const bemt = solveBemt(Math.abs(rpm), 0.0, {
     design,
     material: "rigid10k",
     handedness: "CW"

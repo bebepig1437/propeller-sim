@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SimClock } from '../src/sim/clock';
+import { SimClock } from '../src/core/clock';
 import { defaultConfig } from '../src/core/config';
 import { calculateTetherVoltageDrop } from '../src/power/tether';
 import { GpuTimer } from '../src/telemetry/gpuTimer';

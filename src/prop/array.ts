@@ -1,4 +1,4 @@
-import { solveBEMT, BEMTResult } from './bemt';
+import { solveBemt, BEMTResult } from './bemt';
 import { StatorVaneSystem, StatorForceResult } from './stator';
 import { TorqueLedger, NetTorqueSummary } from './torqueLedger';
 
@@ -243,7 +243,7 @@ export class PropellerArray {
       const va = advanceSpeeds && advanceSpeeds[i] !== undefined ? advanceSpeeds[i] : 0;
       const rpm = u * unit.ratedRpm;
 
-      const bemt = solveBEMT(rpm, va, {
+      const bemt = solveBemt(rpm, va, {
         design: undefined, // Uses Candidate A design
         handedness: unit.handedness
       });

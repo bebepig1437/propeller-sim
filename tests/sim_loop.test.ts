@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { SimClock } from '../src/sim/clock';
+import { SimClock } from '../src/core/clock';
 import { computeInterpolatedPose } from '../src/sim/interpolation';
 import { VehicleStageController } from '../src/sim/stageController';
 import { Vehicle3D } from '../src/render/vehicle3d';

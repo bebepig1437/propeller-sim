@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { defaultConfig } from '../src/core/config';
 import { FluidSolver } from '../src/fluid/FluidSolver';
-import { solveBEMT } from '../src/prop/bemt';
+import { solveBemt } from '../src/prop/bemt';
 import { PowerBus } from '../src/power/bus';
 import { ActuatorDiscCoupler } from '../src/prop/coupling';
 import { PropellerArray } from '../src/prop/array';
@@ -67,7 +67,7 @@ export function runFrameBenchmark(options: {
   const stepFrame = () => {
     fluidSolver.step(dt);
     const va = coupler.sampleInflowVelocity(grid);
-    const bemt = solveBEMT(4140, va);
+    const bemt = solveBemt(4140, va);
     bus.solveBusNetwork(throttles, [() => bemt.torqueNm, () => bemt.torqueNm, () => bemt.torqueNm]);
     bus.stepThermal(dt);
     coupler.injectCouplingForces(grid, bemt, dt);

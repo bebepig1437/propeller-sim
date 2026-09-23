@@ -5,12 +5,8 @@ export class ServiceRegistry {
     this.services.set(key, service);
   }
 
-  public static get<T>(key: string): T {
-    const s = this.services.get(key);
-    if (!s) {
-      throw new Error(`Service not found in registry: ${key}`);
-    }
-    return s as T;
+  public static get<T>(key: string): T | undefined {
+    return this.services.get(key) as T | undefined;
   }
 
   public static has(key: string): boolean {
