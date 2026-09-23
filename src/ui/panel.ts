@@ -1,5 +1,3 @@
-
-
 import { Pane } from 'tweakpane';
 import { SimConfig } from '../core/config';
 import { OverlayState, OverlayTunables, MAX_STREAMLINES, MAX_PARTICLES_TUNABLE } from '../render/overlays';
@@ -136,7 +134,6 @@ export class ControlPanel {
       expanded: true
     });
 
-
     const fluidFolder = this.pane.addFolder({ title: 'Fluid', expanded: true });
     fluidFolder.addBinding(config.fluid, 'viscosity', { min: 0.0, max: 0.005, step: 0.0001, label: 'Viscosity' });
     fluidFolder.addBinding(config.fluid, 'vorticityStrength', { min: 0.0, max: 8.0, step: 0.2, label: 'Vorticity' });
@@ -149,7 +146,6 @@ export class ControlPanel {
 
     const resetBtn = fluidFolder.addButton({ title: 'Reset Fluid Grid' });
     resetBtn.on('click', () => callbacks?.onResetFluid?.());
-
 
     const propFolder = this.pane.addFolder({ title: 'Propeller', expanded: true });
     propFolder.addBinding(this.propState, 'design', {
@@ -173,7 +169,6 @@ export class ControlPanel {
       label: 'Handedness'
     }).on('change', ev => callbacks?.onPropHandednessChange?.(ev.value as any));
 
-
     const elecFolder = this.pane.addFolder({ title: 'Electrical', expanded: false });
     elecFolder.addBinding(this.electricalState, 'supplyV', { min: 9.0, max: 18.0, step: 0.1, label: 'Supply V' })
       .on('change', () => callbacks?.onElectricalChange?.());
@@ -191,7 +186,6 @@ export class ControlPanel {
 
     elecFolder.addBinding(this.electricalState, 'thermalEnabled', { label: 'Thermal On/Off' })
       .on('change', () => callbacks?.onElectricalChange?.());
-
 
     const arrayFolder = this.pane.addFolder({ title: 'Array', expanded: false });
     arrayFolder.addBinding(this.arrayState, 'propulsorCount', { min: 1, max: 6, step: 1, label: 'Propulsor Count' })
@@ -224,11 +218,9 @@ export class ControlPanel {
     statorFolder.addBinding(this.arrayState, 'statorIncidenceDeg', { min: -15.0, max: 15.0, step: 0.2, label: 'Incidence (°)' })
       .on('change', () => callbacks?.onArrayChange?.());
 
-
     if (vehicleInit) {
       this.buildVehicleGroup(config, vehicleInit, callbacks);
     }
-
 
     if (overlayState && overlayTunables) {
       const overlayFolder = this.pane.addFolder({ title: 'Overlays', expanded: false });
@@ -260,7 +252,6 @@ export class ControlPanel {
       overlayFolder.addBinding(overlayTunables, 'rollIndicatorGain', { min: 0.2, max: 4.0, step: 0.1, label: 'Roll Gain' });
     }
 
-
     const renderFolder = this.pane.addFolder({ title: 'Rendering', expanded: false });
     const resBinding = renderFolder.addBinding(config.fluid, 'resolutionPreset', {
       options: { '1024x512 (Ultra)': '1024x512', '512x256 (High)': '512x256', '256x128 (Standard)': '256x128' },
@@ -278,7 +269,6 @@ export class ControlPanel {
 
     const orbitBtn = renderFolder.addButton({ title: 'Preset: Orbit View' });
     orbitBtn.on('click', () => callbacks?.onResetOrbitView?.());
-
 
     const diagFolder = this.pane.addFolder({ title: 'Diagnostics', expanded: false });
     diagFolder.addBinding(this.metrics, 'fps', { readonly: true, label: 'FPS', format: (v: number) => v.toFixed(1) });

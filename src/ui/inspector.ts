@@ -1,45 +1,26 @@
-/**
- * Context-Sensitive Inspector Component (IBM Quantum Composer inspired)
- * Displays orthogonal controls for the currently selected object.
- * Advanced physics parameters live behind an "Advanced" fold closed by default.
- */
-
 export type InspectorSelection =
   | { type: 'none' }
   | { type: 'thruster'; index: number }
   | { type: 'vehicle' }
   | { type: 'fluid' };
 
-/**
- * Live Phase 6b vehicle telemetry for the inspector panel.
- * MARINE ORDER everywhere in the tuples (surge, sway, heave / roll, pitch, yaw)
- * — see CONVENTIONS.md §1.2. World tuples are the 3D stage frame.
- */
 export interface VehicleTelemetryView {
   positionWorldM: [number, number, number];
   velocityWorldMs: [number, number, number];
-  /** [u surge, v sway, w heave] m/s */
   velocityBodyMs: [number, number, number];
   eulerDeg: { rollDeg: number; pitchDeg: number; yawDeg: number };
-  /** [p roll, q pitch, r yaw] rad/s */
   ratesRadS: [number, number, number];
-  /** Net buoyancy (+0.197 N for Candidate A). */
   buoyancyForceN: number;
-  /** Total applied body force along the heave axis (thrust + drag + hydrostatics). */
   netVerticalForceN: number;
   dragForceN: [number, number, number];
   restoringTorqueNm: [number, number, number];
   thrustForceMarineN: [number, number, number];
   thrustMomentMarineNm: [number, number, number];
-  /** CoB−CoG lever (mm) — the passive static stability margin. */
   staticStabilityMm: number;
   dryMassG: number;
   displacedVolumeCm3: number;
-  /** Solid-body inertia tensor (marine order) kg·m². */
   inertiaBody: [number, number, number];
-  /** Translational added mass (marine order) kg. */
   addedMassBody: [number, number, number];
-  /** Roll deviation per meter of forward travel (deg/m), live forward speed. */
   rollDeviationDegPerM: number;
   tetherAttached: boolean;
   grounded: boolean;
@@ -75,7 +56,6 @@ export class SimInspector {
   private callbacks: InspectorCallbacks;
   private currentSelection: InspectorSelection = { type: 'none' };
 
-  // Run settings state
   public supplyV = 12.0;
   public tetherM = 4.6;
   public tetherFt = 15;
@@ -85,12 +65,10 @@ export class SimInspector {
   public thermalActive = true;
   public inflowDamping = 0.5;
 
-  // Array state
   public propulsorCount = 3;
   public handednessPreset = 'alternating';
   public perUnitThrottles: number[] = [1.0, 1.0, 0.0];
 
-  // Thruster state
   public thrusterThrottle = 0.881;
   public thrusterRpm = 3800;
   public thrusterPitch = 18.0;
@@ -100,16 +78,13 @@ export class SimInspector {
   public thrusterTempC = 20.0;
   public thrusterThermalState: 'OK' | 'WARN' | 'CUTOUT' = 'OK';
 
-  // Stator per selected unit
   public statorAttached = true;
   public statorIncidenceDeg = -5.2;
   public statorSlotted = true;
   public statorSlotChordPct = 40.0;
 
-  // Phase 6b vehicle telemetry (pushed from main.ts every frame)
   private vehicleView: VehicleTelemetryView | null = null;
 
-  // Fluid state
   public viscosity = 1e-6;
   public vorticityStrength = 0.15;
   public inflowVelocity = 1.2;

@@ -1,8 +1,3 @@
-/**
- * Left Palette Component (IBM Quantum Composer inspired)
- * Physical primitives: Vehicle, Thrusters, Stators, Propeller Designs, Materials.
- */
-
 export type HandednessPresetType =
   | 'alternating'
   | 'all_cw'
