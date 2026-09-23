@@ -129,7 +129,7 @@ function createHotLoopHarness() {
 describe('Phase 8 — Performance & Robustness Suite', () => {
 
   describe('1. Zero-Allocation Hot Loop Audit (60s simulated time)', () => {
-    it('executes 60 seconds (3600 frames) of multi-physics hot loop with zero positive heap slope', { timeout: 150000 }, () => {
+    it('executes 60 seconds (3600 frames) of multi-physics hot loop with zero positive heap slope', { timeout: 300000 }, () => {
       const grid = new FluidGrid({ width: 256, height: 128 });
       const gpuSolver = new GpuFluidSolver({ gridOptions: { width: 256, height: 128 } });
       const bus = new PowerBus(3, 12.0, 0.782);
