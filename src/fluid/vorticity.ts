@@ -1,3 +1,4 @@
+// Fedkiw et al.: Vorticity confinement to counteract numerical dissipation
 import type { FluidGrid } from './grid';
 
 let curlMagBuffer: Float32Array | null = null;

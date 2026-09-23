@@ -240,7 +240,8 @@ export class DCMotorModel {
   public stepThermal(currentA: number, dtSeconds: number): void {
     if (!this.thermalEnabled || dtSeconds <= 0) return;
 
-    const tau = this.specs.thermalResistanceKPerW * this.specs.thermalCapacitanceJPerK;
+    let tau = this.specs.thermalResistanceKPerW * this.specs.thermalCapacitanceJPerK;
+    if (tau <= 0 || !Number.isFinite(tau)) tau = 1e-6;
     const pJoule = Math.pow(currentA, 2) * this.specs.Ra_ohm;
 
     const decay = Math.exp(-dtSeconds / Math.max(1e-3, tau));

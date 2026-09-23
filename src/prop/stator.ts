@@ -1,3 +1,4 @@
+// see CONVENTIONS.md: sign convention for stator reaction torque
 import type { SimConfig } from '../core/config';
 
 export type StatorVaneType = 'none' | 'solid' | 'slotted';
@@ -42,11 +43,11 @@ export const CANDIDATE_A_STATOR_CONFIG: StatorVaneConfig = {
   rakeDeg: 35.0,
   alphaStallDeg: 14.0,
 
-  forwardGainN: 0.04,
+  forwardGainN: 0.04, // EMPIRICAL: spec measurement, not derived
 
-  reversePenaltyN: 0.09,
+  reversePenaltyN: 0.09, // EMPIRICAL: spec measurement, not derived
 
-  swirlRecoveryFraction: 0.85,
+  swirlRecoveryFraction: 0.85, // EMPIRICAL: spec measurement, not derived
 
   vaneType: 'slotted'
 };

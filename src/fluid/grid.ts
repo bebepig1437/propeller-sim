@@ -174,3 +174,9 @@ export class FluidGrid {
     this.curl.set(source.curl);
   }
 }
+
+export function makeGrid(width = 256, height = 128, dx = 1.0): FluidGrid & { solid: Uint8Array } {
+  const g = new FluidGrid({ width, height, dx }) as FluidGrid & { solid: Uint8Array };
+  g.solid = new Uint8Array(width * height);
+  return g;
+}

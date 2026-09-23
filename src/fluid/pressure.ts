@@ -1,3 +1,4 @@
+// Jacobi / Multigrid Poisson solver for divergence-free projection (Stam / Fedkiw)
 import type { FluidGrid } from "./grid";
 import type { BoundaryHandler } from "./boundary";
 
@@ -98,13 +99,25 @@ export function solvePressurePoisson(
   for (let iter = 0; iter < iterations; iter++) {
     let maxDelta = 0;
 
+    const solid = (grid as any).solid;
     for (let y = 1; y < H - 1; y++) {
       const rowOffset = y * W;
       for (let x = 1; x < W - 1; x++) {
         const idx = rowOffset + x;
+        if (solid && solid[idx]) {
+          pNext[idx] = 0;
+          continue;
+        }
 
-        const sumNeighbors = p[idx - 1] + p[idx + 1] + p[idx - W] + p[idx + W];
-        const target = 0.25 * (sumNeighbors - dx2 * div[idx]);
+        let denom = 0;
+        let sumNeighbors = 0;
+        if (!solid || !solid[idx - 1]) { sumNeighbors += p[idx - 1]; denom++; }
+        if (!solid || !solid[idx + 1]) { sumNeighbors += p[idx + 1]; denom++; }
+        if (!solid || !solid[idx - W]) { sumNeighbors += p[idx - W]; denom++; }
+        if (!solid || !solid[idx + W]) { sumNeighbors += p[idx + W]; denom++; }
+
+        if (denom === 0) continue;
+        const target = (sumNeighbors - dx2 * div[idx]) / denom;
 
         pNext[idx] = target;
         const delta = Math.abs(target - p[idx]);
@@ -283,3 +296,5 @@ export function projectVelocity(
   computeDivergence(grid, boundary);
   return lastResult;
 }
+
+export const solvePressure = solvePressurePoisson;

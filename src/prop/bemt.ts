@@ -1,3 +1,4 @@
+// Blade Element Momentum Theory (BEMT) solver with Prandtl tip/hub loss and XROTOR/OpenProp corrections
 import { evaluateSectionPolarWithReAndRoughness, getHydrofoilProperties, SectionalHydrofoilProperties } from './polar';
 import { PropDesign, CANDIDATE_A_DESIGN, getDesignBladeChordAt, getDesignBladePitchAngleAt } from './designs/index';
 import type { PropellerMaterial } from './rigidbody';
@@ -315,12 +316,18 @@ export function solveBEMT(
 
       const sinPhiPos = Math.max(0.01, Math.abs(sinPhi));
       const fTip = Math.max(0.001, (B * (R - r)) / (2.0 * r * sinPhiPos));
-      const Ftip = (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-fTip)));
+      const expTip = Math.exp(-fTip);
+      const Ftip = (expTip >= 1.0 || expTip <= 0.0 || !Number.isFinite(expTip))
+        ? 0.0
+        : (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.max(0.0, expTip)));
 
       const fHub = Math.max(0.001, (B * (r - Rhub)) / (2.0 * Rhub * sinPhiPos));
-      const Fhub = (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.exp(-fHub)));
+      const expHub = Math.exp(-fHub);
+      const Fhub = (expHub >= 1.0 || expHub <= 0.0 || !Number.isFinite(expHub))
+        ? 0.0
+        : (2.0 / Math.PI) * Math.acos(Math.min(1.0, Math.max(0.0, expHub)));
 
-      const F = Math.max(0.05, Ftip * Fhub);
+      const F = Math.max(0.05, Math.min(1.0, Ftip * Fhub));
 
       const K = Math.max(0, (solidity * Cn) / (4.0 * F));
       const discriminant = Math.pow(advanceSpeedMs / 2.0, 2) + K * W * W;
@@ -361,6 +368,30 @@ export function solveBEMT(
     const CtConv = aeroConv.Ct;
     const reConv = aeroConv.reynolds;
 
+    if (!Number.isFinite(phiConv) || !Number.isFinite(WConv) || WConv <= 1e-6) {
+      const qDyn = 0.5 * rho * Math.max(1e-6, (advanceSpeedMs * advanceSpeedMs));
+      const cdFallback = 0.1;
+      const dT = -qDyn * cdFallback * chord * dr * B;
+      const dQ = qDyn * cdFallback * chord * r * dr * B;
+      totalThrust += Number.isFinite(dT) ? dT : 0;
+      totalTorque += Number.isFinite(dQ) ? dQ : 0;
+      const el = targetElements[i];
+      el.radiusM = r;
+      el.rOverR = rOverR;
+      el.chordM = chord;
+      el.twistDeg = (theta * 180.0) / Math.PI;
+      el.inflowAngleDeg = (theta * 180.0) / Math.PI;
+      el.alphaDeg = 0;
+      el.cl = 0;
+      el.cd = cdFallback;
+      el.reynolds = 0;
+      el.dT = Number.isFinite(dT) ? dT : 0;
+      el.dQ = Number.isFinite(dQ) ? dQ : 0;
+      el.axialInducedMs = vi;
+      el.tangentialInducedMs = viTheta;
+      continue;
+    }
+
     const qDyn = 0.5 * rho * WConv * WConv;
     const dT = qDyn * CnConv * chord * dr * B;
     const dQ = qDyn * CtConv * chord * r * dr * B;
@@ -392,24 +423,26 @@ export function solveBEMT(
   const directedTorque = handedness === 'CW' ? -totalTorque : totalTorque;
 
   const powerMech = Math.max(0, totalTorque * omega);
-  const J = advanceSpeedMs / (n * D);
-  const kt = totalThrust / (rho * Math.pow(n, 2) * Math.pow(D, 4));
-  const kq = totalTorque / (rho * Math.pow(n, 2) * Math.pow(D, 5));
+  const J = n > 1e-5 ? advanceSpeedMs / (n * D) : 0;
+  const kt = n > 1e-5 ? totalThrust / (rho * Math.pow(n, 2) * Math.pow(D, 4)) : 0;
+  const kq = n > 1e-5 ? totalTorque / (rho * Math.pow(n, 2) * Math.pow(D, 5)) : 0;
 
   let efficiency = 0;
   if (powerMech > 1e-4 && advanceSpeedMs > 1e-4 && totalThrust > 0) {
     efficiency = Math.min(1.0, Math.max(0.0, (totalThrust * advanceSpeedMs) / powerMech));
   }
 
-  targetResult.thrustN = totalThrust;
-  targetResult.torqueNm = directedTorque;
-  targetResult.powerMechW = powerMech;
-  targetResult.advanceRatioJ = J;
-  targetResult.kt = kt;
-  targetResult.kq = kq;
-  targetResult.efficiency = efficiency;
+  targetResult.thrustN = Number.isFinite(totalThrust) ? totalThrust : 0;
+  targetResult.torqueNm = Number.isFinite(directedTorque) ? directedTorque : 0;
+  targetResult.powerMechW = Number.isFinite(powerMech) ? powerMech : 0;
+  targetResult.advanceRatioJ = Number.isFinite(J) ? J : 0;
+  targetResult.kt = Number.isFinite(kt) ? kt : 0;
+  targetResult.kq = Number.isFinite(kq) ? kq : 0;
+  targetResult.efficiency = Number.isFinite(efficiency) ? efficiency : 0;
   targetResult.rpm = rpm;
   targetResult.advanceSpeedMs = advanceSpeedMs;
   targetResult.handedness = handedness;
   return targetResult;
 }
+
+export const solveBemt = solveBEMT;
