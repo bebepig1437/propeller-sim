@@ -54,6 +54,9 @@ export class App {
     torque_Nm: 0,
     rpm: 0,
     inflow_velocity_ms: 0,
+    advance_ratio_J: 0,
+    tip_mach: 0,
+    timeScale: 1.0,
     fps: 60.0,
     frameMs: 16.6
   };
@@ -131,6 +134,10 @@ export class App {
           }
         }
       },
+      onSpeedChange: (scale) => {
+        this.clock.setTimeScale(scale);
+        this.metricsData.timeScale = scale;
+      },
       onInflowChange: (inflowMs) => {
         this.activeInflowVelocity = inflowMs;
         this.fluidSolver.jet.config.vx = inflowMs;
@@ -146,6 +153,21 @@ export class App {
         this.activeDesignId = designId;
         const design = getPropDesign(designId);
         this.renderer.prop3D.setDesign(design);
+      },
+      onVisualizationModeChange: (mode) => {
+        this.renderer.setVisualizationMode(mode);
+      },
+      onWakeEnvelopeToggle: (enabled) => {
+        this.renderer.flowViz.setWakeEnvelopeVisible(enabled);
+      },
+      onVelocityVectorsToggle: (enabled) => {
+        this.renderer.flowViz.setVelocityVectorsVisible(enabled);
+      },
+      onTipVorticesToggle: (enabled) => {
+        this.renderer.flowViz.setTipVorticesVisible(enabled);
+      },
+      onParticleTracersToggle: (enabled) => {
+        this.renderer.flowViz.setParticleTracersVisible(enabled);
       }
     });
 
@@ -184,10 +206,20 @@ export class App {
         this.coupler.injectCouplingForces(this.fluidSolver.grid, bemt, dt);
         this.fluidSolver.step(dt);
 
+        const diameterM = design.diameterMm * 0.001;
+        const nRps = this.shaft.currentRpm / 60.0;
+        /* Glauert (1935): J = V / (n * D) */
+        const advanceRatioJ = (nRps > 1e-3 && diameterM > 1e-4) ? (advanceSpeed / (nRps * diameterM)) : 0;
+        const tipSpeedMs = Math.PI * nRps * diameterM;
+        const tipMach = tipSpeedMs / 1480.0;
+
         this.metricsData.thrust_N = bemt.thrustN;
         this.metricsData.torque_Nm = bemt.torqueNm;
         this.metricsData.rpm = this.shaft.currentRpm;
         this.metricsData.inflow_velocity_ms = advanceSpeed;
+        this.metricsData.advance_ratio_J = advanceRatioJ;
+        this.metricsData.tip_mach = tipMach;
+        this.metricsData.timeScale = this.clock.timeScale;
       });
     }
 
@@ -197,6 +229,7 @@ export class App {
     this.gpuTimer.begin();
     this.renderer.render(
       this.shaft.bladePhaseRad,
+      this.shaft.currentRpm,
       this.metricsData.thrust_N,
       renderDt,
       this.fluidSolver.grid
@@ -224,5 +257,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
     const app = new App();
     app.init();
+    (window as any).__app = app;
   });
 }
+
