@@ -37,12 +37,15 @@ export class PipeTestStand {
     pipeGeo.rotateZ(-Math.PI / 2);
 
     const pipeMat = new THREE.MeshPhysicalMaterial({
-      color: 0x1e293b,
-      metalness: 0.1,
-      roughness: 0.1,
-      transmission: 0.85,
+      color: 0x88ccff,
+      metalness: 0.0,
+      roughness: 0.08,
+      transmission: 0.98,
+      thickness: 0.02,
+      ior: 1.33,
+      clearcoat: 1.0,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.45,
       side: THREE.DoubleSide,
       depthWrite: false
     });
@@ -59,8 +62,8 @@ export class PipeTestStand {
     shaftGeo.rotateZ(-Math.PI / 2);
 
     const shaftMat = new THREE.MeshStandardMaterial({
-      color: 0x94a3b8,
-      metalness: 0.85,
+      color: 0x888888,
+      metalness: 0.9,
       roughness: 0.25
     });
     this.shaftMesh = new THREE.Mesh(shaftGeo, shaftMat);
@@ -68,10 +71,10 @@ export class PipeTestStand {
     this.group.add(this.shaftMesh);
 
     const ringMat = new THREE.MeshStandardMaterial({
-      color: 0x38bdf8,
+      color: 0x5ec8ff,
       metalness: 0.5,
       roughness: 0.3,
-      emissive: 0x0284c7,
+      emissive: 0x1a5e8a,
       emissiveIntensity: 0.4
     });
 
@@ -86,13 +89,38 @@ export class PipeTestStand {
     this.outletRing.position.set(this.lengthM / 2, 0, 0);
     this.group.add(this.outletRing);
 
+    const seamGeo = new THREE.BufferGeometry();
+    const halfL = this.lengthM / 2;
+    const seamPositions = new Float32Array([
+      -halfL, this.radiusM, 0,
+       halfL, this.radiusM, 0,
+      -halfL, -this.radiusM, 0,
+       halfL, -this.radiusM, 0
+    ]);
+    seamGeo.setAttribute('position', new THREE.BufferAttribute(seamPositions, 3));
+    const seamMat = new THREE.LineBasicMaterial({
+      color: 0x5ec8ff,
+      transparent: true,
+      opacity: 0.25
+    });
+    this.seamLines = new THREE.LineSegments(seamGeo, seamMat);
+    this.group.add(this.seamLines);
+
     this.propMountX = -this.lengthM / 2 + this.lengthM * 0.25;
   }
 
+  public seamLines!: THREE.LineSegments;
+
   public dispose(): void {
     this.pipeMesh.geometry.dispose();
+    (this.pipeMesh.material as THREE.Material).dispose();
     this.shaftMesh.geometry.dispose();
+    (this.shaftMesh.material as THREE.Material).dispose();
     this.inletRing.geometry.dispose();
+    (this.inletRing.material as THREE.Material).dispose();
     this.outletRing.geometry.dispose();
+    (this.outletRing.material as THREE.Material).dispose();
+    this.seamLines.geometry.dispose();
+    (this.seamLines.material as THREE.Material).dispose();
   }
 }
