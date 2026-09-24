@@ -53,6 +53,15 @@ export interface SimConfig {
     targetFps: number;
     fixedDeltaTime: number;
     maxSubsteps: number;
+    timeScale: number;
+  };
+  visualization: {
+    timeScale: number;
+    mode: 'dye-velocity' | 'dye-vorticity' | 'pressure' | 'none';
+    showWakeEnvelope: boolean;
+    showVelocityVectors: boolean;
+    showTipVortices: boolean;
+    showParticleTracers: boolean;
   };
 }
 
@@ -112,6 +121,15 @@ export const defaultConfig: SimConfig = {
   clock: {
     targetFps: 60,
     fixedDeltaTime: 1.0 / 60.0,
-    maxSubsteps: 4
+    maxSubsteps: 4,
+    timeScale: 1.0
+  },
+  visualization: {
+    timeScale: 1.0,
+    mode: 'dye-velocity',
+    showWakeEnvelope: false,
+    showVelocityVectors: false,
+    showTipVortices: true,
+    showParticleTracers: true
   }
 };

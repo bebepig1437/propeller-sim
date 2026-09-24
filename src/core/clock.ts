@@ -7,10 +7,20 @@ export class SimClock {
   private isRunning = false;
   private substepCount = 0;
   private droppedTimeS = 0;
+  public timeScale = 1.0;
 
-  constructor(fixedDeltaTime = 1.0 / 60.0, maxSubsteps = 4) {
+  constructor(fixedDeltaTime = 1.0 / 60.0, maxSubsteps = 4, timeScale = 1.0) {
     this.fixedDeltaTime = fixedDeltaTime;
     this.maxSubsteps = maxSubsteps;
+    this.timeScale = timeScale;
+  }
+
+  public setTimeScale(scale: number): void {
+    this.timeScale = Math.max(0.001, Math.min(10.0, scale));
+  }
+
+  public getTimeScale(): number {
+    return this.timeScale;
   }
 
   public start(startTimeMs = performance.now()): void {
@@ -40,7 +50,7 @@ export class SimClock {
 
     const frameDeltaSec = Math.min((currentTimeMs - this.lastTime) / 1000.0, 0.25);
     this.lastTime = currentTimeMs;
-    this.accumulator += frameDeltaSec;
+    this.accumulator += frameDeltaSec * this.timeScale;
 
     let steps = 0;
     while (this.accumulator >= this.fixedDeltaTime && steps < this.maxSubsteps) {
