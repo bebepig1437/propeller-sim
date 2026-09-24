@@ -1,12 +1,20 @@
 import { PROP_DESIGNS } from '../prop/designs/index';
 
+export const SPEED_PRESETS = [0.01, 0.1, 0.25, 0.5, 1.0, 2.0] as const;
+
 export interface HeaderCallbacks {
   onRunToggle: (running: boolean) => void;
   onThrottleChange: (throttle: number) => void;
   onRecordToggle: () => void;
+  onSpeedChange?: (scale: number) => void;
   onInflowChange?: (inflowMs: number) => void;
   onVoltageChange?: (voltageV: number) => void;
   onDesignChange?: (designId: string) => void;
+  onVisualizationModeChange?: (mode: 'dye_velocity' | 'dye_vorticity' | 'pressure' | 'none') => void;
+  onWakeEnvelopeToggle?: (enabled: boolean) => void;
+  onVelocityVectorsToggle?: (enabled: boolean) => void;
+  onTipVorticesToggle?: (enabled: boolean) => void;
+  onParticleTracersToggle?: (enabled: boolean) => void;
 }
 
 export class SimHeader {
@@ -15,15 +23,29 @@ export class SimHeader {
   private recBtn: HTMLButtonElement;
   private throttleInput: HTMLInputElement;
   private throttleValEl: HTMLElement;
+
+  private speedSelect: HTMLSelectElement;
+
   private inflowInput: HTMLInputElement | null = null;
   private inflowValEl: HTMLElement | null = null;
   private voltageInput: HTMLInputElement | null = null;
   private voltageValEl: HTMLElement | null = null;
   private designSelect: HTMLSelectElement | null = null;
+  private timeScaleInput: HTMLInputElement | null = null;
+  private timeScaleValEl: HTMLElement | null = null;
+  private vizModeSelect: HTMLSelectElement | null = null;
+  private wakeToggle: HTMLInputElement | null = null;
+  private vectorToggle: HTMLInputElement | null = null;
+  private tipToggle: HTMLInputElement | null = null;
+  private tracerToggle: HTMLInputElement | null = null;
 
   private isRunning = true;
+  private currentPresetIndex = 4;
+  private callbacks?: HeaderCallbacks;
 
   constructor(container: HTMLElement, callbacks?: HeaderCallbacks) {
+    this.callbacks = callbacks;
+
     container.innerHTML = `
       <div class="header-left">
         <span class="app-title" id="app-title" title="prop-sim | 60 FPS">prop-sim</span>
@@ -47,6 +69,18 @@ export class SimHeader {
       </div>
 
       <div class="header-right">
+        <div class="speed-control">
+          <label for="speed-select" class="speed-label">Speed</label>
+          <select id="speed-select" class="speed-select" aria-label="Simulation Time Scale">
+            <option value="0.01">0.01×</option>
+            <option value="0.1">0.1×</option>
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="1.0" selected>1.0×</option>
+            <option value="2.0">2.0×</option>
+          </select>
+        </div>
+
         <button id="btn-run" class="btn-header btn-run state-running" aria-label="Toggle Simulation Run State">
           <span class="btn-dot"></span>
           <span class="btn-label">RUN</span>
@@ -85,6 +119,50 @@ export class SimHeader {
                 ).join('')}
               </select>
             </div>
+
+            <div class="advanced-field">
+              <div class="field-header">
+                <label for="timescale-slider">Time Scale</label>
+                <span id="timescale-val" class="field-val">1.00×</span>
+              </div>
+              <input type="range" id="timescale-slider" min="-2" max="0.301" step="0.01" value="0" />
+            </div>
+
+            <div class="advanced-field">
+              <div class="field-header">
+                <label for="vizmode-select">Visualization Mode</label>
+              </div>
+              <select id="vizmode-select" class="design-select">
+                <option value="dye_velocity" selected>Dye (velocity)</option>
+                <option value="dye_vorticity">Dye (vorticity)</option>
+                <option value="pressure">Pressure</option>
+                <option value="none">None</option>
+              </select>
+            </div>
+
+            <div class="advanced-toggle-row">
+              <label for="wake-toggle">Wake envelope</label>
+              <input type="checkbox" id="wake-toggle" class="adv-checkbox" />
+            </div>
+
+            <div class="advanced-toggle-row">
+              <label for="vector-toggle">Velocity vectors</label>
+              <input type="checkbox" id="vector-toggle" class="adv-checkbox" />
+            </div>
+
+            <div class="advanced-toggle-row">
+              <label for="tip-toggle">Tip vortices</label>
+              <input type="checkbox" id="tip-toggle" class="adv-checkbox" checked />
+            </div>
+
+            <div class="advanced-toggle-row">
+              <label for="tracer-toggle">Particle tracers</label>
+              <input type="checkbox" id="tracer-toggle" class="adv-checkbox" checked />
+            </div>
+
+            <div class="keyboard-hints">
+              Shortcuts: [ / ] speed · \\ reset 1.0x · Space run/pause
+            </div>
           </div>
         </details>
       </div>
@@ -95,46 +173,148 @@ export class SimHeader {
     this.recBtn = container.querySelector('#btn-rec') as HTMLButtonElement;
     this.throttleInput = container.querySelector('#throttle-slider') as HTMLInputElement;
     this.throttleValEl = container.querySelector('#throttle-value') as HTMLElement;
+    this.speedSelect = container.querySelector('#speed-select') as HTMLSelectElement;
 
     this.inflowInput = container.querySelector('#inflow-slider') as HTMLInputElement | null;
     this.inflowValEl = container.querySelector('#inflow-val') as HTMLElement | null;
     this.voltageInput = container.querySelector('#voltage-slider') as HTMLInputElement | null;
     this.voltageValEl = container.querySelector('#voltage-val') as HTMLElement | null;
     this.designSelect = container.querySelector('#design-select') as HTMLSelectElement | null;
+    this.timeScaleInput = container.querySelector('#timescale-slider') as HTMLInputElement | null;
+    this.timeScaleValEl = container.querySelector('#timescale-val') as HTMLElement | null;
+    this.vizModeSelect = container.querySelector('#vizmode-select') as HTMLSelectElement | null;
+    this.wakeToggle = container.querySelector('#wake-toggle') as HTMLInputElement | null;
+    this.vectorToggle = container.querySelector('#vector-toggle') as HTMLInputElement | null;
+    this.tipToggle = container.querySelector('#tip-toggle') as HTMLInputElement | null;
+    this.tracerToggle = container.querySelector('#tracer-toggle') as HTMLInputElement | null;
 
+    this.initEvents();
+  }
+
+  private initEvents(): void {
     this.runBtn.addEventListener('click', () => {
-      this.isRunning = !this.isRunning;
-      this.updateRunButton();
-      callbacks?.onRunToggle(this.isRunning);
+      this.toggleRun();
     });
 
     this.recBtn.addEventListener('click', () => {
-      callbacks?.onRecordToggle();
+      this.callbacks?.onRecordToggle();
     });
 
     this.throttleInput.addEventListener('input', () => {
       const val = parseFloat(this.throttleInput.value);
       const clamped = Math.max(0.0, Math.min(1.0, val));
       this.throttleValEl.textContent = `${Math.round(clamped * 100)}%`;
-      callbacks?.onThrottleChange(clamped);
+      this.callbacks?.onThrottleChange(clamped);
+    });
+
+    this.speedSelect.addEventListener('change', () => {
+      const val = parseFloat(this.speedSelect.value);
+      this.applySpeedScale(val);
     });
 
     this.inflowInput?.addEventListener('input', () => {
       const val = parseFloat(this.inflowInput!.value);
       if (this.inflowValEl) this.inflowValEl.textContent = `${val.toFixed(2)} m/s`;
-      callbacks?.onInflowChange?.(val);
+      this.callbacks?.onInflowChange?.(val);
     });
 
     this.voltageInput?.addEventListener('input', () => {
       const val = parseFloat(this.voltageInput!.value);
       if (this.voltageValEl) this.voltageValEl.textContent = `${val.toFixed(1)} V`;
-      callbacks?.onVoltageChange?.(val);
+      this.callbacks?.onVoltageChange?.(val);
     });
 
     this.designSelect?.addEventListener('change', () => {
       const val = this.designSelect!.value;
-      callbacks?.onDesignChange?.(val);
+      this.callbacks?.onDesignChange?.(val);
     });
+
+    this.timeScaleInput?.addEventListener('input', () => {
+      const logVal = parseFloat(this.timeScaleInput!.value);
+      const linearVal = Math.pow(10, logVal);
+      const closest = this.snapToPreset(linearVal);
+      this.applySpeedScale(closest);
+    });
+
+    this.vizModeSelect?.addEventListener('change', () => {
+      const mode = this.vizModeSelect!.value as 'dye_velocity' | 'dye_vorticity' | 'pressure' | 'none';
+      this.callbacks?.onVisualizationModeChange?.(mode);
+    });
+
+    this.wakeToggle?.addEventListener('change', () => {
+      this.callbacks?.onWakeEnvelopeToggle?.(this.wakeToggle!.checked);
+    });
+
+    this.vectorToggle?.addEventListener('change', () => {
+      this.callbacks?.onVelocityVectorsToggle?.(this.vectorToggle!.checked);
+    });
+
+    this.tipToggle?.addEventListener('change', () => {
+      this.callbacks?.onTipVorticesToggle?.(this.tipToggle!.checked);
+    });
+
+    this.tracerToggle?.addEventListener('change', () => {
+      this.callbacks?.onParticleTracersToggle?.(this.tracerToggle!.checked);
+    });
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', (e) => {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) {
+          return;
+        }
+        if (e.key === '[') {
+          this.stepPreset(-1);
+        } else if (e.key === ']') {
+          this.stepPreset(1);
+        } else if (e.key === '\\') {
+          this.applySpeedScale(1.0);
+        } else if (e.key === ' ' || e.code === 'Space') {
+          e.preventDefault();
+          this.toggleRun();
+        }
+      });
+    }
+  }
+
+  private toggleRun(): void {
+    this.isRunning = !this.isRunning;
+    this.updateRunButton();
+    this.callbacks?.onRunToggle(this.isRunning);
+  }
+
+  private snapToPreset(val: number): number {
+    let closest: number = SPEED_PRESETS[0];
+    let minDiff = Math.abs(val - closest);
+    for (let i = 1; i < SPEED_PRESETS.length; i++) {
+      const diff = Math.abs(val - SPEED_PRESETS[i]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = SPEED_PRESETS[i];
+      }
+    }
+    return closest;
+  }
+
+  private stepPreset(delta: number): void {
+    const nextIdx = Math.max(0, Math.min(SPEED_PRESETS.length - 1, this.currentPresetIndex + delta));
+    this.applySpeedScale(SPEED_PRESETS[nextIdx]);
+  }
+
+  public applySpeedScale(scale: number): void {
+    let idx = SPEED_PRESETS.indexOf(scale as any);
+    if (idx === -1) {
+      scale = this.snapToPreset(scale);
+      idx = SPEED_PRESETS.indexOf(scale as any);
+    }
+    this.currentPresetIndex = idx >= 0 ? idx : 4;
+    this.speedSelect.value = scale.toString();
+    if (this.timeScaleValEl) {
+      this.timeScaleValEl.textContent = `${scale.toString()}×`;
+    }
+    if (this.timeScaleInput) {
+      this.timeScaleInput.value = Math.log10(scale).toFixed(3);
+    }
+    this.callbacks?.onSpeedChange?.(scale);
   }
 
   private updateRunButton(): void {

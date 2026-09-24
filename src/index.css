@@ -152,6 +152,35 @@ html, body {
   gap: 10px;
 }
 
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.speed-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.speed-select {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
 .btn-header {
   display: inline-flex;
   align-items: center;
@@ -240,7 +269,7 @@ html, body {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  width: 260px;
+  width: 280px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -248,7 +277,7 @@ html, body {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   z-index: 100;
   backdrop-filter: blur(8px);
 }
@@ -298,6 +327,33 @@ html, body {
   cursor: pointer;
 }
 
+.advanced-toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+.adv-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--border-focus);
+  cursor: pointer;
+}
+
+.keyboard-hints {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .design-select {
   background: var(--bg-base);
   border: 1px solid var(--border-subtle);
@@ -317,7 +373,7 @@ html, body {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background-color: var(--bg-base);
+  background: radial-gradient(circle at 50% 50%, #1a1f27 0%, #0b0e13 100%);
 }
 
 #viewport-container {
@@ -407,3 +463,15 @@ html, body {
 .neutral-accent {
   color: var(--accent-neutral);
 }
+
+.hud-time-suffix {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-thrust);
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
