@@ -311,12 +311,7 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       expect(prop.group).toBeInstanceOf(THREE.Group);
       expect(prop.rotorGroup).toBeInstanceOf(THREE.Group);
 
-      expect(prop.rotorGroup.children.length).toBe(6);
-
-      expect(prop.handlesGroup).toBeInstanceOf(THREE.Group);
-      expect(prop.translateHandle).toBeInstanceOf(THREE.Group);
-      expect(prop.pitchHandle).toBeInstanceOf(THREE.Group);
-      expect(prop.handednessBadge).toBeInstanceOf(THREE.Mesh);
+      expect(prop.rotorGroup.children.length).toBe(5);
 
       prop.setRotation(Math.PI / 4);
       expect(prop.rotorGroup.rotation.z).toBeCloseTo(Math.PI / 4, 3);

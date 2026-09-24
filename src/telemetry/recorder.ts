@@ -83,11 +83,11 @@ export class TelemetryRecorder {
   }
 
   public generateCsv(): string {
-    const numThrusters = this.records.length > 0 ? this.records[0].thrusters.length : 3;
+    const numProps = this.records.length > 0 ? this.records[0].thrusters.length : 1;
 
     const headers: string[] = ['t_s', 'dt_s', 'fps'];
 
-    for (let i = 0; i < numThrusters; i++) {
+    for (let i = 0; i < numProps; i++) {
       headers.push(
         `u${i}_rpm`,
         `u${i}_pitch_deg`,
@@ -141,7 +141,7 @@ export class TelemetryRecorder {
         r.fps.toFixed(1)
       ];
 
-      for (let i = 0; i < numThrusters; i++) {
+      for (let i = 0; i < numProps; i++) {
         const u = r.thrusters[i] || {
           rpm: 0,
           pitchDeg: 0,

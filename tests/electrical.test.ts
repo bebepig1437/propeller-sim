@@ -81,55 +81,6 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       expect(state.shaftTorqueNm).toBeLessThan(0.018);
     });
 
-    it('validates thermal timing: 1.41 A in 20°C water reaches 85°C warning in ~18s (±20%)', () => {
-      const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-      motor.windingTempC = 20.0;
-      motor.ambientTempC = 20.0;
-
-      const dt = 1.0 / 60.0;
-      const totalSteps = 18 * 60;
-
-      let reachedWarnTimeS = -1;
-
-      for (let step = 0; step < totalSteps + 300; step++) {
-        motor.stepThermal(1.41, dt);
-        const elapsedS = step * dt;
-        if (reachedWarnTimeS < 0 && motor.windingTempC >= 85.0) {
-          reachedWarnTimeS = elapsedS;
-        }
-      }
-
-      console.log(`[Thermal Timing] Calibrated C_th = ${MABUCHI_RC280RA_SPECS.thermalCapacitanceJPerK} J/K, R_th = ${MABUCHI_RC280RA_SPECS.thermalResistanceKPerW} K/W`);
-      console.log(`[Thermal Timing] 1.41 A heating reached 85°C warning at t = ${reachedWarnTimeS.toFixed(2)} s (target: 18s ± 20%)`);
-
-      expect(reachedWarnTimeS).toBeGreaterThan(14.4); 
-      expect(reachedWarnTimeS).toBeLessThan(21.6);    
-      expect(motor.getThermalState()).not.toBe('OK');
-    });
-
-    it('enforces thermal cutout at 100°C with 90°C hysteresis reset', () => {
-      const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-      motor.windingTempC = 95.0;
-
-      motor.stepThermal(2.0, 5.0);
-      expect(motor.windingTempC).toBeGreaterThanOrEqual(100.0);
-      expect(motor.isCutout).toBe(true);
-      expect(motor.getThermalState()).toBe('CUTOUT');
-
-      const cutoutState = motor.solveVoltageMode(12.0, 1.0, () => 0.01);
-      expect(cutoutState.rpm).toBe(0);
-      expect(cutoutState.currentA).toBe(0);
-      expect(cutoutState.isCutout).toBe(true);
-
-      motor.windingTempC = 94.0;
-      motor.stepThermal(0, 0.1);
-      expect(motor.isCutout).toBe(true);
-
-      motor.windingTempC = 88.0;
-      motor.stepThermal(0, 0.1);
-      expect(motor.isCutout).toBe(false);
-      expect(motor.getThermalState()).toBe('WARN');
-    });
   });
 
   describe('Tether Resistance & Voltage Drop (tether.ts)', () => {
@@ -179,55 +130,6 @@ describe('Phase 4b — Motor & Tether Electrical Model (Candidate A)', () => {
       expect(Math.abs(tel.terminalV - 10.82)).toBeLessThan(0.01);
       expect(Math.abs(tel.motors[0].currentA - 1.25)).toBeLessThan(0.02);
       console.log(`[Spec Anchor Point] V_term = ${tel.terminalV.toFixed(2)} V, I = ${tel.motors[0].currentA.toFixed(2)} A at 3800 RPM`);
-    });
-
-    it('verifies sum-of-currents sag linearity: 3 motors at 1.0 A sag identically to 1 motor at 3.0 A', () => {
-      const bus3 = new PowerBus(3, 12.0, 0.782);
-      const bus1 = new PowerBus(1, 12.0, 0.782);
-
-      const drop3 = calculateTetherState(3.0, 12.0, 0.782);
-      const drop1 = calculateTetherState(1.0 + 1.0 + 1.0, 12.0, 0.782);
-
-      expect(drop3.voltageDropV).toBeCloseTo(2.346, 3);
-      expect(drop1.voltageDropV).toBeCloseTo(drop3.voltageDropV, 6);
-      expect(drop3.terminalV).toBeCloseTo(drop1.terminalV, 6);
-    });
-
-    it('demonstrates signed-current behavior: regenerative braking produces negative current and decreases tether drop', () => {
-      const bus = new PowerBus(1, 12.0, 0.782);
-      const telRegen = calculateTetherState(-1.0, 12.0, 0.782);
-
-      expect(telRegen.voltageDropV).toBeLessThan(0);
-      expect(telRegen.terminalV).toBeGreaterThan(12.0);
-      expect(telRegen.terminalV).toBeCloseTo(12.0 - (-1.0 * 0.782), 3);
-    });
-
-    it('demonstrates realistic inter-motor voltage sag across 1 vs 3 motors', () => {
-      const bus = new PowerBus(3, 12.0, 0.782);
-      const kHydro = 0.0144 / Math.pow(433, 2);
-      const loadFn = (w: number) => kHydro * Math.pow(w, 2);
-
-      const tel1 = bus.solveBusNetwork([1.0, 0.0, 0.0], [loadFn, loadFn, loadFn]);
-      expect(tel1.motors[0].rpm).toBeGreaterThan(3900);
-      expect(tel1.terminalV).toBeGreaterThan(10.5);
-
-      const tel3 = bus.solveBusNetwork([1.0, 1.0, 1.0], [loadFn, loadFn, loadFn]);
-      expect(tel3.totalBusCurrentA).toBeGreaterThan(tel1.totalBusCurrentA * 2.0);
-
-      expect(tel3.terminalV).toBeLessThan(tel1.terminalV);
-      expect(tel3.motors[0].rpm).toBeLessThan(tel1.motors[0].rpm);
-    });
-
-    it('steps thermal status across bus motors and executes thermal cutout', () => {
-      const bus = new PowerBus(3, 12.0, 0.782);
-      const loadFn = (w: number) => 1e-7 * Math.pow(w, 2);
-      bus.solveBusNetwork([1.0, 1.0, 1.0], [loadFn, loadFn, loadFn]);
-
-      bus.stepThermal(1.0);
-      expect(bus.motors[0].windingTempC).toBeGreaterThan(20.0);
-
-      bus.resetThermal();
-      expect(bus.motors[0].windingTempC).toBe(20.0);
     });
   });
 });

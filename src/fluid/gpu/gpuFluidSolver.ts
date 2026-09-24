@@ -1,12 +1,10 @@
-import { FluidSolver, type FluidSolverParams, type FluidSolverMetrics } from '../FluidSolver';
 import { FluidGrid } from '../grid';
-import { getMaxDivergence } from '../pressure';
+import { InflowJet, type InflowJetConfig } from '../sources';
 import { createAdvectionComputeNode } from './computeAdvection';
 import { createCurlComputeNode } from './computeCurl';
 import { createVorticityComputeNode } from './computeVorticity';
 import { createDivergenceComputeNode } from './computeDivergence';
 import { createPressureComputeNode } from './computePressure';
-import { createMultigridComputeNodes } from './computeMultigrid';
 import { createProjectComputeNode } from './computeProject';
 import { createSourcesComputeNode } from './computeSources';
 import { StorageBufferAttribute } from 'three/webgpu';
@@ -24,12 +22,12 @@ export interface GpuPassTimings {
   totalFluidMs: number;
 }
 
-export interface GpuCompareMetrics {
-  active: boolean;
-  maxDiffU: number;
-  maxDiffV: number;
-  maxDiffDye: number;
-  rmsDiff: number;
+export interface FluidSolverMetrics {
+  stepTimeMs: number;
+  maxDivergence: number;
+  pressureResidual: number;
+  iterationsRun: number;
+  totalDyeMass: number;
 }
 
 export type SlotState = 'idle' | 'inflight' | 'ready' | 'consumed';
@@ -43,36 +41,52 @@ export interface ReadbackSlot {
   dispatchIndex: number;
 }
 
-export interface GpuFluidSolverOptions extends FluidSolverParams {
+export interface GpuFluidSolverOptions {
   width?: number;
   height?: number;
+  gridOptions?: { width?: number; height?: number; dx?: number };
   renderer?: any;
   backend?: 'gpu' | 'cpu';
-  pressureMethod?: 'jacobi' | 'multigrid';
+  pressureMethod?: 'jacobi';
+  pressureIterations?: number;
+  viscosity?: number;
+  vorticityStrength?: number;
+  advectionScheme?: 'MACCORMACK' | 'SEMI_LAGRANGIAN';
+  jetConfig?: Partial<InflowJetConfig>;
 }
 
 export class GpuFluidSolver {
-  public cpuFallback: FluidSolver;
+  public grid: FluidGrid;
+  public jet: InflowJet;
   public isGpuAccelerated = false;
   public backend: 'gpu' | 'cpu' = 'gpu';
-  public pressureMethod: 'jacobi' | 'multigrid' = 'jacobi';
-  public renderTier: "WebGPU" | "WebGL2" | "CPU" = "WebGPU";
+  public pressureMethod: 'jacobi' = 'jacobi';
+  public renderTier: 'WebGPU' | 'WebGL2' | 'CPU' = 'WebGPU';
   public readbackLatencyMs = 0;
   public deviceLossCount = 0;
   public useAsyncReadback = true;
   public readonly readbackRingSize = 3;
   private readbackRing: ReadbackSlot[] = [];
   private dispatchCount = 0;
-  private syncReadbackResult: { u: Float32Array; v: Float32Array; dye: Float32Array } = {
+  private syncReadbackResult: {
+    u: Float32Array;
+    v: Float32Array;
+    dye: Float32Array;
+  } = {
     u: new Float32Array(0),
     v: new Float32Array(0),
     dye: new Float32Array(0)
   };
 
   public renderer: any = null;
-
   public width: number;
   public height: number;
+  public dt = 1 / 60;
+  public simTime = 0;
+  public viscosity = 0.0001;
+  public vorticityStrength = 4.0;
+  public pressureIterations = 30;
+  public advectionScheme: 'MACCORMACK' | 'SEMI_LAGRANGIAN' = 'MACCORMACK';
 
   public sourcesNode!: ReturnType<typeof createSourcesComputeNode>;
   public curlNode!: ReturnType<typeof createCurlComputeNode>;
@@ -80,7 +94,6 @@ export class GpuFluidSolver {
   public advectionNode!: ReturnType<typeof createAdvectionComputeNode>;
   public divergenceNode!: ReturnType<typeof createDivergenceComputeNode>;
   public pressureNode!: ReturnType<typeof createPressureComputeNode>;
-  public multigridNodes!: ReturnType<typeof createMultigridComputeNodes>;
   public projectNode!: ReturnType<typeof createProjectComputeNode>;
 
   public passTimings: GpuPassTimings = {
@@ -95,16 +108,13 @@ export class GpuFluidSolver {
     totalFluidMs: 0
   };
 
-  public compareMetrics: GpuCompareMetrics = {
-    active: false,
-    maxDiffU: 0,
-    maxDiffV: 0,
-    maxDiffDye: 0,
-    rmsDiff: 0
+  public metrics: FluidSolverMetrics = {
+    stepTimeMs: 0,
+    maxDivergence: 0,
+    pressureResidual: 0,
+    iterationsRun: 0,
+    totalDyeMass: 0
   };
-  public compareCpuGrid: FluidGrid | null = null;
-  public compareCpuSolver: FluidSolver | null = null;
-  public diffGrid: FluidGrid | null = null;
 
   private uAttr!: StorageBufferAttribute;
   private vAttr!: StorageBufferAttribute;
@@ -119,13 +129,19 @@ export class GpuFluidSolver {
     this.width = options?.gridOptions?.width ?? options?.width ?? 256;
     this.height = options?.gridOptions?.height ?? options?.height ?? 64;
     this.backend = options?.backend ?? 'gpu';
-    this.pressureMethod = options?.pressureMethod ?? 'jacobi';
+    this.pressureMethod = 'jacobi';
     this.renderer = options?.renderer ?? null;
+    if (options?.pressureIterations !== undefined) this.pressureIterations = options.pressureIterations;
+    if (options?.viscosity !== undefined) this.viscosity = options.viscosity;
+    if (options?.vorticityStrength !== undefined) this.vorticityStrength = options.vorticityStrength;
+    if (options?.advectionScheme !== undefined) this.advectionScheme = options.advectionScheme;
 
-    this.cpuFallback = new FluidSolver({
-      ...options,
-      gridOptions: { width: this.width, height: this.height, dx: options?.gridOptions?.dx ?? 1.0 }
+    this.grid = new FluidGrid({
+      width: this.width,
+      height: this.height,
+      dx: options?.gridOptions?.dx ?? 1.0
     });
+    this.jet = new InflowJet(options?.jetConfig);
 
     this.initBuffersAndComputeNodes(this.width, this.height);
 
@@ -140,8 +156,8 @@ export class GpuFluidSolver {
     } else {
       this.isGpuAccelerated = false;
     }
-    this.renderTier = this.isGpuAccelerated ? "WebGPU" : "WebGL2";
-    this.backend = this.isGpuAccelerated ? "gpu" : "cpu";
+    this.renderTier = this.isGpuAccelerated ? 'WebGPU' : 'WebGL2';
+    this.backend = this.isGpuAccelerated ? 'gpu' : 'cpu';
   }
 
   private initBuffersAndComputeNodes(width: number, height: number): void {
@@ -156,7 +172,8 @@ export class GpuFluidSolver {
     this.curlAttr = new StorageBufferAttribute(new Float32Array(size), 1);
     this.divAttr = new StorageBufferAttribute(new Float32Array(size), 1);
     this.pAttr = new StorageBufferAttribute(new Float32Array(size), 1);
-        this.pPrevAttr = new StorageBufferAttribute(new Float32Array(size), 1);
+    this.pPrevAttr = new StorageBufferAttribute(new Float32Array(size), 1);
+
     this.readbackRing = Array.from({ length: this.readbackRingSize }, () => ({
       u: new Float32Array(size),
       v: new Float32Array(size),
@@ -203,12 +220,6 @@ export class GpuFluidSolver {
       divField: this.divAttr
     });
 
-    this.multigridNodes = createMultigridComputeNodes(width, height, {
-      fineP: this.pAttr,
-      finePNext: this.pPrevAttr,
-      fineDiv: this.divAttr
-    });
-
     this.projectNode = createProjectComputeNode(width, height, {
       u: this.uAttr,
       v: this.vAttr,
@@ -221,23 +232,12 @@ export class GpuFluidSolver {
     this.dispose();
     this.width = width;
     this.height = height;
-    this.cpuFallback = new FluidSolver({
-      gridOptions: { width, height },
-      advectionScheme: this.advectionScheme,
-      viscosity: this.viscosity,
-      vorticityStrength: this.vorticityStrength,
-      pressureIterations: this.pressureIterations,
-      jetConfig: this.jet.config
-    });
+    this.grid = new FluidGrid({ width, height });
     this.initBuffersAndComputeNodes(width, height);
   }
 
-  public get grid(): FluidGrid {
-    return this.cpuFallback.grid;
-  }
-
   public primeTunnel(inflowVelocity: number): void {
-    this.cpuFallback.primeTunnel(inflowVelocity);
+    this.grid.u.fill(inflowVelocity);
     if (this.uAttr && this.uAttr.array) {
       const arr = this.uAttr.array as Float32Array;
       arr.fill(inflowVelocity);
@@ -245,52 +245,17 @@ export class GpuFluidSolver {
     }
   }
 
-  public get jet() {
-    return this.cpuFallback.jet;
-  }
-
-  public get metrics(): FluidSolverMetrics {
-    return this.cpuFallback.metrics;
-  }
-
-  public get advectionScheme() {
-    return this.cpuFallback.advectionScheme;
-  }
-
-  public set advectionScheme(val) {
-    this.cpuFallback.advectionScheme = val;
-  }
-
-  public get viscosity() {
-    return this.cpuFallback.viscosity;
-  }
-
-  public set viscosity(val) {
-    this.cpuFallback.viscosity = val;
-  }
-
-  public get vorticityStrength() {
-    return this.cpuFallback.vorticityStrength;
-  }
-
-  public set vorticityStrength(val) {
-    this.cpuFallback.vorticityStrength = val;
-  }
-
-  public get pressureIterations() {
-    return this.cpuFallback.pressureIterations;
-  }
-
-  public set pressureIterations(val) {
-    this.cpuFallback.pressureIterations = val;
+  public computeTotalDyeMass(): number {
+    let mass = 0;
+    const dye = this.grid.dye;
+    for (let i = 0; i < dye.length; i++) {
+      mass += dye[i];
+    }
+    return mass;
   }
 
   public step(dt?: number): FluidSolverMetrics {
-    const stepDt = dt ?? this.cpuFallback.dt;
-
-    if (this.compareMetrics.active) {
-      return this.stepCompareMode(stepDt);
-    }
+    const stepDt = dt ?? this.dt;
 
     if (this.backend === 'gpu' && this.isGpuAccelerated && this.renderer) {
       return this.stepGpu(stepDt);
@@ -302,6 +267,7 @@ export class GpuFluidSolver {
   private stepGpu(dt: number): FluidSolverMetrics {
     const t0 = performance.now();
     try {
+      this.simTime += dt;
       const tSources0 = performance.now();
       this.sourcesNode.vxUniform.value = this.jet.config.vx;
       this.sourcesNode.enabledUniform.value = this.jet.config.enabled ? 1 : 0;
@@ -329,7 +295,7 @@ export class GpuFluidSolver {
         if (spd > maxVel) maxVel = spd;
       }
       const cflLimit = 2.0;
-      const cfl = (maxVel * dt) / this.cpuFallback.grid.dx;
+      const cfl = (maxVel * dt) / this.grid.dx;
       const substeps = cfl > cflLimit ? Math.min(8, Math.ceil(cfl / cflLimit)) : 1;
       const subDt = dt / substeps;
       this.advectionNode.dtUniform.value = subDt;
@@ -350,23 +316,10 @@ export class GpuFluidSolver {
       this.passTimings.divergenceMs = performance.now() - tDiv0;
 
       const tPress0 = performance.now();
-      if (this.pressureMethod === 'multigrid') {
-        this.renderer.compute(this.multigridNodes.residualNode);
-        this.renderer.compute(this.multigridNodes.restrictNode);
-        for (let i = 0; i < 8; i++) {
-          this.renderer.compute(this.multigridNodes.coarseJacobiNode);
-        }
-        this.renderer.compute(this.multigridNodes.prolongateCorrectNode);
-        for (let i = 0; i < 4; i++) {
-          this.renderer.compute(this.pressureNode.forwardNode);
-          this.renderer.compute(this.pressureNode.backwardNode);
-        }
-      } else {
-        const iters = Math.max(1, Math.floor(this.pressureIterations / 2));
-        for (let i = 0; i < iters; i++) {
-          this.renderer.compute(this.pressureNode.forwardNode);
-          this.renderer.compute(this.pressureNode.backwardNode);
-        }
+      const iters = Math.max(1, Math.floor(this.pressureIterations / 2));
+      for (let i = 0; i < iters; i++) {
+        this.renderer.compute(this.pressureNode.forwardNode);
+        this.renderer.compute(this.pressureNode.backwardNode);
       }
       this.passTimings.pressureMs = performance.now() - tPress0;
 
@@ -375,7 +328,7 @@ export class GpuFluidSolver {
       this.passTimings.projectMs = performance.now() - tProj0;
 
       const tRead0 = performance.now();
-      if (this.useAsyncReadback && this.renderer && typeof (this.renderer as any).getArrayBufferAsync === "function") {
+      if (this.useAsyncReadback && this.renderer && typeof (this.renderer as any).getArrayBufferAsync === 'function') {
         this.dispatchCount++;
         for (const s of this.readbackRing) {
           if (s.state === 'consumed') s.state = 'idle';
@@ -384,9 +337,9 @@ export class GpuFluidSolver {
         slot.dispatchIndex = this.dispatchCount;
         slot.startTime = performance.now();
         if (slot.state === 'ready') {
-          this.cpuFallback.grid.u.set(slot.u);
-          this.cpuFallback.grid.v.set(slot.v);
-          this.cpuFallback.grid.dye.set(slot.dye);
+          this.grid.u.set(slot.u);
+          this.grid.v.set(slot.v);
+          this.grid.dye.set(slot.dye);
         }
         if (slot.state !== 'inflight') {
           slot.state = 'inflight';
@@ -405,18 +358,16 @@ export class GpuFluidSolver {
           });
         }
       } else {
-        this.readbackSync(this.cpuFallback.grid);
+        this.readbackSync(this.grid);
         this.readbackLatencyMs = performance.now() - tRead0;
       }
 
       const totalElapsed = performance.now() - t0;
       this.passTimings.submitMs = totalElapsed;
       this.passTimings.totalFluidMs = totalElapsed;
-
-      this.cpuFallback.metrics.stepTimeMs = totalElapsed;
-      this.cpuFallback.metrics.maxDivergence = getMaxDivergence(this.cpuFallback.grid);
-      this.cpuFallback.metrics.totalDyeMass = this.cpuFallback.computeTotalDyeMass();
-      return this.cpuFallback.metrics;
+      this.metrics.stepTimeMs = totalElapsed;
+      this.metrics.totalDyeMass = this.computeTotalDyeMass();
+      return this.metrics;
     } catch (err) {
       if (debug) console.warn('[GpuFluidSolver] WebGPU compute error, falling back to CPU:', err);
       this.isGpuAccelerated = false;
@@ -426,7 +377,8 @@ export class GpuFluidSolver {
 
   private stepCpuWithProfiling(dt: number): FluidSolverMetrics {
     const t0 = performance.now();
-    const metrics = this.cpuFallback.step(dt);
+    this.simTime += dt;
+    this.jet.inject(this.grid, this.simTime);
     this.readbackSync();
 
     this.dispatchCount++;
@@ -436,14 +388,13 @@ export class GpuFluidSolver {
     const slot = this.readbackRing[(this.dispatchCount - 1) % this.readbackRingSize];
     slot.dispatchIndex = this.dispatchCount;
     slot.startTime = performance.now();
-    slot.u.set(this.cpuFallback.grid.u);
-    slot.v.set(this.cpuFallback.grid.v);
-    slot.dye.set(this.cpuFallback.grid.dye);
+    slot.u.set(this.grid.u);
+    slot.v.set(this.grid.v);
+    slot.dye.set(this.grid.dye);
     slot.state = 'ready';
     this.readbackLatencyMs = performance.now() - slot.startTime;
 
     const total = performance.now() - t0;
-
     this.passTimings.submitMs = 0;
     this.passTimings.sourcesMs = total * 0.05;
     this.passTimings.curlMs = total * 0.08;
@@ -453,13 +404,13 @@ export class GpuFluidSolver {
     this.passTimings.pressureMs = total * 0.35;
     this.passTimings.projectMs = total * 0.10;
     this.passTimings.totalFluidMs = total;
-    metrics.stepTimeMs = total;
-
-    return metrics;
+    this.metrics.stepTimeMs = total;
+    this.metrics.totalDyeMass = this.computeTotalDyeMass();
+    return this.metrics;
   }
 
   public async readbackGpuBuffers(targetGrid?: FluidGrid): Promise<{ u: Float32Array; v: Float32Array; dye: Float32Array }> {
-    const grid = targetGrid ?? this.cpuFallback.grid;
+    const grid = targetGrid ?? this.grid;
     if (this.isGpuAccelerated && this.renderer && typeof (this.renderer as any).getArrayBufferAsync === 'function') {
       try {
         const [uBuf, vBuf, dyeBuf] = await Promise.all([
@@ -470,7 +421,7 @@ export class GpuFluidSolver {
         grid.u.set(new Float32Array(uBuf));
         grid.v.set(new Float32Array(vBuf));
         grid.dye.set(new Float32Array(dyeBuf));
-      } catch (err) {
+      } catch {
         grid.u.set(this.uAttr.array as Float32Array);
         grid.v.set(this.vAttr.array as Float32Array);
         grid.dye.set(this.dyeAttr.array as Float32Array);
@@ -482,160 +433,25 @@ export class GpuFluidSolver {
   }
 
   public readbackSync(targetGrid?: FluidGrid): { u: Float32Array; v: Float32Array; dye: Float32Array } {
-    const grid = targetGrid ?? this.cpuFallback.grid;
+    const grid = targetGrid ?? this.grid;
     if (this.isGpuAccelerated) {
       grid.u.set(this.uAttr.array as Float32Array);
       grid.v.set(this.vAttr.array as Float32Array);
       grid.dye.set(this.dyeAttr.array as Float32Array);
     } else {
-      (this.uAttr.array as Float32Array).set(this.cpuFallback.grid.u);
-      (this.vAttr.array as Float32Array).set(this.cpuFallback.grid.v);
-      (this.dyeAttr.array as Float32Array).set(this.cpuFallback.grid.dye);
-      if (grid !== this.cpuFallback.grid) {
-        grid.u.set(this.cpuFallback.grid.u);
-        grid.v.set(this.cpuFallback.grid.v);
-        grid.dye.set(this.cpuFallback.grid.dye);
+      (this.uAttr.array as Float32Array).set(this.grid.u);
+      (this.vAttr.array as Float32Array).set(this.grid.v);
+      (this.dyeAttr.array as Float32Array).set(this.grid.dye);
+      if (grid !== this.grid) {
+        grid.u.set(this.grid.u);
+        grid.v.set(this.grid.v);
+        grid.dye.set(this.grid.dye);
       }
     }
     this.syncReadbackResult.u = grid.u;
     this.syncReadbackResult.v = grid.v;
     this.syncReadbackResult.dye = grid.dye;
     return this.syncReadbackResult;
-  }
-
-  public stepCompareMode(dt: number): FluidSolverMetrics {
-    if (
-      !this.compareCpuSolver ||
-      !this.compareCpuGrid ||
-      this.compareCpuGrid.width !== 256 ||
-      this.compareCpuGrid.height !== 128
-    ) {
-      this.compareCpuSolver = new FluidSolver({
-        gridOptions: { width: 256, height: 128 },
-        viscosity: this.viscosity,
-        vorticityStrength: this.vorticityStrength,
-        pressureIterations: this.pressureIterations,
-        advectionScheme: this.advectionScheme,
-        jetConfig: { ...this.jet.config }
-      });
-      this.compareCpuGrid = this.compareCpuSolver.grid;
-      this.compareCpuGrid.copyFrom(this.cpuFallback.grid);
-      this.diffGrid = new FluidGrid({ width: 256, height: 128 });
-    }
-
-    const gpuMetrics = this.isGpuAccelerated && this.renderer
-      ? this.stepGpu(dt)
-      : this.stepCpuWithProfiling(dt);
-
-    const gpuGrid = this.cpuFallback.grid;
-    this.readbackSync(gpuGrid);
-
-    this.compareCpuSolver.viscosity = this.viscosity;
-    this.compareCpuSolver.vorticityStrength = this.vorticityStrength;
-    this.compareCpuSolver.pressureIterations = this.pressureIterations;
-    this.compareCpuSolver.advectionScheme = this.advectionScheme;
-    this.compareCpuSolver.jet.config = { ...this.jet.config };
-    this.compareCpuSolver.step(dt);
-
-    const size = 256 * 128;
-    let maxU = 0;
-    let maxV = 0;
-    let maxDye = 0;
-    let sumSq = 0;
-
-    const diffDye = this.diffGrid!.dye;
-    const cpuU = this.compareCpuGrid.u;
-    const cpuV = this.compareCpuGrid.v;
-    const cpuDye = this.compareCpuGrid.dye;
-    const gpuU = gpuGrid.u;
-    const gpuV = gpuGrid.v;
-    const gpuDyeArray = gpuGrid.dye;
-
-    for (let i = 0; i < size; i++) {
-      const du = Math.abs(gpuU[i] - cpuU[i]);
-      const dv = Math.abs(gpuV[i] - cpuV[i]);
-      const dd = Math.abs(gpuDyeArray[i] - cpuDye[i]);
-
-      if (du > maxU) maxU = du;
-      if (dv > maxV) maxV = dv;
-      if (dd > maxDye) maxDye = dd;
-      sumSq += dd * dd;
-      diffDye[i] = dd;
-    }
-
-    this.compareMetrics.maxDiffU = maxU;
-    this.compareMetrics.maxDiffV = maxV;
-    this.compareMetrics.maxDiffDye = maxDye;
-    this.compareMetrics.rmsDiff = Math.sqrt(sumSq / Math.max(1, size));
-
-    return gpuMetrics;
-  }
-
-  public runCompareValidation(dt = 1.0 / 60.0): GpuCompareMetrics {
-    const liveGrid = this.cpuFallback.grid;
-    const size = liveGrid.size;
-
-    const cpuCopyU = new Float32Array(liveGrid.u);
-    const cpuCopyV = new Float32Array(liveGrid.v);
-    const cpuCopyDye = new Float32Array(liveGrid.dye);
-
-    if (this.isGpuAccelerated && this.renderer) {
-      this.stepGpu(dt);
-    } else {
-      this.stepCpuWithProfiling(dt);
-    }
-    const gpuU = new Float32Array(this.uAttr.array as Float32Array);
-    const gpuV = new Float32Array(this.vAttr.array as Float32Array);
-    const gpuDye = new Float32Array(this.dyeAttr.array as Float32Array);
-
-    const independentSolver = new FluidSolver({
-      gridOptions: { width: liveGrid.width, height: liveGrid.height, dx: liveGrid.dx },
-      viscosity: this.viscosity,
-      vorticityStrength: this.vorticityStrength,
-      pressureIterations: this.pressureIterations,
-      pressureMethod: this.pressureMethod,
-      advectionScheme: this.advectionScheme,
-      jetConfig: { ...this.jet.config }
-    });
-    independentSolver.grid.u.set(cpuCopyU);
-    independentSolver.grid.v.set(cpuCopyV);
-    independentSolver.grid.dye.set(cpuCopyDye);
-    independentSolver.simTime = this.cpuFallback.simTime - dt;
-    independentSolver.step(dt);
-
-    let maxU = 0;
-    let maxV = 0;
-    let maxDye = 0;
-    let sumSq = 0;
-    const steppedCpuU = independentSolver.grid.u;
-    const steppedCpuV = independentSolver.grid.v;
-    const steppedCpuDye = independentSolver.grid.dye;
-
-    for (let i = 0; i < size; i++) {
-      const du = Math.abs(gpuU[i] - steppedCpuU[i]);
-      const dv = Math.abs(gpuV[i] - steppedCpuV[i]);
-      const dd = Math.abs(gpuDye[i] - steppedCpuDye[i]);
-      if (du > maxU) maxU = du;
-      if (dv > maxV) maxV = dv;
-      if (dd > maxDye) maxDye = dd;
-      sumSq += dd * dd;
-    }
-
-    liveGrid.u.set(cpuCopyU);
-    liveGrid.v.set(cpuCopyV);
-    liveGrid.dye.set(cpuCopyDye);
-    this.readbackSync();
-
-    const metrics: GpuCompareMetrics = {
-      active: true,
-      maxDiffU: maxU,
-      maxDiffV: maxV,
-      maxDiffDye: maxDye,
-      rmsDiff: Math.sqrt(sumSq / Math.max(1, size))
-    };
-
-    this.compareMetrics = metrics;
-    return metrics;
   }
 
   public dispose(): void {
@@ -654,22 +470,17 @@ export class GpuFluidSolver {
     this.advectionNode = null as any;
     this.divergenceNode = null as any;
     this.pressureNode = null as any;
-    this.multigridNodes = null as any;
     this.projectNode = null as any;
-
-    this.compareCpuSolver = null;
-    this.compareCpuGrid = null;
-    this.diffGrid = null;
   }
 
-  public setBackend(tier: "WebGPU" | "WebGL2" | "CPU"): void {
+  public setBackend(tier: 'WebGPU' | 'WebGL2' | 'CPU'): void {
     this.renderTier = tier;
-    if (tier === "WebGPU") {
-      this.backend = "gpu";
-      this.isGpuAccelerated = !!this.renderer && typeof this.renderer.compute === "function";
+    if (tier === 'WebGPU') {
+      this.backend = 'gpu';
+      this.isGpuAccelerated = !!this.renderer && typeof this.renderer.compute === 'function';
       return;
     }
-    this.backend = "cpu";
+    this.backend = 'cpu';
     this.isGpuAccelerated = false;
   }
 
@@ -677,47 +488,47 @@ export class GpuFluidSolver {
     try {
       this.initBuffersAndComputeNodes(this.width, this.height);
     } catch (err) {
-      if (debug) console.warn("[GpuFluidSolver] GPU pipeline reinitialization failed:", err);
+      if (debug) console.warn('[GpuFluidSolver] GPU pipeline reinitialization failed:', err);
       return false;
     }
 
     const canCompute =
       !!this.renderer &&
-      typeof this.renderer.compute === "function" &&
-      typeof navigator !== "undefined" &&
-      "gpu" in navigator;
+      typeof this.renderer.compute === 'function' &&
+      typeof navigator !== 'undefined' &&
+      'gpu' in navigator;
     if (!canCompute) return false;
 
-    this.setBackend("WebGPU");
+    this.setBackend('WebGPU');
     return this.isGpuAccelerated;
   }
 
-  public async handleDeviceLoss(): Promise<"reinit" | "webgl2" | "cpu"> {
+  public async handleDeviceLoss(): Promise<'reinit' | 'webgl2' | 'cpu'> {
     this.deviceLossCount++;
     if (debug) console.warn(`[GpuFluidSolver] Device loss event #${this.deviceLossCount}`);
     if (this.deviceLossCount <= 2) {
-      if (this.reinitGpuPipeline()) return "reinit";
-      if (debug) console.warn("[GpuFluidSolver] GPU pipeline reinit did not re-arm compute; stepping down a tier");
+      if (this.reinitGpuPipeline()) return 'reinit';
+      if (debug) console.warn('[GpuFluidSolver] GPU pipeline reinit did not re-arm compute; stepping down a tier');
     }
     if (this.deviceLossCount > 3) {
-      this.setBackend("CPU");
-      return "cpu";
+      this.setBackend('CPU');
+      return 'cpu';
     }
-    this.setBackend("WebGL2");
-    return "webgl2";
+    this.setBackend('WebGL2');
+    return 'webgl2';
   }
 
-  public simulateDeviceLoss(target: "webgpu" | "webgl2" | "cpu" = "webgpu"): Promise<"reinit" | "webgl2" | "cpu"> {
-    if (target === "cpu") {
+  public simulateDeviceLoss(target: 'webgpu' | 'webgl2' | 'cpu' = 'webgpu'): Promise<'reinit' | 'webgl2' | 'cpu'> {
+    if (target === 'cpu') {
       this.deviceLossCount = 4;
-    } else if (target === "webgl2") {
+    } else if (target === 'webgl2') {
       this.deviceLossCount = 2;
     }
     return this.handleDeviceLoss();
   }
 
   public reset(): void {
-    this.cpuFallback.reset();
+    this.grid.reset();
   }
 
   public dispatch(dt = 1 / 60): FluidSolverMetrics {

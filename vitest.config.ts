@@ -9,34 +9,13 @@ export default defineConfig({
           testTimeout: 25000,
           name: "unit",
           include: ["tests/**/*.test.ts"],
-          exclude: ["tests/benchmark.test.ts", "tests/overlayBenchmark.test.ts"]
-        }
-      },
-      {
-        test: {
-          testTimeout: 60000,
-          name: "benchmark-overlay",
-          include: ["tests/overlayBenchmark.test.ts"],
-          pool: "forks",
-          forks: {
-            singleFork: true
-          }
+          exclude: ["tests/benchmark.test.ts"]
         }
       },
       {
         test: {
           name: "benchmark",
           include: ["tests/benchmark.test.ts"],
-          pool: "forks",
-          forks: {
-            singleFork: true
-          }
-        }
-      },
-      {
-        test: {
-          name: "profile",
-          include: ["scripts/**/*.ts"],
           pool: "forks",
           forks: {
             singleFork: true

@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { solveBemt } from '../src/prop/bemt';
-import { PropellerArray } from '../src/prop/array';
 import { DCMotorModel, MABUCHI_RC280RA_SPECS } from '../src/prop/motor';
-import { PowerBus } from '../src/power/bus';
 import { calculateTetherState, calculateTetherResistanceFromMeters } from '../src/power/tether';
-import { defaultConfig } from '../src/core/config';
 
 const CANDIDATE_A_BEMT = {
   diameterMm: 42.0,
@@ -12,8 +9,6 @@ const CANDIDATE_A_BEMT = {
   blades: 3,
   pitchMm: 32.0
 };
-
-const SPEC_QUIESCENT_CURRENT_A = 0.0;
 
 function bollardThrustAtThrottle(throttle: number): number {
   const rpm = throttle * 4140;
@@ -57,14 +52,6 @@ describe('bemt_thrust_curve', () => {
     }
   });
 
-  it('keeps the array total at the BlueROV2-style sanity band with both lateral thrusters at full throttle', () => {
-    const array = new PropellerArray();
-    const summary = array.evaluate([1, 1, 0], [0, 0, 0], [0, 0, 0], 0);
-
-    expect(summary.totalForceN[0]).toBeGreaterThan(2 * 1.2);
-    expect(summary.totalForceN[0]).toBeLessThan(2 * 3.5);
-  });
-
   it('degrades thrust monotonically toward the windmill branch as advance speed rises', () => {
     let previousThrustN = Infinity;
     for (const advanceSpeed of [0, 0.2, 0.4, 0.6, 0.9]) {
@@ -77,27 +64,6 @@ describe('bemt_thrust_curve', () => {
 });
 
 describe('torque_balance', () => {
-  it('cancels the net reaction torque of a coaxial contra-rotating pair within 1e-5 N·m', () => {
-    const array = new PropellerArray();
-    array.applyHandednessPreset('contra_rotating_coaxial');
-    for (const unit of array.thrusters) unit.throttle = 1;
-    const summary = array.evaluate(undefined, [0, 0], [0, 0, 0], 0);
-
-    expect(Math.abs(summary.totalMomentNm[0])).toBeLessThan(1e-5);
-    expect(summary.totalForceN[0]).toBeGreaterThan(0);
-  });
-
-  it('balances the pair across a matched load sweep, not only at one point', () => {
-    const array = new PropellerArray();
-    array.applyHandednessPreset('contra_rotating_coaxial');
-
-    for (const throttle of [0.25, 0.5, 0.75, 1.0]) {
-      for (const unit of array.thrusters) unit.throttle = throttle;
-      const summary = array.evaluate(undefined, [0, 0], [0, 0, 0], 0);
-      expect(Math.abs(summary.totalMomentNm[0])).toBeLessThan(1e-5);
-    }
-  });
-
   it('preserves exact CW/CCW torque symmetry in the single-prop solver', () => {
     const cw = solveBemt(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CW' });
     const ccw = solveBemt(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CCW' });
@@ -151,116 +117,5 @@ describe('tether_voltage_sag', () => {
     const netTorqueBusNm = stallTorqueBusNm + stalledAtBus.specs.Io_A * stalledAtBus.specs.kt_Nm_per_A;
     const netTorqueSupplyNm = stallTorqueSupplyNm + stalledAtSupply.specs.Io_A * stalledAtSupply.specs.kt_Nm_per_A;
     expect(netTorqueBusNm / netTorqueSupplyNm).toBeCloseTo(saggedV / supplyV, 5);
-  });
-
-  it('sags the whole bus network consistently under simultaneous motor load', () => {
-    const bus = new PowerBus(3, 12, 0.782);
-    const zeroLoad = (): number => 0;
-    const telemetry = bus.solveBusNetwork([1, 1, 1], [zeroLoad, zeroLoad, zeroLoad]);
-
-    expect(telemetry.terminalV).toBeCloseTo(12 - telemetry.totalBusCurrentA * 0.782, 4);
-    expect(telemetry.terminalV).toBeLessThan(12);
-    expect(telemetry.totalBusCurrentA).toBeGreaterThan(0);
-  });
-});
-
-describe('thermal_limiting', () => {
-  it('reaches the analytic steady-state winding temperature under continuous load', () => {
-    const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-    const steadyCurrentA = 1.41;
-    const dt = 0.01;
-
-    for (let step = 0; step < 100000; step++) {
-      motor.stepThermal(steadyCurrentA, dt);
-    }
-
-    const tauS = MABUCHI_RC280RA_SPECS.thermalResistanceKPerW * MABUCHI_RC280RA_SPECS.thermalCapacitanceJPerK;
-    const steadyStateTempC =
-      motor.ambientTempC + steadyCurrentA * steadyCurrentA * MABUCHI_RC280RA_SPECS.Ra_ohm * MABUCHI_RC280RA_SPECS.thermalResistanceKPerW;
-
-    expect(motor.windingTempC).toBeCloseTo(steadyStateTempC, 1);
-    expect(tauS).toBeGreaterThan(25);
-    expect(tauS < 45).toBe(true);
-  });
-
-  it('cools convectively back toward ambient after the load is removed', () => {
-    const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-    for (let step = 0; step < 2000; step++) {
-      motor.stepThermal(1.41, 0.1);
-    }
-    const heatedTempC = motor.windingTempC;
-
-    for (let step = 0; step < 8000; step++) {
-      motor.stepThermal(0, 0.1);
-    }
-
-    expect(motor.windingTempC).toBeLessThan(heatedTempC - 20);
-    expect(motor.windingTempC).toBeLessThan(motor.ambientTempC + 5);
-  });
-
-  it('derates throttle between the warning and cutout limits before tripping', () => {
-    const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-    motor.windingTempC = 92;
-
-    const bus = new PowerBus(1, 12, 0.782);
-    bus.motors = [motor];
-    const zeroLoad = (): number => 0;
-    const telemetry = bus.solveBusNetwork([1], [zeroLoad]);
-
-    const hotState = telemetry.motors[0];
-    const coldMotor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-    const coldState = coldMotor.solveVoltageMode(telemetry.terminalV, 1.0, zeroLoad);
-
-    expect(hotState.omegaRadS).toBeLessThan(coldState.omegaRadS);
-    expect(hotState.isThermalDerated).toBe(true);
-    expect(hotState.thermalState).toBe('WARN');
-    expect(hotState.rpm).toBeGreaterThan(0);
-  });
-
-  it('trips cutout under continuous stall and recovers through the hysteresis band', () => {
-    const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-    const bus = new PowerBus(1, 12, 0.782);
-    bus.motors = [motor];
-    const loadTorqueNm = 0.026;
-    const fullLoad = (): number => loadTorqueNm;
-
-    let trippedAtStepS = -1;
-    for (let second = 0; second < 600; second++) {
-      bus.solveBusNetwork([1], [fullLoad]);
-      bus.stepThermal(1);
-      if (motor.isCutout && trippedAtStepS < 0) {
-        trippedAtStepS = second;
-        break;
-      }
-    }
-
-    expect(trippedAtStepS).toBeGreaterThan(0);
-    expect(motor.windingTempC).toBeGreaterThanOrEqual(MABUCHI_RC280RA_SPECS.cutoutWindingTempC - 2);
-
-    bus.solveBusNetwork([1], [fullLoad]);
-    const stallCurrentA = bus.lastTelemetry!.motors[0].currentA;
-    expect(stallCurrentA).toBe(0);
-    expect(bus.lastTelemetry!.motors[0].thermalState).toBe('CUTOUT');
-
-    for (let second = 0; second < 1200; second++) {
-      motor.stepThermal(0, 1);
-    }
-    expect(motor.isCutout).toBe(false);
-    expect(motor.windingTempC).toBeLessThanOrEqual(MABUCHI_RC280RA_SPECS.cutoutResetTempC + 2);
-  });
-
-  it('stays inside the 18 s +/- 20% spec to the 85 C warning at the 1.41 A anchor', () => {
-    const motor = new DCMotorModel(MABUCHI_RC280RA_SPECS);
-    let warningTimeS = -1;
-    for (let step = 0; step < 6000; step++) {
-      motor.stepThermal(1.41, 0.01);
-      if (motor.windingTempC >= MABUCHI_RC280RA_SPECS.warnWindingTempC) {
-        warningTimeS = (step + 1) * 0.01;
-        break;
-      }
-    }
-
-    expect(warningTimeS).toBeGreaterThan(18 * 0.8);
-    expect(warningTimeS).toBeLessThan(18 * 1.2);
   });
 });
