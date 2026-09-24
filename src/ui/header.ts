@@ -1,292 +1,180 @@
-export type RunState = "idle" | "running" | "paused" | "error";
+import { PROP_DESIGNS } from '../prop/designs/index';
 
 export interface HeaderCallbacks {
-  onRunToggle: (nextState: RunState) => void;
-  onPresetSelect: (presetKey: string) => void;
-  onShare: () => void;
-  onExportCsv: () => void;
-  onValidationClick: () => void;
-  onRecordToggle?: () => void;
-  onImportSpecClick?: () => void;
+  onRunToggle: (running: boolean) => void;
+  onThrottleChange: (throttle: number) => void;
+  onRecordToggle: () => void;
+  onInflowChange?: (inflowMs: number) => void;
+  onVoltageChange?: (voltageV: number) => void;
+  onDesignChange?: (designId: string) => void;
 }
-
-export interface OperatingPointPreset {
-  key: string;
-  name: string;
-  label: string;
-  throttle: number;
-  rpm: number;
-  thrust_N: number;
-  current_A: number;
-  burst_s: number | null;
-  throttleVector: [number, number, number];
-}
-
-export const DEFAULT_PRESETS: OperatingPointPreset[] = [
-  {
-    key: "breakout",
-    name: "Breakout Burst",
-    label: "Breakout Burst (100% / +4.73 N / 1.41 A / 18s)",
-    throttle: 1.0,
-    rpm: 4140,
-    thrust_N: 4.73,
-    current_A: 1.41,
-    burst_s: 18,
-    throttleVector: [1.0, 1.0, 1.0]
-  },
-  {
-    key: "heavy_lift",
-    name: "Nominal Heavy Lift",
-    label: "Nominal Heavy Lift (88% / +3.99 N / 1.25 A / 50s)",
-    throttle: 0.881,
-    rpm: 3800,
-    thrust_N: 3.99,
-    current_A: 1.25,
-    burst_s: 50,
-    throttleVector: [0.881, 0.881, 0.881]
-  },
-  {
-    key: "cruise",
-    name: "Continuous Cruise",
-    label: "Continuous Cruise (67% / +2.49 N / 0.85 A / unlimited)",
-    throttle: 0.670,
-    rpm: 3000,
-    thrust_N: 2.49,
-    current_A: 0.85,
-    burst_s: null,
-    throttleVector: [0.670, 0.670, 0.0]
-  },
-  {
-    key: "full_dive",
-    name: "Controlled Full Dive",
-    label: "Controlled Full Dive (-84% / -2.82 N / 1.18 A / 65s)",
-    throttle: -0.840,
-    rpm: 3650,
-    thrust_N: -2.82,
-    current_A: 1.18,
-    burst_s: 65,
-    throttleVector: [-0.840, -0.840, -0.840]
-  },
-  {
-    key: "reverse_station",
-    name: "Reverse Station",
-    label: "Reverse Station (-48% / -0.93 N / 0.51 A / unlimited)",
-    throttle: -0.480,
-    rpm: 2100,
-    thrust_N: -0.93,
-    current_A: 0.51,
-    burst_s: null,
-    throttleVector: [-0.480, -0.480, 0.0]
-  }
-];
-
-export const STRESS_PRESET: OperatingPointPreset = {
-  key: "stress",
-  name: "Stress Benchmark (2048×1024)",
-  label: "Stress Benchmark (2048×1024 / Everything On)",
-  throttle: 1.0,
-  rpm: 4140,
-  thrust_N: 4.73,
-  current_A: 1.41,
-  burst_s: null,
-  throttleVector: [1.0, 1.0, 1.0]
-};
-
-export const ALL_PRESETS: OperatingPointPreset[] = [...DEFAULT_PRESETS, STRESS_PRESET];
 
 export class SimHeader {
-  private container: HTMLElement;
-  private callbacks: HeaderCallbacks;
-  private runState: RunState = "idle";
-  private runBtn!: HTMLButtonElement;
-  private presetSelect!: HTMLSelectElement;
-  private recordBtn!: HTMLButtonElement;
-  private isRecording: boolean = false;
+  private titleEl: HTMLElement;
+  private runBtn: HTMLButtonElement;
+  private recBtn: HTMLButtonElement;
+  private throttleInput: HTMLInputElement;
+  private throttleValEl: HTMLElement;
+  private inflowInput: HTMLInputElement | null = null;
+  private inflowValEl: HTMLElement | null = null;
+  private voltageInput: HTMLInputElement | null = null;
+  private voltageValEl: HTMLElement | null = null;
+  private designSelect: HTMLSelectElement | null = null;
 
-  constructor(container: HTMLElement, callbacks: HeaderCallbacks) {
-    this.container = container;
-    this.callbacks = callbacks;
-    this.render();
-  }
+  private isRunning = true;
 
-  private isFirstVisit(): boolean {
-    try {
-      if (typeof localStorage === "undefined") return false;
-      return localStorage.getItem("seaperch_first_run_seen") !== "true";
-    } catch {
-      return false;
-    }
-  }
-
-  private render(): void {
-    const firstVisit = this.isFirstVisit();
-    this.container.innerHTML = `
+  constructor(container: HTMLElement, callbacks?: HeaderCallbacks) {
+    container.innerHTML = `
       <div class="header-left">
-        <span class="brand-icon">🌊</span>
-        <div class="header-titles">
-          <span class="app-title">SeaPerch Propeller & Vehicle Simulator</span>
-          <span class="app-subtitle">Candidate A High-Burst Vector-Skewed Propulsor</span>
-        </div>
+        <span class="app-title" id="app-title" title="prop-sim | 60 FPS">prop-sim</span>
       </div>
 
       <div class="header-center">
-        <label for="preset-selector" class="sr-only">Operating Point Preset</label>
-        <select id="preset-selector" class="preset-dropdown" title="Select operating point preset">
-          ${DEFAULT_PRESETS.map(p => `<option value="${p.key}">${p.label}</option>`).join("")}
-        </select>
-
-        <div class="run-control-wrapper">
-          <button id="btn-run" class="btn-run state-idle ${firstVisit ? "pulse-once" : ""}" title="Click RUN to start inflow, spool propeller, and record telemetry">
-            <span class="run-icon">▶</span>
-            <span class="run-text">RUN</span>
-          </button>
-          <div id="run-callout-text" class="run-callout-text ${firstVisit ? "" : "hidden"}">Press RUN to start.</div>
+        <div class="throttle-control">
+          <label for="throttle-slider" class="throttle-label">Throttle</label>
+          <input
+            type="range"
+            id="throttle-slider"
+            class="throttle-slider"
+            min="0"
+            max="1"
+            step="0.01"
+            value="1.0"
+            aria-label="Throttle Slider"
+          />
+          <span class="throttle-value" id="throttle-value">100%</span>
         </div>
       </div>
 
       <div class="header-right">
-        <button id="btn-import-spec" class="btn-import-spec" title="Paste and auto-import raw engineering specification">
-          <span>📋</span>
-          <span class="btn-label">Import Spec</span>
+        <button id="btn-run" class="btn-header btn-run state-running" aria-label="Toggle Simulation Run State">
+          <span class="btn-dot"></span>
+          <span class="btn-label">RUN</span>
+        </button>
+        <button id="btn-rec" class="btn-header btn-rec" aria-label="Toggle Canvas Video Recording">
+          <span class="rec-dot"></span>
+          <span class="btn-label">REC</span>
         </button>
 
-        <button id="btn-record" class="btn-icon btn-record" title="Record stage viewport to WebM video">
-          <span class="record-dot">⏺</span>
-          <span class="btn-label" id="record-label">REC</span>
-        </button>
+        <details id="advanced-fold" class="advanced-fold">
+          <summary class="advanced-summary">Advanced</summary>
+          <div class="advanced-dropdown">
+            <div class="advanced-field">
+              <div class="field-header">
+                <label for="inflow-slider">Inflow Speed</label>
+                <span id="inflow-val" class="field-val">1.50 m/s</span>
+              </div>
+              <input type="range" id="inflow-slider" min="0" max="2" step="0.05" value="1.5" />
+            </div>
 
-        <button id="btn-export-csv" class="btn-icon" title="Export Full Telemetry Time Series (.CSV)">
-          <svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span class="btn-label">CSV</span>
-        </button>
+            <div class="advanced-field">
+              <div class="field-header">
+                <label for="voltage-slider">Supply Voltage</label>
+                <span id="voltage-val" class="field-val">12.0 V</span>
+              </div>
+              <input type="range" id="voltage-slider" min="0" max="14" step="0.5" value="12.0" />
+            </div>
 
-        <button id="btn-share" class="btn-icon" title="Copy shareable configuration URL">
-          <svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-          </svg>
-        </button>
-
-        <button id="btn-validation" class="btn-icon btn-val-nav" title="Open /validation route (NACA/XROTOR/Fossen Oracles & Spec Validation)">
-          <svg class="icon-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="20" x2="18" y2="10"></line>
-            <line x1="12" y1="20" x2="12" y2="4"></line>
-            <line x1="6" y1="20" x2="6" y2="14"></line>
-          </svg>
-          <span class="btn-label">Validation</span>
-        </button>
+            <div class="advanced-field">
+              <div class="field-header">
+                <label for="design-select">Propeller Design</label>
+              </div>
+              <select id="design-select" class="design-select">
+                ${Object.values(PROP_DESIGNS).map(
+                  (d) => `<option value="${d.id}">${d.name}</option>`
+                ).join('')}
+              </select>
+            </div>
+          </div>
+        </details>
       </div>
     `;
 
-    this.runBtn = this.container.querySelector("#btn-run") as HTMLButtonElement;
-    this.presetSelect = this.container.querySelector("#preset-selector") as HTMLSelectElement;
-    this.recordBtn = this.container.querySelector("#btn-record") as HTMLButtonElement;
+    this.titleEl = container.querySelector('#app-title') as HTMLElement;
+    this.runBtn = container.querySelector('#btn-run') as HTMLButtonElement;
+    this.recBtn = container.querySelector('#btn-rec') as HTMLButtonElement;
+    this.throttleInput = container.querySelector('#throttle-slider') as HTMLInputElement;
+    this.throttleValEl = container.querySelector('#throttle-value') as HTMLElement;
 
-    const importBtn = this.container.querySelector("#btn-import-spec");
-    importBtn?.addEventListener("click", () => {
-      this.callbacks.onImportSpecClick?.();
+    this.inflowInput = container.querySelector('#inflow-slider') as HTMLInputElement | null;
+    this.inflowValEl = container.querySelector('#inflow-val') as HTMLElement | null;
+    this.voltageInput = container.querySelector('#voltage-slider') as HTMLInputElement | null;
+    this.voltageValEl = container.querySelector('#voltage-val') as HTMLElement | null;
+    this.designSelect = container.querySelector('#design-select') as HTMLSelectElement | null;
+
+    this.runBtn.addEventListener('click', () => {
+      this.isRunning = !this.isRunning;
+      this.updateRunButton();
+      callbacks?.onRunToggle(this.isRunning);
     });
 
-    this.runBtn.addEventListener("click", () => {
-      try {
-        if (typeof localStorage !== "undefined") {
-          localStorage.setItem("seaperch_first_run_seen", "true");
-        }
-      } catch {}
-      this.runBtn.classList.remove("pulse-once");
-      const callout = this.container.querySelector("#run-callout-text");
-      callout?.classList.add("hidden");
-      if (typeof document !== "undefined" && typeof document.querySelector === "function") {
-        document.querySelector("#first-run-callout")?.classList.add("hidden");
-      }
-
-      let nextState: RunState;
-      if (this.runState === "idle") {
-        nextState = "running";
-      } else if (this.runState === "running") {
-        nextState = "paused";
-      } else if (this.runState === "paused") {
-        nextState = "running";
-      } else {
-        nextState = "idle";
-      }
-      this.setRunState(nextState);
-      this.callbacks.onRunToggle(nextState);
+    this.recBtn.addEventListener('click', () => {
+      callbacks?.onRecordToggle();
     });
 
-    this.presetSelect.addEventListener("change", () => {
-      this.callbacks.onPresetSelect(this.presetSelect.value);
+    this.throttleInput.addEventListener('input', () => {
+      const val = parseFloat(this.throttleInput.value);
+      const clamped = Math.max(0.0, Math.min(1.0, val));
+      this.throttleValEl.textContent = `${Math.round(clamped * 100)}%`;
+      callbacks?.onThrottleChange(clamped);
     });
 
-    this.recordBtn.addEventListener("click", () => {
-      this.callbacks.onRecordToggle?.();
+    this.inflowInput?.addEventListener('input', () => {
+      const val = parseFloat(this.inflowInput!.value);
+      if (this.inflowValEl) this.inflowValEl.textContent = `${val.toFixed(2)} m/s`;
+      callbacks?.onInflowChange?.(val);
     });
 
-    const exportBtn = this.container.querySelector("#btn-export-csv");
-    exportBtn?.addEventListener("click", () => this.callbacks.onExportCsv());
+    this.voltageInput?.addEventListener('input', () => {
+      const val = parseFloat(this.voltageInput!.value);
+      if (this.voltageValEl) this.voltageValEl.textContent = `${val.toFixed(1)} V`;
+      callbacks?.onVoltageChange?.(val);
+    });
 
-    const shareBtn = this.container.querySelector("#btn-share");
-    shareBtn?.addEventListener("click", () => this.callbacks.onShare());
-
-    const validBtn = this.container.querySelector("#btn-validation");
-    validBtn?.addEventListener("click", () => this.callbacks.onValidationClick());
+    this.designSelect?.addEventListener('change', () => {
+      const val = this.designSelect!.value;
+      callbacks?.onDesignChange?.(val);
+    });
   }
 
-  public isCurrentlyRecording(): boolean {
-    return this.isRecording;
+  private updateRunButton(): void {
+    const label = this.runBtn.querySelector('.btn-label') as HTMLElement;
+    if (this.isRunning) {
+      this.runBtn.className = 'btn-header btn-run state-running';
+      if (label) label.textContent = 'RUN';
+    } else {
+      this.runBtn.className = 'btn-header btn-run state-paused';
+      if (label) label.textContent = 'PAUSE';
+    }
+  }
+
+  public setRunState(state: 'idle' | 'running' | 'paused'): void {
+    this.isRunning = state === 'running';
+    const label = this.runBtn.querySelector('.btn-label') as HTMLElement;
+    if (state === 'running') {
+      this.runBtn.className = 'btn-header btn-run state-running';
+      if (label) label.textContent = 'RUN';
+    } else if (state === 'paused') {
+      this.runBtn.className = 'btn-header btn-run state-paused';
+      if (label) label.textContent = 'PAUSED';
+    } else {
+      this.runBtn.className = 'btn-header btn-run state-idle';
+      if (label) label.textContent = 'IDLE';
+    }
   }
 
   public setRecordingState(recording: boolean): void {
-    this.isRecording = recording;
-    const label = this.recordBtn.querySelector("#record-label");
+    const label = this.recBtn.querySelector('.btn-label') as HTMLElement;
     if (recording) {
-      this.recordBtn.classList.add("recording");
-      if (label) label.textContent = "STOP";
+      this.recBtn.classList.add('recording');
+      if (label) label.textContent = 'STOP';
     } else {
-      this.recordBtn.classList.remove("recording");
-      if (label) label.textContent = "REC";
+      this.recBtn.classList.remove('recording');
+      if (label) label.textContent = 'REC';
     }
   }
 
-  public setRunState(state: RunState): void {
-    this.runState = state;
-    this.runBtn.className = `btn-run state-${state}`;
-
-    const iconEl = this.runBtn.querySelector(".run-icon") as HTMLElement;
-    const textEl = this.runBtn.querySelector(".run-text") as HTMLElement;
-
-    if (state === "idle") {
-      iconEl.textContent = "▶";
-      textEl.textContent = "RUN";
-    } else if (state === "running") {
-      iconEl.textContent = "⏸";
-      textEl.textContent = "PAUSE";
-    } else if (state === "paused") {
-      iconEl.textContent = "▶";
-      textEl.textContent = "RESUME";
-    } else {
-      iconEl.textContent = "⚠";
-      textEl.textContent = "ERROR";
-    }
-  }
-
-  public getRunState(): RunState {
-    return this.runState;
-  }
-
-  public setPreset(key: string): void {
-    if (this.presetSelect) {
-      this.presetSelect.value = key;
-    }
-  }
-
-  public updatePresets(newPresets: OperatingPointPreset[]): void {
-    if (this.presetSelect) {
-      this.presetSelect.innerHTML = newPresets.map(p => `<option value="${p.key}">${p.label}</option>`).join("");
-    }
+  public setFpsTooltip(fps: number, frameMs: number): void {
+    this.titleEl.title = `prop-sim | ${fps.toFixed(1)} FPS (${frameMs.toFixed(1)} ms)`;
   }
 }

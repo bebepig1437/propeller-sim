@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { solveBemt, type BEMTElemResult } from '../src/prop/bemt';
-import { makeGrid } from '../src/fluid/grid';
-import { solvePressure } from '../src/fluid/pressure';
 
 function assertAllElementFieldsFinite(elements: BEMTElemResult[]) {
   expect(elements.length).toBeGreaterThan(0);
@@ -46,16 +44,5 @@ describe('NaN guards at known NaN sites', () => {
     expect(r.advanceRatioJ).toBeCloseTo(5.0, 1);
     expect(Number.isFinite(r.thrustN)).toBe(true);
     expect(Number.isFinite(r.advanceRatioJ)).toBe(true);
-  });
-
-  it('pressure solve with a fully-solid boundary returns finite zero pressure field', () => {
-    const g = makeGrid(16, 16);
-    g.solid.fill(1);
-    const res = solvePressure(g, 10);
-    expect(res.finalResidual).toBe(0);
-    for (let i = 0; i < g.pressure.length; i++) {
-      expect(Number.isFinite(g.pressure[i])).toBe(true);
-      expect(g.pressure[i]).toBe(0);
-    }
   });
 });

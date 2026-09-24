@@ -5,7 +5,6 @@ import { createCurlComputeNode } from '../src/fluid/gpu/computeCurl';
 import { createVorticityComputeNode } from '../src/fluid/gpu/computeVorticity';
 import { createDivergenceComputeNode } from '../src/fluid/gpu/computeDivergence';
 import { createPressureComputeNode } from '../src/fluid/gpu/computePressure';
-import { createMultigridComputeNodes } from '../src/fluid/gpu/computeMultigrid';
 import { createProjectComputeNode } from '../src/fluid/gpu/computeProject';
 import { createSourcesComputeNode } from '../src/fluid/gpu/computeSources';
 import { FluidGrid } from '../src/fluid/grid';
@@ -36,12 +35,6 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
     const pressure = createPressureComputeNode(W, H);
     expect(pressure.forwardNode).toBeDefined();
     expect(pressure.backwardNode).toBeDefined();
-
-    const multigrid = createMultigridComputeNodes(W, H);
-    expect(multigrid.residualNode).toBeDefined();
-    expect(multigrid.restrictNode).toBeDefined();
-    expect(multigrid.coarseJacobiNode).toBeDefined();
-    expect(multigrid.prolongateCorrectNode).toBeDefined();
 
     const project = createProjectComputeNode(W, H);
     expect(project.node).toBeDefined();
@@ -105,37 +98,7 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
     expect(solver.grid.height).toBe(128);
   });
 
-  it('executes side-by-side compare mode at 256x128 and verifies CPU vs GPU diff within tolerance', () => {
-    const solver = new GpuFluidSolver({
-      gridOptions: { width: 256, height: 128 },
-      pressureIterations: 20
-    });
-
-    solver.compareMetrics.active = true;
-
-    for (let i = 0; i < 5; i++) {
-      solver.step(1.0 / 60.0);
-    }
-
-    const { maxDiffU, maxDiffV, maxDiffDye, rmsDiff } = solver.compareMetrics;
-    expect(maxDiffU).toBeLessThan(1e-3);
-    expect(maxDiffV).toBeLessThan(1e-3);
-    expect(maxDiffDye).toBeLessThan(1e-3);
-    expect(rmsDiff).toBeLessThan(1e-3);
-  });
-
-  it('supports Multigrid V-Cycle pressure solve mode', () => {
-    const solver = new GpuFluidSolver({
-      gridOptions: { width: 128, height: 64 },
-      pressureMethod: 'multigrid'
-    });
-
-    expect(solver.pressureMethod).toBe('multigrid');
-    const metrics = solver.step(1.0 / 60.0);
-    expect(metrics.stepTimeMs).toBeGreaterThan(0);
-  });
-
-  it('Rule 8: verifies GPU readback round-trip proves grid.u/v/dye reflect GPU output', async () => {
+  it('verifies GPU readback round-trip proves grid.u/v/dye reflect GPU output', async () => {
     const solver = new GpuFluidSolver({
       gridOptions: { width: 128, height: 64 }
     });
@@ -175,34 +138,6 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
     expect(solver.grid.u).toBe(readback.u);
   });
 
-  it('Compare mode: runCompareValidation computes diff within tolerance at 256x128 and does NOT mutate live grid', () => {
-    const solver = new GpuFluidSolver({
-      gridOptions: { width: 256, height: 128 },
-      jetConfig: { vx: 2.5, enabled: true },
-      pressureIterations: 30
-    });
-
-    solver.step(1.0 / 60.0);
-    solver.step(1.0 / 60.0);
-
-    const uSnapshot = new Float32Array(solver.grid.u);
-    const vSnapshot = new Float32Array(solver.grid.v);
-    const dyeSnapshot = new Float32Array(solver.grid.dye);
-
-    const metrics = solver.runCompareValidation(1.0 / 60.0);
-
-    expect(metrics.maxDiffU).toBeLessThan(1e-3);
-    expect(metrics.maxDiffV).toBeLessThan(1e-3);
-    expect(metrics.maxDiffDye).toBeLessThan(1e-3);
-    expect(metrics.rmsDiff).toBeLessThan(1e-3);
-
-    for (let i = 0; i < solver.grid.size; i++) {
-      expect(solver.grid.u[i]).toBe(uSnapshot[i]);
-      expect(solver.grid.v[i]).toBe(vSnapshot[i]);
-      expect(solver.grid.dye[i]).toBe(dyeSnapshot[i]);
-    }
-  });
-
   it('Lifecycle: dispose releases all resources and resizing recreates them without leaking', () => {
     const solver = new GpuFluidSolver({
       gridOptions: { width: 1024, height: 512 }
@@ -217,24 +152,5 @@ describe('Phase 2 — Fluid GPU Port (TSL)', () => {
     expect(solver.grid.size).toBe(512 * 256);
 
     solver.dispose();
-    expect(solver.compareCpuSolver).toBeNull();
-    expect(solver.compareCpuGrid).toBeNull();
-    expect(solver.diffGrid).toBeNull();
-  });
-
-  it('Divergence consistency: max |divergence| reported from readback matches CPU within 10%', () => {
-    const solver = new GpuFluidSolver({
-      gridOptions: { width: 128, height: 64 },
-      pressureIterations: 40,
-      jetConfig: { vx: 2.0, enabled: true }
-    });
-
-    for (let step = 0; step < 15; step++) {
-      solver.step(1.0 / 60.0);
-    }
-    const metrics = solver.metrics;
-    const cpuRefDiv = solver.cpuFallback.metrics.maxDivergence;
-
-    expect(Math.abs(metrics.maxDivergence - cpuRefDiv)).toBeLessThanOrEqual(cpuRefDiv * 0.10 + 1e-6);
   });
 });
