@@ -11,25 +11,26 @@ export interface Propeller3DOptions {
 export function createPropellerMaterial(type: PropellerMaterial): THREE.Material {
   switch (type) {
     case 'rigid10k':
+    default:
       return new THREE.MeshPhysicalMaterial({
-        color: 0x1e293b,
-        roughness: 0.18,
-        metalness: 0.25,
-        clearcoat: 0.9,
-        clearcoatRoughness: 0.1
+        color: 0xdde6f0,
+        metalness: 0.15,
+        roughness: 0.35,
+        clearcoat: 0.8,
+        clearcoatRoughness: 0.2
       });
     case 'pa12cf15':
       return new THREE.MeshStandardMaterial({
-        color: 0x0f172a,
-        roughness: 0.72,
-        metalness: 0.08
+        color: 0x94a3b8,
+        roughness: 0.45,
+        metalness: 0.2
       });
     case 'petg':
       return new THREE.MeshPhysicalMaterial({
-        color: 0x0ea5e9,
-        roughness: 0.22,
+        color: 0xbae6fd,
+        roughness: 0.2,
         metalness: 0.1,
-        transmission: 0.65,
+        transmission: 0.75,
         transparent: true,
         opacity: 0.85
       });
@@ -54,6 +55,8 @@ export class Propeller3D {
   private hubMesh!: THREE.Mesh;
   private spinnerMesh!: THREE.Mesh;
   private bladeMeshes: THREE.Mesh[] = [];
+  private tipMeshes: THREE.Mesh[] = [];
+  private sweptDiscMesh!: THREE.Mesh;
 
   constructor(options?: Propeller3DOptions) {
     this.design = options?.design ?? CANDIDATE_A_DESIGN;
@@ -74,6 +77,7 @@ export class Propeller3D {
       this.rotorGroup.remove(child);
     }
     this.bladeMeshes = [];
+    this.tipMeshes = [];
     this.buildGeometry();
   }
 
@@ -85,6 +89,12 @@ export class Propeller3D {
     const isCCW = this.handedness === 'CCW';
 
     const mat = createPropellerMaterial(this.currentMaterial);
+    const tipMat = new THREE.MeshPhysicalMaterial({
+      color: 0xff8844,
+      metalness: 0.2,
+      roughness: 0.3,
+      clearcoat: 0.8
+    });
 
     const hubGeo = new THREE.CylinderGeometry(Dhub / 2.0, Dhub / 2.0, Lhub, 24);
     hubGeo.rotateX(Math.PI / 2);
@@ -105,13 +115,33 @@ export class Propeller3D {
 
     for (let b = 0; b < numBlades; b++) {
       const bladeAngle = (b * (2.0 * Math.PI)) / numBlades;
-      const bladeGeo = this.generateParametricBladeGeometry(Rhub, R, radialStations, isCCW);
+      const bladeGeo = this.generateParametricBladeGeometry(Rhub, Rhub + (R - Rhub) * 0.95, radialStations, isCCW);
       const bladeMesh = new THREE.Mesh(bladeGeo, mat);
       bladeMesh.rotation.z = bladeAngle;
       bladeMesh.castShadow = true;
+
+      const tipGeo = this.generateParametricBladeGeometry(Rhub + (R - Rhub) * 0.95, R, 3, isCCW);
+      const tipMesh = new THREE.Mesh(tipGeo, tipMat);
+      tipMesh.castShadow = true;
+      bladeMesh.add(tipMesh);
+      this.tipMeshes.push(tipMesh);
+
       this.rotorGroup.add(bladeMesh);
       this.bladeMeshes.push(bladeMesh);
     }
+
+    const discGeo = new THREE.RingGeometry(Rhub, R, 48);
+    const discMat = new THREE.MeshBasicMaterial({
+      color: 0xff8844,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    this.sweptDiscMesh = new THREE.Mesh(discGeo, discMat);
+    this.sweptDiscMesh.position.z = -0.002;
+    this.sweptDiscMesh.visible = false;
+    this.group.add(this.sweptDiscMesh);
   }
 
   private generateParametricBladeGeometry(
@@ -179,8 +209,17 @@ export class Propeller3D {
     return geometry;
   }
 
-  public setRotation(angleRad: number): void {
+  public setRotation(angleRad: number, rpm = 0): void {
     this.rotorGroup.rotation.z = angleRad;
+    if (this.sweptDiscMesh) {
+      if (rpm <= 500) {
+        this.sweptDiscMesh.visible = false;
+      } else {
+        this.sweptDiscMesh.visible = true;
+        const frac = Math.min(1.0, (rpm - 500) / 2500);
+        (this.sweptDiscMesh.material as THREE.MeshBasicMaterial).opacity = frac * 0.25;
+      }
+    }
   }
 
   public setMaterial(type: PropellerMaterial): void {
@@ -211,9 +250,20 @@ export class Propeller3D {
 
   public dispose(): void {
     this.hubMesh.geometry.dispose();
+    (this.hubMesh.material as THREE.Material).dispose();
     this.spinnerMesh.geometry.dispose();
+    (this.spinnerMesh.material as THREE.Material).dispose();
     for (const blade of this.bladeMeshes) {
       blade.geometry.dispose();
+      (blade.material as THREE.Material).dispose();
+    }
+    for (const tip of this.tipMeshes) {
+      tip.geometry.dispose();
+      (tip.material as THREE.Material).dispose();
+    }
+    if (this.sweptDiscMesh) {
+      this.sweptDiscMesh.geometry.dispose();
+      (this.sweptDiscMesh.material as THREE.Material).dispose();
     }
   }
 }
