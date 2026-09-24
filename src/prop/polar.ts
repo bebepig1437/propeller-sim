@@ -1,4 +1,5 @@
 import type { PropellerMaterial } from './rigidbody';
+import { PROP_MATERIALS, PropMaterialId } from './materials';
 
 export interface PolarDataPoint {
   alphaDeg: number;
@@ -118,16 +119,19 @@ export function evaluateSectionPolarWithReAndRoughness(
   material: PropellerMaterial = 'rigid10k',
   props: SectionalHydrofoilProperties = defaultHydrofoilProps
 ): { cl: number; cd: number } {
-  const base = evaluateSectionPolar(alphaRad, props);
+  /* Skin friction roughness scaling on minimum profile drag paper: Schlichting (1979) */
+  const roughnessMult = PROP_MATERIALS[material as PropMaterialId]?.roughnessMultiplier ?? 1.0;
+  const cd0Effective = props.cd0 * roughnessMult;
+  const effectiveProps: SectionalHydrofoilProperties = { ...props, cd0: cd0Effective };
+
+  const base = evaluateSectionPolar(alphaRad, effectiveProps);
 
   const refRe = props.referenceRe ?? 100000;
   const safeRe = Math.max(1000, reynolds);
   const reScaling = Math.pow(refRe / safeRe, 0.18);
-  const reShift = props.cd0 * (Math.min(2.5, Math.max(0.7, reScaling)) - 1.0);
+  const reShift = cd0Effective * (Math.min(2.5, Math.max(0.7, reScaling)) - 1.0);
 
-  const roughnessShift = MATERIAL_ROUGHNESS_CD_SHIFT[material] ?? 0.0;
-
-  const totalCd = Math.max(0.005, base.cd + reShift + roughnessShift);
+  const totalCd = Math.max(0.005, base.cd + reShift);
   return { cl: base.cl, cd: totalCd };
 }
 
