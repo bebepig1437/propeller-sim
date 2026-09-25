@@ -9,7 +9,7 @@ export class SimClock {
   private droppedTimeS = 0;
   public timeScale = 1.0;
 
-  constructor(fixedDeltaTime = 1.0 / 60.0, maxSubsteps = 4, timeScale = 1.0) {
+  constructor(fixedDeltaTime = 1.0 / 60.0, maxSubsteps = 120, timeScale = 1.0) {
     this.fixedDeltaTime = fixedDeltaTime;
     this.maxSubsteps = maxSubsteps;
     this.timeScale = timeScale;
@@ -48,16 +48,18 @@ export class SimClock {
       return 0;
     }
 
-    const frameDeltaSec = Math.min((currentTimeMs - this.lastTime) / 1000.0, 0.25);
+    const frameDeltaSec = Math.min((currentTimeMs - this.lastTime) / 1000.0, 2.0);
     this.lastTime = currentTimeMs;
     this.accumulator += frameDeltaSec * this.timeScale;
 
     let steps = 0;
-    while (this.accumulator >= this.fixedDeltaTime && steps < this.maxSubsteps) {
+    while (this.accumulator >= this.fixedDeltaTime - 1e-7 && steps < this.maxSubsteps) {
       onSubstep(this.fixedDeltaTime);
       this.accumulator -= this.fixedDeltaTime;
       steps++;
     }
+
+    if (this.accumulator < 0) this.accumulator = 0;
 
     if (this.accumulator >= this.fixedDeltaTime) {
       this.droppedTimeS += this.accumulator;
