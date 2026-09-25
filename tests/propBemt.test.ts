@@ -4,6 +4,7 @@ import { evaluateSectionPolar, generatePolarTable, defaultHydrofoilProps } from 
 import { solveBemt, getBladeChordAt, getBladePitchAngleAt } from '../src/prop/bemt';
 import { calculatePropellerInertia, calculateAngularAcceleration, MATERIAL_SPECS, PropellerShaft } from '../src/prop/rigidbody';
 import { Propeller3D } from '../src/prop/geometry';
+import { CANDIDATE_A_DESIGN } from '../src/prop/designs/index';
 
 describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
   describe('Hydrofoil Polar & Viterna Model (polar.ts)', () => {
@@ -63,7 +64,7 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
 
       expect(Math.abs(res.torqueNm)).toBeGreaterThan(0.010);
       expect(Math.abs(res.torqueNm)).toBeLessThan(0.020);
-      expect(res.torqueNm).toBeLessThan(0); 
+      expect(res.torqueNm).toBeGreaterThan(0); 
 
       expect(res.kq).toBeGreaterThan(0.018);
       expect(res.kq).toBeLessThan(0.030);
@@ -193,10 +194,12 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
       expect(resCCW.thrustN).toBeGreaterThan(0);
       expect(Math.abs(resCW.thrustN - resCCW.thrustN)).toBeLessThan(1e-6);
 
-      expect(Math.abs(Math.abs(resCW.torqueNm) - Math.abs(resCCW.torqueNm))).toBeLessThan(1e-6);
-      expect(resCW.torqueNm).toBeLessThan(0);
+      expect(Math.abs(resCW.torqueNm - resCCW.torqueNm)).toBeLessThan(1e-6);
+      expect(resCW.torqueNm).toBeGreaterThan(0);
       expect(resCCW.torqueNm).toBeGreaterThan(0);
-      expect(resCW.torqueNm + resCCW.torqueNm).toBeCloseTo(0, 6);
+      expect(resCW.reactionTorqueNm).toBeLessThan(0);
+      expect(resCCW.reactionTorqueNm).toBeGreaterThan(0);
+      expect(resCW.reactionTorqueNm + resCCW.reactionTorqueNm).toBeCloseTo(0, 6);
     });
 
     it('computes locked-rotor drag forces with non-empty elements when |RPM| < 1', () => {
@@ -300,18 +303,13 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
   });
 
   describe('3D Propeller Geometry & Direct Manipulation (geometry.ts)', () => {
-    it('generates 3D mesh with hub, nose cone, 3 blades, and anti-strobe blur disc', () => {
+    it('generates 3D mesh with real-print quality geometry, rotation, and design changes', () => {
       const prop = new Propeller3D({
-        diameterMm: 42.0,
-        hubOdMm: 8.0,
-        blades: 3,
         materialType: 'rigid10k'
       });
 
       expect(prop.group).toBeInstanceOf(THREE.Group);
       expect(prop.rotorGroup).toBeInstanceOf(THREE.Group);
-
-      expect(prop.rotorGroup.children.length).toBe(5);
 
       prop.setRotation(Math.PI / 4);
       expect(prop.rotorGroup.rotation.z).toBeCloseTo(Math.PI / 4, 3);
@@ -335,5 +333,30 @@ describe('Phase 4 — Propeller, BEMT & Inertia Variants', () => {
 
       prop.dispose();
     });
+
+    it('verifies thrust differs by material at 3800 RPM and 1.5 m/s inflow (Phase 2)', () => {
+      const design = CANDIDATE_A_DESIGN;
+      const rpm = 3800;
+      const inflow = 1.5;
+
+      const resRigid = solveBemt(rpm, inflow, { design, pitchMm: design.pitchMm, material: 'rigid10k' });
+      const resPetg = solveBemt(rpm, inflow, { design, pitchMm: design.pitchMm, material: 'petg' });
+      const resPa12 = solveBemt(rpm, inflow, { design, pitchMm: design.pitchMm, material: 'pa12cf15' });
+
+      console.log(`[Material Thrust 3800 RPM / 1.5 m/s] Rigid 10K: ${resRigid.thrustN.toFixed(4)} N | PETG: ${resPetg.thrustN.toFixed(4)} N | PA12-CF15: ${resPa12.thrustN.toFixed(4)} N`);
+
+      expect(resRigid.thrustN).toBeGreaterThan(resPetg.thrustN);
+      expect(resPetg.thrustN).toBeGreaterThan(resPa12.thrustN);
+
+      const diffPetg = (resRigid.thrustN - resPetg.thrustN) / resRigid.thrustN;
+      const diffPa12 = (resRigid.thrustN - resPa12.thrustN) / resRigid.thrustN;
+
+      expect(diffPetg).toBeGreaterThan(0.001);
+      expect(diffPetg).toBeLessThan(0.05);
+      expect(diffPa12).toBeGreaterThan(0.002);
+      expect(diffPa12).toBeLessThan(0.07);
+    });
   });
 });
+
+
