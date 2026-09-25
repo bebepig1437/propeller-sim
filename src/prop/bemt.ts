@@ -1,4 +1,4 @@
-// Blade Element Momentum Theory (BEMT) solver with Prandtl tip/hub loss and XROTOR/OpenProp corrections
+// Blade Element Momentum Theory (BEMT) solver with Prandtl tip/hub loss and XROTOR/OpenProp corrections paper: Drela (2006)
 import { evaluateSectionPolarWithReAndRoughness, getHydrofoilProperties, SectionalHydrofoilProperties } from './polar';
 import { PropDesign, CANDIDATE_A_DESIGN, getDesignBladeChordAt, getDesignBladePitchAngleAt } from './designs/index';
 import type { PropellerMaterial } from './rigidbody';
@@ -22,6 +22,7 @@ export interface BEMTElemResult {
 export interface BEMTResult {
   thrustN: number;
   torqueNm: number;
+  reactionTorqueNm: number;
   powerMechW: number;
   advanceRatioJ: number;
   kt: number;
@@ -180,6 +181,7 @@ function createBemtElement(): BEMTElemResult {
 const bemtResultRing: BEMTResult[] = Array.from({ length: BEMT_RING_SIZE }, () => ({
   thrustN: 0,
   torqueNm: 0,
+  reactionTorqueNm: 0,
   powerMechW: 0,
   advanceRatioJ: 0,
   kt: 0,
@@ -265,6 +267,7 @@ export function solveBemt(
 
     targetResult.thrustN = totalThrust;
     targetResult.torqueNm = 0;
+    targetResult.reactionTorqueNm = 0;
     targetResult.powerMechW = 0;
     targetResult.advanceRatioJ = 0;
     targetResult.kt = 0;
@@ -434,7 +437,8 @@ export function solveBemt(
   }
 
   targetResult.thrustN = Number.isFinite(totalThrust) ? totalThrust : 0;
-  targetResult.torqueNm = Number.isFinite(directedTorque) ? directedTorque : 0;
+  targetResult.torqueNm = Number.isFinite(totalTorque) ? totalTorque : 0;
+  targetResult.reactionTorqueNm = Number.isFinite(directedTorque) ? directedTorque : 0;
   targetResult.powerMechW = Number.isFinite(powerMech) ? powerMech : 0;
   targetResult.advanceRatioJ = Number.isFinite(J) ? J : 0;
   targetResult.kt = Number.isFinite(kt) ? kt : 0;

@@ -152,6 +152,7 @@ export const WAGENINGEN_B4_DESIGN: PropDesign = {
 export const PROP_DESIGNS: Record<string, PropDesign> = {
   candidateA: CANDIDATE_A_DESIGN,
   kaplan: KAPLAN_DESIGN,
+  kaplan_high_thrust: KAPLAN_DESIGN,
   wageningen: WAGENINGEN_B4_DESIGN
 };
 
