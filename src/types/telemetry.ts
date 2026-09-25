@@ -1,11 +1,14 @@
+import type { SimulationMedium } from '../core/config';
+
 export interface HudMetricsData {
-  thrust_N: number;
-  torque_Nm: number;
+  thrustN: number;
+  torqueNm: number;
   rpm: number;
-  inflow_velocity_ms: number;
-  advance_ratio_J: number;
-  tip_mach: number;
+  inflowSpeedMs: number;
+  advanceRatioJ: number;
+  efficiency: number | null;
+  medium: SimulationMedium;
   timeScale: number;
-  fps: number;
-  frameMs: number;
+  pShaftW?: number;
+  pIdealW?: number;
 }
