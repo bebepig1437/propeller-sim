@@ -3,19 +3,35 @@ export const DEBUG = false;
 export type AdvectionScheme = 'semi-lagrangian' | 'maccormack';
 export type BoundaryConditionType = 'solid' | 'outflow' | 'free-slip';
 export type PropellerMaterialType = 'rigid10k' | 'pa12cf15' | 'petg';
+export type SimulationMedium = 'water' | 'air';
+
+export interface MediumProperties {
+  density: number;
+  dynamicViscosity: number;
+}
+
+export const MEDIUMS: Record<SimulationMedium, MediumProperties> = {
+  air: { density: 1.225, dynamicViscosity: 1.81e-5 },
+  water: { density: 1000.0, dynamicViscosity: 1.002e-3 }
+};
 
 export interface SimConfig {
   simulationMode: 'tunnel';
   pipe: {
     lengthM: number;
     radiusM: number;
+    diameterM: number;
+    propellerXFraction: number;
   };
   tunnel: {
     lengthM: number;
+    diameterM: number;
+    radiusM: number;
     heightM: number;
     depthM: number;
     inflowVelocity: number;
     wallMode: 'free-slip' | 'no-slip';
+    propellerXFraction: number;
   };
   fluidGrid: {
     width: number;
@@ -57,7 +73,7 @@ export interface SimConfig {
   };
   visualization: {
     timeScale: number;
-    mode: 'dye-velocity' | 'dye-vorticity' | 'pressure' | 'none';
+    mode: 'dye_velocity' | 'dye_vorticity' | 'off';
     showWakeEnvelope: boolean;
     showVelocityVectors: boolean;
     showTipVortices: boolean;
@@ -76,23 +92,28 @@ export const ACCENT_COLORS = {
 export const defaultConfig: SimConfig = {
   simulationMode: 'tunnel',
   pipe: {
-    lengthM: 1.0,
-    radiusM: 0.06
+    lengthM: 0.190,
+    radiusM: 0.055,
+    diameterM: 0.110,
+    propellerXFraction: 0.40
   },
   tunnel: {
-    lengthM: 1.0,
-    heightM: 0.12,
-    depthM: 0.12,
+    lengthM: 0.190,
+    diameterM: 0.110,
+    radiusM: 0.055,
+    heightM: 0.110,
+    depthM: 0.110,
     inflowVelocity: 1.5,
-    wallMode: 'free-slip'
+    wallMode: 'free-slip',
+    propellerXFraction: 0.40
   },
   fluidGrid: {
     width: 256,
-    height: 64
+    height: 128
   },
   fluid: {
     nx: 256,
-    ny: 64,
+    ny: 128,
     backend: 'gpu',
     viscosity: 0.0001,
     vorticityStrength: 0.25,
@@ -121,12 +142,12 @@ export const defaultConfig: SimConfig = {
   clock: {
     targetFps: 60,
     fixedDeltaTime: 1.0 / 60.0,
-    maxSubsteps: 4,
+    maxSubsteps: 120,
     timeScale: 1.0
   },
   visualization: {
     timeScale: 1.0,
-    mode: 'dye-velocity',
+    mode: 'dye_velocity',
     showWakeEnvelope: false,
     showVelocityVectors: false,
     showTipVortices: true,
