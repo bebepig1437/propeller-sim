@@ -182,3 +182,21 @@ export class FluidGrid {
 export function makeGrid(width = 256, height = 128, dx = 1.0): FluidGrid {
   return new FluidGrid({ width, height, dx });
 }
+
+export function gridToWorldX(i: number, nx = 256, lengthM = 0.190): number {
+  return -lengthM / 2.0 + (i / Math.max(1, nx - 1)) * lengthM;
+}
+
+export function gridToWorldY(j: number, ny = 128, radiusM = 0.055): number {
+  return -radiusM + (j / Math.max(1, ny - 1)) * (2.0 * radiusM);
+}
+
+export function worldToGridX(x: number, nx = 256, lengthM = 0.190): number {
+  const norm = (x - (-lengthM / 2.0)) / lengthM;
+  return Math.max(0, Math.min(nx - 1, norm * (nx - 1)));
+}
+
+export function worldToGridY(y: number, ny = 128, radiusM = 0.055): number {
+  const norm = (y - (-radiusM)) / (2.0 * radiusM);
+  return Math.max(0, Math.min(ny - 1, norm * (ny - 1)));
+}
