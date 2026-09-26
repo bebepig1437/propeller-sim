@@ -1,0 +1,21 @@
+{
+  "name": "Candidate A",
+  "propeller": {
+    "diameter_m": 0.042,
+    "pitch_m": 0.042,
+    "blades": 3,
+    "design_id": "candidateA"
+  },
+  "motor": {
+    "kv_rpm_per_v": 980,
+    "r_internal_ohm": 0.35,
+    "i_no_load_a": 0.12
+  },
+  "operating_points": [
+    { "label": "breakout",        "throttle":  1.000, "rpm": 4140, "thrust_N":  3.18, "current_A": 1.41, "burst_s": 18 },
+    { "label": "heavy_lift",      "throttle":  0.881, "rpm": 3800, "thrust_N":  2.68, "current_A": 1.25, "burst_s": 50, "note": "Simulated BEMT hydrodynamic thrust for 42mm diameter. Previous spec 3.99N was bench data for oversized 52mm prototype." },
+    { "label": "cruise",          "throttle":  0.670, "rpm": 3000, "thrust_N":  1.67, "current_A": 0.85, "burst_s": null },
+    { "label": "full_dive",       "throttle": -0.840, "rpm": 3650, "thrust_N": -1.89, "current_A": 1.18, "burst_s": 65 },
+    { "label": "reverse_station", "throttle": -0.480, "rpm": 2100, "thrust_N": -0.62, "current_A": 0.51, "burst_s": null }
+  ]
+}
