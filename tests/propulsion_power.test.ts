@@ -68,9 +68,11 @@ describe('torque_balance', () => {
     const cw = solveBemt(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CW' });
     const ccw = solveBemt(3800, 0, { ...CANDIDATE_A_BEMT, handedness: 'CCW' });
 
-    expect(cw.torqueNm).toBeLessThan(0);
+    expect(cw.torqueNm).toBeGreaterThan(0);
     expect(ccw.torqueNm).toBeGreaterThan(0);
-    expect(Math.abs(cw.torqueNm)).toBeCloseTo(Math.abs(ccw.torqueNm), 12);
+    expect(cw.reactionTorqueNm).toBeLessThan(0);
+    expect(ccw.reactionTorqueNm).toBeGreaterThan(0);
+    expect(cw.torqueNm).toBeCloseTo(ccw.torqueNm, 12);
     expect(cw.thrustN).toBeCloseTo(ccw.thrustN, 12);
   });
 });
